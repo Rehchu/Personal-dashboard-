@@ -1,20 +1,58 @@
 /* ============================================================
-   Xbox Series X home layout — [data-console="xbox"] only.
-   Loads LAST, so equal-specificity rules here win the cascade.
-   Composes with every data-theme (tokens stay theme-owned; the
-   signature Xbox green #3fd42c marks focus + gamerscore only).
-   Layout: profile block top-left, centered icon nav, clock
-   top-right, full-bleed key-art glow behind everything, tile
-   row anchored low with an enlarged green-ring focused tile,
-   wide secondary cards along the bottom.
+   Xbox Series X|S home — STRUCTURE, not palette.
+   Scope: html[data-console="xbox"]. Loads after every theme file
+   (only mobile.css follows), so equal-specificity rules here win.
+
+   The layout language being recreated, in original CSS:
+     · profile block anchored top-left, gamertag over gamerscore
+     · a tall hero block occupying the top-left COLUMN of the page
+     · the remaining screen is one tile GRID of MIXED size: a 2x2
+       square anchoring the group, 1x1 squares beside it and
+       beneath it — three rows deep, never a uniform row
+     · square tiles, 8px corners, small consistent gutters
+     · selection = crisp bright green ring hugging the tile edge
+       + a short 4px lift. No pulse, no diffuse bloom (that is the
+       PlayStation's language, deliberately not this one)
+     · labels BELOW the tile, sentence case, left aligned, always on
+     · charcoal→green vertical wash, green glow behind the hero,
+       soft vignette
+
+   The grid flows in COLUMNS (down, then right) and scrolls
+   sideways: that is what keeps the three-row block on screen at
+   any height, and it is the axis main.js's wheel handler and
+   scrollIntoView({inline:'center'}) already drive.
+
+   Phones (≤720px) belong to mobile.css — every structural rule
+   below is fenced inside @media (min-width: 721px) so nothing
+   here can outrank the phone layout.
    ============================================================ */
 
-/* ---------- topbar: [profile ......icons...... clock] ----------
-   .topbar-right dissolves via display:contents so its children
-   become flex items of #topbar. Order math:
-   profile(-2, margin-right:auto) | console/cc/themes(0) | clock(1,
-   margin-left:auto) → both autos absorb the free space equally,
-   centering the icon cluster. */
+/* ---------- tokens ---------- */
+
+[data-console="xbox"] {
+  /* the signature green: ring, gamerscore, active tab */
+  --xbh-ring: #3fd42c;
+
+  /* one grid cell = one small tile. Derived from viewport height so
+     three rows + their labels always land inside the home area. */
+  --xbh-cell: clamp(96px, calc((100vh - 284px) / 3), 208px);
+
+  /* tight, consistent gutter between tiles */
+  --xbh-gut: clamp(7px, 0.6vw, 11px);
+
+  /* vertical room reserved under each tile for its label */
+  --xbh-lab: 26px;
+
+  /* width of the hero / profile column */
+  --xbh-side: 25%;
+}
+
+/* ============================================================
+   1. Top bar — profile hard left, icons centre, clock right.
+   .topbar-right dissolves (display:contents) so its children
+   become flex items of #topbar; the two auto margins meet in
+   the middle and centre the icon cluster.
+   ============================================================ */
 
 [data-console="xbox"] #topbar {
   display: flex;
@@ -22,7 +60,7 @@
   gap: clamp(10px, 1.3vw, 18px);
 }
 
-/* Xbox home has no wordmark — brand block (mark included) goes away */
+/* Xbox home carries no wordmark — the brand block steps aside */
 [data-console="xbox"] .topbar-left { display: none; }
 
 [data-console="xbox"] .topbar-right { display: contents; }
@@ -33,7 +71,7 @@
 
 [data-console="xbox"] #clock { order: 1; margin-left: auto; }
 
-/* ---------- profile block, top-left, gamertag + gamerscore ---------- */
+/* ---------- the profile: the most prominent thing top-left ---------- */
 
 [data-console="xbox"] #profile-chip {
   order: -2;
@@ -43,231 +81,495 @@
   grid-template-rows: auto auto;
   align-items: center;
   align-content: center;
-  column-gap: 10px;
+  column-gap: 11px;
   row-gap: 1px;
-  padding: 5px 14px 5px 5px;
-  border-radius: 8px;
-  border: 1px solid color-mix(in oklab, var(--ink-3) 40%, transparent);
-  background: color-mix(in oklab, var(--surface) 72%, transparent);
-  backdrop-filter: blur(6px);
+  padding: 5px 16px 5px 5px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in oklab, var(--ink-3) 34%, transparent);
+  background: color-mix(in oklab, var(--surface) 74%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.28), 0 10px 26px -18px rgba(0, 0, 0, 0.9);
   text-align: left;
 }
 
-[data-console="xbox"] #profile-chip:hover { border-color: #3fd42c; }
+[data-console="xbox"] #profile-chip:hover { border-color: var(--xbh-ring); }
 
 [data-console="xbox"] #profile-avatar {
   grid-row: 1 / span 2;
-  width: 38px;
-  height: 38px;
+  width: 42px;
+  height: 42px;
   border-radius: 10px;
-  font-size: 17px;
+  font-size: 18px;
 }
 
 [data-console="xbox"] #profile-name {
   align-self: end;
   color: var(--ink);
   font-weight: 700;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.1;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.005em;
 }
 
-/* gamerscore: Xbox green, own line under the name (grid row 2) */
+/* gamerscore: green, its own line under the gamertag */
 [data-console="xbox"] #profile-score {
   grid-column: 2;
   align-self: start;
-  color: #3fd42c; /* ~8:1 on all theme surfaces */
+  color: var(--xbh-ring); /* ≥7:1 on every theme surface */
   font-family: var(--font-display);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: 0.03em;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: 0.04em;
 }
 
-/* ---------- centered icon nav pieces ---------- */
+/* ============================================================
+   2. Desktop / tablet structure (phones are mobile.css's)
+   ============================================================ */
 
-[data-console="xbox"] #pill-nav { justify-content: center; }
+@media (min-width: 721px) {
 
-/* ---------- home: everything anchored in the lower half ----------
-   Visual order (flex order): hero → tile rail → wide cards → hint,
-   like the Series X selected-game text, tile row, bottom card row. */
+  /* body becomes the column that owns the viewport, so #home gets
+     an exact remaining height instead of base.css's calc(100% - 96px)
+     guess (which overflows once the pill nav is on screen).
+     Every overlay layer — #ambient, #theme-fx, both canvases,
+     #bg-video, #ccenter, #switch-fx, #boot, #appview — is
+     position:fixed, so nothing else becomes a flex item. */
+  [data-console="xbox"] body {
+    display: flex;
+    flex-direction: column;
+  }
 
-[data-console="xbox"] #home {
-  justify-content: flex-end;
-  gap: clamp(12px, 2.6vh, 30px);
-  padding-bottom: 4vh;
+  [data-console="xbox"] #topbar,
+  [data-console="xbox"] #pill-nav { flex: 0 0 auto; }
+
+  /* ---------- nav tabs: left aligned, squared, green when active ---------- */
+
+  [data-console="xbox"] #pill-nav {
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  [data-console="xbox"] .pill {
+    border-radius: 6px;
+    padding: 7px 17px;
+    min-height: 34px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    text-transform: none;
+    color: var(--ink-2);
+    background: color-mix(in oklab, var(--surface-2) 66%, transparent);
+    border: 1px solid color-mix(in oklab, var(--ink-3) 26%, transparent);
+  }
+
+  [data-console="xbox"] .pill:hover {
+    color: var(--ink);
+    border-color: color-mix(in oklab, var(--xbh-ring) 60%, transparent);
+  }
+
+  [data-console="xbox"] .pill.active {
+    background: var(--xbh-ring);
+    border-color: var(--xbh-ring);
+    color: #06230a; /* 9.5:1 on #3fd42c */
+  }
+
+  /* ---------- the page: hero column | tile grid ----------
+       hero  | rail
+       act   | rail
+       ·     | rail   ← the 1fr spacer pushes the hint down
+       hint  | rail                                        */
+
+  [data-console="xbox"] #home {
+    height: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(226px, var(--xbh-side)) minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "hero rail"
+      "act  rail"
+      ".    rail"
+      "hint rail";
+    column-gap: clamp(16px, 2vw, 32px);
+    row-gap: clamp(8px, 1.3vh, 16px);
+    padding: clamp(2px, 0.6vh, 8px) clamp(18px, 3.5vw, 54px) clamp(10px, 1.8vh, 20px);
+    justify-content: stretch;
+    align-content: stretch;
+  }
+
+  /* ---------- hero block, top-left ---------- */
+
+  [data-console="xbox"] #hero {
+    grid-area: hero;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: clamp(10px, 1.4vh, 16px);
+    min-height: 0;
+    padding: clamp(12px, 1.6vh, 18px) clamp(12px, 1vw, 18px) clamp(14px, 1.8vh, 20px);
+    border-radius: 10px;
+    border: 1px solid color-mix(in oklab, white 8%, transparent);
+    background: linear-gradient(158deg,
+      color-mix(in oklab, var(--surface) 78%, transparent),
+      color-mix(in oklab, var(--surface) 30%, transparent) 80%);
+    box-shadow: 0 20px 46px -30px rgba(0, 0, 0, 0.95);
+  }
+
+  /* the focused glyph, blown up as key art behind the panel.
+     polish.css hides it under xbox (1-1-0) — 2-1-0 brings it back. */
+  [data-console="xbox"] #hero #hero-watermark {
+    display: block;
+    top: auto;
+    right: -12%;
+    bottom: -16%;
+    transform: none;
+    font-size: clamp(140px, 26vh, 250px);
+    opacity: 0.06;
+    filter: blur(1px) saturate(1.25);
+  }
+
+  /* a large square art plate, sized off the tile cell */
+  [data-console="xbox"] #hero-icon {
+    width: min(100%, calc(var(--xbh-cell) * 1.12));
+    height: auto;
+    aspect-ratio: 1;
+    border-radius: 8px;
+    font-size: clamp(38px, 8vh, 72px);
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.09),
+      0 16px 36px -20px rgba(0, 0, 0, 0.95);
+  }
+
+  [data-console="xbox"] #hero-text { width: 100%; min-width: 0; }
+
+  [data-console="xbox"] #hero-title {
+    font-size: clamp(19px, 1.55vw, 25px);
+    line-height: 1.15;
+    letter-spacing: 0.005em;
+    text-transform: none; /* Xbox titles are sentence case */
+    overflow-wrap: anywhere;
+  }
+
+  [data-console="xbox"] #hero-desc {
+    margin-top: 7px;
+    max-width: none;
+    font-size: clamp(12.5px, 0.92vw, 14px);
+    line-height: 1.45;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    overflow: hidden;
+  }
+
+  [data-console="xbox"] #hero-actions { margin-top: 12px; gap: 8px; }
+
+  [data-console="xbox"] .hero-btn {
+    font-size: 12.5px;
+    letter-spacing: 0.04em;
+    padding: 9px 15px;
+  }
+
+  /* ---------- small stat cards, 2-up under the hero ---------- */
+
+  [data-console="xbox"] #activity {
+    grid-area: act;
+    padding: 0;
+    min-width: 0;
+  }
+
+  [data-console="xbox"] .activity-cards {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  [data-console="xbox"] .act-card {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
+    max-width: none;
+    padding: 9px 12px 10px;
+    border-radius: 6px;
+    border: 1px solid color-mix(in oklab, white 9%, transparent);
+    background: linear-gradient(180deg,
+      color-mix(in oklab, var(--surface-2) 72%, transparent),
+      color-mix(in oklab, var(--surface-2) 30%, transparent));
+  }
+
+  [data-console="xbox"] .act-card .act-value { font-size: 19px; }
+
+  [data-console="xbox"] .act-card .act-label {
+    color: var(--ink-2);
+    font-size: 10.5px;
+    letter-spacing: 0.07em;
+  }
+
+  /* ---------- button legend, bottom of the hero column ---------- */
+
+  /* --ink-2, not --ink-3: the wash below puts a green cast under this
+     corner, and assassins.css darkens #hint to #5d5d57 (1-1-0) for a
+     light surface it no longer has. 1-1-0 here, loading later, wins. */
+  [data-console="xbox"] #hint {
+    grid-area: hint;
+    align-self: end;
+    text-align: left;
+    font-size: 11px;
+    line-height: 1.7;
+    letter-spacing: 0.11em;
+    color: var(--ink-2);
+  }
+
+  /* ============================================================
+     3. The tile grid — one big square, small squares beside and
+        beneath. Columns flow down-then-right in three fixed rows,
+        so the block keeps its shape and scrolls sideways.
+
+        cols:  1     2     3     4   …
+        row1 [         ] [ 4 ] [ 7 ]
+        row2 [    1    ] [ 5 ] [ 8 ]
+        row3 [ 2 ] [ 3 ] [ 6 ] [ 9 ]
+
+        Track maths: every column is exactly --xbh-cell wide and
+        every row exactly --xbh-cell tall, so 1x1 tiles are square
+        by construction — they stretch to their track, which is why
+        base.css's aspect-ratio is switched off here rather than
+        left to interact with stretch alignment. The anchor spans
+        2x2 and is pinned to the top of its span at 2·cell + gut,
+        which is precisely its own width — square too — leaving
+        --xbh-lab underneath for its label, the same gap every
+        other tile gets.
+     ============================================================ */
+
+  [data-console="xbox"] #rail-wrap {
+    grid-area: rail;
+    padding: 0;
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  [data-console="xbox"] #rail,
+  [data-console="xbox"][data-theme="minecraft"] #rail {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(3, var(--xbh-cell));
+    grid-auto-columns: var(--xbh-cell);
+    column-gap: var(--xbh-gut);
+    row-gap: calc(var(--xbh-gut) + var(--xbh-lab));
+    justify-content: start;
+    align-content: start;
+    width: 100%;
+    height: 100%;
+    padding: 6px 14px calc(var(--xbh-lab) + 8px) 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: none;
+    scroll-padding-inline: 18px;
+  }
+
+  [data-console="xbox"] #rail .tile {
+    width: auto;
+    height: auto;
+    min-width: 0;
+    flex: none;
+    aspect-ratio: auto; /* the square track already is the square */
+    scroll-snap-align: none;
+    /* sharp and immediate — roughly half the base 220ms easing */
+    transition:
+      transform 130ms cubic-bezier(.22, .8, .3, 1),
+      box-shadow 110ms linear,
+      border-color 110ms linear;
+  }
+
+  /* the anchor */
+  [data-console="xbox"] #rail .tile:first-child {
+    grid-column: span 2;
+    grid-row: span 2;
+    align-self: start;
+    height: calc(var(--xbh-cell) * 2 + var(--xbh-gut));
+    font-size: clamp(50px, 4.6vw, 88px);
+  }
+
+  [data-console="xbox"] #rail .tile:first-child .badge {
+    top: 12px;
+    right: 12px;
+  }
+
+  /* ---------- labels: below the tile, sentence case, left, always on ---------- */
+
+  [data-console="xbox"] #rail .tile .tile-label {
+    position: absolute;
+    left: 2px;
+    right: 0;
+    top: auto;
+    bottom: calc(4px - var(--xbh-lab)); /* −22px: 6px clear of the tile */
+    opacity: 1;
+    padding: 0;
+    background: none;
+    text-align: left;
+    text-transform: none;
+    text-shadow: none;
+    font-size: 12.5px;
+    font-weight: 600;
+    line-height: 1.3;
+    letter-spacing: 0.01em;
+    color: var(--ink-2);
+  }
+
+  [data-console="xbox"] #rail .tile.focused .tile-label {
+    color: var(--ink);
+    font-weight: 700;
+  }
+
+  /* minecraft's VT323 is illegible under ~15px — a 16px label needs a
+     taller reserve under each tile, so widen the row gap with it */
+  [data-console="xbox"][data-theme="minecraft"] {
+    --xbh-lab: 31px;
+    /* VT323 also inflates the top bar and tab row, so give the cell
+       derivation more headroom than the 284px default reserve */
+    --xbh-cell: clamp(94px, calc((100vh - 320px) / 3), 200px);
+  }
+  [data-console="xbox"][data-theme="minecraft"] #rail .tile .tile-label { font-size: 16px; }
+  [data-console="xbox"][data-theme="minecraft"] .act-card .act-label { font-size: 15px; }
+  [data-console="xbox"][data-theme="minecraft"] #profile-name { font-size: 16px; }
+  [data-console="xbox"][data-theme="minecraft"] #profile-score { font-size: 15px; }
+  [data-console="xbox"][data-theme="minecraft"] .pill { font-size: 15px; }
 }
 
-[data-console="xbox"] #activity { order: 1; }
-[data-console="xbox"] #hint { order: 2; }
+/* short viewports: two rows instead of three, cell re-derived */
+@media (min-width: 721px) and (max-height: 640px) {
+  [data-console="xbox"] { --xbh-cell: clamp(90px, calc((100vh - 244px) / 2), 190px); }
 
-/* compact hero: short title, description clamped to 2 lines */
-[data-console="xbox"] #hero-title {
-  font-size: clamp(22px, 2.2vw, 26px);
-  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.45); /* over the key-art glow */
+  [data-console="xbox"] #rail,
+  [data-console="xbox"][data-theme="minecraft"] #rail {
+    grid-template-rows: repeat(2, var(--xbh-cell));
+  }
 }
 
-[data-console="xbox"] #hero-desc {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  overflow: hidden;
-  max-width: 56ch;
+/* narrow desktops / tablets: give the grid more of the width */
+@media (min-width: 721px) and (max-width: 1079px) {
+  [data-console="xbox"] { --xbh-side: 31%; }
+  [data-console="xbox"] #hero-desc { -webkit-line-clamp: 2; line-clamp: 2; }
 }
 
-/* ---------- tile rail: focused tile in the green ring ---------- */
+/* a tablet is wide enough for the desktop structure but is still
+   touched — the tabs above are the only control this file resizes */
+@media (min-width: 721px) and (pointer: coarse) {
+  [data-console="xbox"] .pill { min-height: 44px; padding: 11px 18px; }
+}
 
-[data-console="xbox"] #rail { padding: 22px 18px 58px; }
-
-/* the minecraft-repair rule in xbox.css is more specific — match it */
-[data-console="xbox"][data-theme="minecraft"] #rail { padding: 22px 18px 58px; }
+/* ============================================================
+   4. Selection — crisp green ring hugging the edge + a small lift.
+   Applies at every width; mobile.css (later, 0-3-0) drops the
+   transform on the phone grid, which is what we want there.
+   ============================================================ */
 
 [data-console="xbox"] .tile.focused {
-  transform: scale(1.12);
-  border-color: #3fd42c;
-  filter: none; /* cyberpunk glitch shadows stay off */
+  transform: translateY(-4px) scale(1.03);
+  z-index: 3;
+  border-color: var(--xbh-ring);
+  filter: none;            /* cyberpunk glitch shadows off */
+  animation: none;         /* xbox.css's breathe pulse off — no bloom */
   box-shadow:
-    0 0 0 3px #3fd42c,
-    0 0 20px 3px rgba(63, 212, 44, 0.4);
-  animation: xbh-breathe 2.2s ease-in-out infinite;
+    inset 0 0 0 1px color-mix(in oklab, var(--xbh-ring) 42%, transparent),
+    0 0 0 2px var(--xbh-ring),
+    0 0 0 3.5px rgba(0, 0, 0, 0.6),
+    0 12px 20px -12px rgba(0, 0, 0, 0.95);
 }
 
-/* outrank polish.css's [data-console][data-theme="minecraft"] #rail repair */
+/* Two theme files already reach into xbox-console focus at a higher
+   weight than the rule above — fx/polish/minecraft paint hotbar-slot
+   tiles with a white outline (1-4-0) and assassins swaps in its own
+   red ring (0-4-0). Restate the green ring at matching weight; this
+   file loads after all of them. */
 [data-console="xbox"][data-theme="minecraft"] #rail .tile.focused {
-  border-color: #3fd42c;
+  transform: translateY(-4px) scale(1.03);
+  border-color: var(--xbh-ring);
   box-shadow:
-    0 0 0 3px #3fd42c,
-    0 0 20px 3px rgba(63, 212, 44, 0.4);
+    inset 0 0 0 1px color-mix(in oklab, var(--xbh-ring) 42%, transparent),
+    0 0 0 2px var(--xbh-ring),
+    0 0 0 3.5px rgba(0, 0, 0, 0.6),
+    0 12px 20px -12px rgba(0, 0, 0, 0.95);
 }
 
-@keyframes xbh-breathe {
-  0%, 100% {
-    box-shadow:
-      0 0 0 3px #3fd42c,
-      0 0 12px 1px rgba(63, 212, 44, 0.3);
-  }
-  50% {
-    box-shadow:
-      0 0 0 3px #3fd42c,
-      0 0 32px 8px rgba(63, 212, 44, 0.6);
-  }
+[data-console="xbox"][data-theme="assassins"] .tile.focused {
+  transform: translateY(-4px) scale(1.03);
+  border-color: var(--xbh-ring);
+  animation: none;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--xbh-ring) 42%, transparent),
+    0 0 0 2px var(--xbh-ring),
+    0 0 0 3.5px rgba(0, 0, 0, 0.6),
+    0 12px 20px -12px rgba(0, 0, 0, 0.95);
 }
 
-/* labels: sentence case, left-aligned under the tile, Xbox-style */
-[data-console="xbox"] .tile .tile-label {
-  text-align: left;
-  left: 3px;
-  right: 3px;
-  bottom: -30px;
-  text-transform: none;
-  letter-spacing: 0.01em;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink-3); /* unfocused stays dim */
-}
-
-[data-console="xbox"] .tile.focused .tile-label {
-  color: var(--ink);
-  font-weight: 700;
-}
-
-/* ---------- wide secondary cards (bottom row) ---------- */
-
-[data-console="xbox"] .act-card {
-  min-width: 190px;
-  flex: 1 1 190px;
-  max-width: 330px;
-  padding: 16px 20px 18px;
+[data-console="xbox"] #rail:focus-visible,
+[data-console="xbox"][data-theme="minecraft"] #rail:focus-visible {
   border-radius: 8px;
-  border: 1px solid color-mix(in oklab, white 9%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in oklab, white 6%, transparent), transparent 45%),
-    linear-gradient(155deg,
-      var(--surface-2) 10%,
-      color-mix(in oklab, var(--surface-2) 40%, black) 70%,
-      color-mix(in oklab, var(--surface-2) 12%, black) 130%);
+  box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--xbh-ring) 50%, transparent);
 }
 
-[data-console="xbox"] .act-card .act-value { font-size: 24px; }
+/* ============================================================
+   5. Background — charcoal→green vertical wash, a green glow
+   behind the hero column, and a soft vignette. Painted on
+   #ambient itself; the theme's own radials stay in the stack
+   underneath at reduced strength, and #theme-fx is untouched.
+   The :not() guards hand the layer back to ps5home.css whenever
+   the video or storm background is switched on.
+   ============================================================ */
 
-[data-console="xbox"] .act-card .act-label {
-  color: var(--ink-2); /* brighter: card tops sit on surface-2 */
-  font-size: 11.5px;
-}
-
-/* ---------- full-bleed key art: big accent glow + edge vignette ----------
-   Layered on #ambient itself so polish.css's per-theme art on the
-   pseudo-elements still shows through underneath. #theme-fx untouched. */
-
-[data-console="xbox"] #ambient {
+[data-console="xbox"]:not([data-bg="video"]):not([data-bg="storm"]) #ambient {
   background:
-    /* vignette (topmost) */
-    radial-gradient(140% 105% at 50% 42%,
-      transparent 55%, rgba(0, 0, 0, 0.38) 82%, rgba(0, 0, 0, 0.62) 100%),
-    /* dramatic center-top key-art glow, theme-accent tinted */
-    radial-gradient(85% 68% at 50% -8%,
-      color-mix(in oklab, var(--accent) 32%, transparent), transparent 62%),
+    /* vignette, topmost */
+    radial-gradient(132% 100% at 50% 44%,
+      transparent 46%, rgba(0, 0, 0, 0.26) 80%, rgba(0, 0, 0, 0.52) 100%),
+    /* soft green glow behind the hero block, top-left */
+    radial-gradient(46% 44% at 15% 26%, rgba(63, 212, 44, 0.20), transparent 72%),
+    /* charcoal → green vertical wash */
+    linear-gradient(180deg,
+      rgba(22, 24, 25, 0.78) 0%,
+      rgba(18, 26, 20, 0.62) 40%,
+      rgba(13, 38, 19, 0.58) 76%,
+      rgba(11, 48, 21, 0.66) 100%),
+    /* theme art still reads through below */
     radial-gradient(120% 90% at 75% 10%, var(--ambient-a, transparent), transparent 60%),
     radial-gradient(100% 80% at 15% 90%, var(--ambient-b, transparent), transparent 55%),
     var(--bg);
 }
 
-/* ---------- minecraft (VT323 is illegible under ~15px) ---------- */
-
-[data-console="xbox"][data-theme="minecraft"] #profile-name { font-size: 16px; }
-[data-console="xbox"][data-theme="minecraft"] #profile-score { font-size: 15px; }
-[data-console="xbox"][data-theme="minecraft"] .tile .tile-label { font-size: 16px; }
-[data-console="xbox"][data-theme="minecraft"] .act-card .act-label { font-size: 15px; }
-
-/* ---------- phone (≤720px) ---------- */
+/* ============================================================
+   6. Phones (≤720px) — mobile.css owns the layout; these are the
+   few identity bits it does not set.
+   ============================================================ */
 
 @media (max-width: 720px) {
-  /* theme dots wrap to their own full row under the topbar */
-  [data-console="xbox"] #theme-switcher {
-    order: 2;
-    flex: 1 1 100%;
-    justify-content: center;
-    overflow-x: auto;
-    padding-bottom: 4px;
-    scrollbar-width: none;
-  }
-
-  /* base.css shrinks these to 32px — keep tap targets ≥34px */
-  [data-console="xbox"] .theme-dot,
-  [data-console="xbox"] .top-icon-btn {
-    width: 34px;
-    height: 34px;
-  }
-
-  /* polish.css hides #profile-name here; center the score beside the avatar */
+  /* mobile.css already owns the 44px tap targets, the chip padding and
+     the avatar size. The one thing it cannot know: polish.css hides
+     #profile-name here, so the two-row chip grid above would leave the
+     gamerscore stranded on row 2. Centre it beside the avatar. */
   [data-console="xbox"] #profile-score {
     grid-row: 1 / span 2;
     align-self: center;
   }
-
-  /* centered + overflow would clip the first pill — start-align instead */
-  [data-console="xbox"] #pill-nav { justify-content: flex-start; }
-
-  /* wide cards become a scrollable strip (polish.css scrolls #activity) */
-  [data-console="xbox"] .act-card {
-    flex: 0 0 auto;
-    min-width: 150px;
-    max-width: none;
-  }
-
-  [data-console="xbox"] .tile.focused { transform: scale(1.08); }
-
-  [data-console="xbox"] #home { padding-bottom: max(4vh, 20px); }
 }
 
-/* ---------- reduced motion: static ring, no breathe ---------- */
+/* ============================================================
+   7. Reduced motion — the ring alone carries selection.
+   ============================================================ */
 
 @media (prefers-reduced-motion: reduce) {
-  [data-console="xbox"] .tile.focused {
+  /* all three weights have to be restated, or the theme-composition
+     rules above (1-4-0 / 0-4-0) would keep their lift */
+  [data-console="xbox"] .tile.focused,
+  [data-console="xbox"][data-theme="assassins"] .tile.focused,
+  [data-console="xbox"][data-theme="minecraft"] #rail .tile.focused {
+    transform: none;
     animation: none;
-    box-shadow:
-      0 0 0 3px #3fd42c,
-      0 0 18px 2px rgba(63, 212, 44, 0.4);
   }
+
+  [data-console="xbox"] #rail .tile { transition: none; }
+
+  [data-console="xbox"] .activity-cards { animation: none; }
 }

@@ -1,64 +1,437 @@
-/* PS5 home layout (PlayStation console mode): Games/Media-style text tabs
-   top-left, tile row up top with a big focused tile, hero details beneath,
-   widget cards in the lower half. Scoped to [data-console="ps"]; theme files
-   loading after this may restyle the tabs (GTA pause-menu, Minecraft tabs). */
+/* ============================================================
+   PlayStation 5 HOME — layout language, not palette.
+   Scoped to html[data-console="ps"]. Everything here is original
+   CSS geometry (gradients, rings, pseudo-element blooms); no game
+   artwork, logos or ripped type of any kind.
+
+   The five structural moves that say "PS5" at a glance:
+     1. full-bleed KEY ART — a soft accent bloom high and slightly
+        right over near-black, cross-fading as focus moves
+     2. a slim, near-empty status row: icons + clock hard right
+     3. segmented TEXT tabs with a small bright underline (no pills)
+     4. ONE horizontal row of large rounded squares, left aligned,
+        the focused one ~1.35x, lifted, thin light ring + wide shadow
+     5. the focused app's name/description/actions BELOW that row,
+        in large LIGHT type, with the activity strip quieter still
+
+   Load order note: this file loads after base/themes/fx/xbox/polish
+   and before the per-theme game files, so theme rules of equal
+   specificity still win — the compound [data-console][data-theme]
+   selectors below are the ones that must hold regardless of order.
+   ============================================================ */
+
+/* ---------- 0. the focus accent, as an animatable colour ----------
+   main.js writes the focused tile's accent to --hero-accent on
+   #hero-icon (inline). Registering --ps-key as a <color> is what
+   makes the key-art bloom CROSS-FADE instead of jumping: unregistered
+   custom properties are not interpolable. Without @property support
+   the value still resolves, the change is just instant. */
+
+@property --ps-key {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #45b8f2;
+}
+
+[data-console="ps"] {
+  /* one gutter for the whole column, so the first icon, the app title and
+     the activity strip all share a left edge */
+  --ps-gutter: clamp(22px, 3.4vw, 52px);
+  /* vignette stops — overridden for the one light theme further down */
+  --ps-vig-1: rgba(3, 6, 13, 0.50);
+  --ps-vig-2: rgba(1, 3, 8, 0.88);
+  --ps-ring: rgba(255, 255, 255, 0.62);
+}
+
+/* ---------- 1. full-bleed key art -------------------------------
+   #hero-icon is the only element in the DOM that carries the focused
+   app's accent, so it hosts the two fixed background layers. The icon
+   box itself is collapsed to nothing (PS5 shows no icon down there —
+   just the title), and every property that would turn it into a
+   containing block for a fixed child is neutralised, per theme, at a
+   specificity no single-attribute theme rule can beat. */
+
+[data-console="ps"] #hero-icon,
+[data-console="ps"][data-theme="assassins"] #hero-icon,
+[data-console="ps"][data-theme="cyberpunk"] #hero-icon,
+[data-console="ps"][data-theme="gtav"] #hero-icon,
+[data-console="ps"][data-theme="minecraft"] #hero-icon,
+[data-console="ps"][data-theme="masseffect"] #hero-icon,
+[data-console="ps"][data-theme="xboxgreen"] #hero-icon {
+  --ps-key: var(--hero-accent, var(--accent));
+  position: static;
+  width: 0;
+  height: 0;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  font-size: 0;
+  line-height: 0;
+  border-radius: 0;
+  box-shadow: none;
+  /* these six would trap the fixed pseudo-elements inside the icon */
+  filter: none;
+  backdrop-filter: none;
+  clip-path: none;
+  transform: none;
+  perspective: none;
+  contain: none;
+  will-change: auto;
+  transition: --ps-key 520ms ease;
+}
+
+[data-console="ps"] #hero-icon::before,
+[data-console="ps"] #hero-icon::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* the bloom: one hot core high and right of centre, a much wider halo
+   behind it, and a faint bounce low-left so the frame is not empty.
+   The app accents are dark and muted (#2f6f8f, #6b5310…), so each stop
+   is lifted toward white — a dark colour over near-black is not light. */
+[data-console="ps"] #hero-icon::before {
+  background:
+    radial-gradient(40vmax 30vmax at 70% -2%,
+      color-mix(in oklab, var(--ps-key) 34%, white 66%), transparent 68%),
+    radial-gradient(66vmax 48vmax at 66% 4%,
+      color-mix(in oklab, var(--ps-key) 58%, white 42%), transparent 66%),
+    radial-gradient(104vmax 82vmax at 78% -16%,
+      color-mix(in oklab, var(--ps-key) 76%, white 24%), transparent 62%),
+    radial-gradient(68vmax 56vmax at 10% 108%,
+      color-mix(in oklab, var(--ps-key) 84%, white 16%), transparent 58%);
+  opacity: 0.58;
+}
+
+/* the fall-off: near-black at every edge, plus a floor gradient so the
+   large light hero type below always has something dark under it */
+[data-console="ps"] #hero-icon::after {
+  background:
+    radial-gradient(128% 112% at 64% 12%,
+      transparent 30%, var(--ps-vig-1) 74%, var(--ps-vig-2) 100%),
+    linear-gradient(180deg, transparent 44%, var(--ps-vig-1) 100%);
+}
+
+/* assassins is the one LIGHT theme (#17171a ink on #eceae4) — a black
+   vignette there would wreck contrast, so it gets a cool pale haze and
+   a much weaker bloom instead of the near-black frame. */
+[data-console="ps"][data-theme="assassins"] {
+  --ps-vig-1: rgba(206, 210, 214, 0.30);
+  --ps-vig-2: rgba(178, 184, 190, 0.44);
+  --ps-ring: rgba(23, 23, 26, 0.34);
+}
+
+[data-console="ps"][data-theme="assassins"] #hero-icon::before { opacity: 0.20; }
+
+/* ---------- 2. the status row ------------------------------------
+   PS5 chrome is almost nothing: a quiet mark on the left, then small
+   round icons and the time pushed hard right. */
+
+[data-console="ps"] #topbar {
+  padding: max(10px, env(safe-area-inset-top)) var(--ps-gutter) 2px;
+  align-items: center;
+  gap: 10px;
+}
+
+[data-console="ps"] #brand {
+  font-size: clamp(11.5px, 1vw, 13.5px);
+  font-weight: 600;
+  letter-spacing: 0.34em;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+[data-console="ps"] #brand-sub { display: none; }
+
+[data-console="ps"] #brand-mark {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  box-shadow: none;
+  opacity: 0.8;
+}
+
+[data-console="ps"] .topbar-right { gap: clamp(9px, 1.1vw, 15px); }
+
+[data-console="ps"] .top-icon-btn {
+  width: 34px;
+  height: 34px;
+  font-size: 16px;
+  color: var(--ink-2);
+  border-color: color-mix(in oklab, var(--ink-3) 34%, transparent);
+}
+
+[data-console="ps"] .top-icon-btn svg { width: 17px; height: 17px; }
+
+[data-console="ps"] #profile-chip {
+  padding: 2px 10px 2px 2px;
+  border-color: color-mix(in oklab, var(--ink-3) 28%, transparent);
+}
+
+[data-console="ps"] #profile-avatar { width: 26px; height: 26px; font-size: 12.5px; }
+[data-console="ps"] #profile-name { font-size: 12.5px; }
+
+[data-console="ps"] .theme-dot { width: 28px; height: 28px; font-size: 10px; }
+
+/* clock last, small, right-aligned: date sits ahead of the time and
+   base.css already drops it under 720px */
+[data-console="ps"] #clock {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+[data-console="ps"] #clock-time {
+  font-size: 15.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+[data-console="ps"] #clock-date {
+  order: -1;
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+}
+
+/* ---------- 3. segmented text tabs -------------------------------
+   plain words, generously spaced, no chrome; the active one is marked
+   by a short bright underline that slides open. polish.css hides
+   #pill-nav globally (1-0-0) — [data-console="ps"] #pill-nav is 1-1-0
+   and wins on specificity, not order. */
 
 [data-console="ps"] #pill-nav {
   display: flex;
-  gap: 4px;
-  padding: 0 clamp(18px, 3.5vw, 54px) 4px;
+  gap: clamp(20px, 3vw, 46px);
+  padding: 2px var(--ps-gutter) 0;
   position: relative;
   z-index: 5;
+  overflow: visible;
 }
 
 [data-console="ps"] .pill {
+  position: relative;
+  flex: 0 0 auto;
   background: none;
   border: none;
-  border-radius: 8px;
-  color: var(--ink-3);
+  border-radius: 0;
+  box-shadow: none;
+  padding: 6px 2px 12px;
   font-family: var(--font-display);
-  font-size: clamp(16px, 1.8vw, 21px);
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  padding: 6px 14px;
+  font-size: clamp(13.5px, 1.25vw, 16.5px);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: none;
+  color: color-mix(in oklab, var(--ink-3) 88%, var(--ink));
+}
+
+/* the underline is the whole selection language — no fill, no border */
+[data-console="ps"] .pill::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  width: 0;
+  height: 2px;
+  border-radius: 2px;
+  transform: translateX(-50%);
+  background: var(--ink);
+  box-shadow: 0 0 10px color-mix(in oklab, var(--ink) 55%, transparent);
+  transition: width 240ms cubic-bezier(.2, .9, .3, 1.2), opacity 240ms ease;
+  opacity: 0;
+}
+
+[data-console="ps"] .pill:hover { color: var(--ink-2); background: none; }
+
+[data-console="ps"] .pill.active {
+  color: var(--ink);
+  background: none;
+  border-color: transparent;
+}
+
+[data-console="ps"] .pill.active::after { width: 20px; opacity: 1; }
+
+/* ---------- 4. home column order ---------------------------------
+   rail on top, then the focused app's details, then the quiet
+   activity strip, then the button hints. */
+
+[data-console="ps"] #home {
+  justify-content: flex-start;
+  gap: clamp(4px, 1.2vh, 18px);
+  padding-top: clamp(2px, 4vh, 46px);
+}
+
+[data-console="ps"] #rail-wrap { order: 1; padding: 0; }
+[data-console="ps"] #hero { order: 2; }
+[data-console="ps"] #activity { order: 3; }
+/* button prompts sit on the bottom edge of the frame, as on the console */
+[data-console="ps"] #hint { order: 4; margin-top: auto; }
+
+/* ---------- 5. THE ROW -------------------------------------------
+   one horizontal line of large rounded squares, left aligned, scrolls
+   sideways. Selection = size + light. Never a heavy border. */
+
+[data-console="ps"] #rail {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: clamp(12px, 1.4vw, 22px);
+  /* Vertical room for the 1.35x tile, its lift and its wide shadow;
+     overflow-y is hidden, so anything the padding does not cover is cut.
+     The inline padding is the page gutter with a 30px floor: a scroll
+     container's padding is inside its scrollable area, so the first
+     tile's enlarged ring has somewhere to go instead of being clipped. */
+  padding-block: clamp(32px, 5.6vh, 58px) clamp(36px, 6.2vh, 64px);
+  padding-inline: max(30px, var(--ps-gutter));
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: max(30px, var(--ps-gutter));
+}
+
+[data-console="ps"] .tile {
+  width: clamp(84px, min(9.6vw, 14vh), 138px);
+  aspect-ratio: 1;
+  border-radius: clamp(14px, 1.5vw, 22px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  scroll-snap-align: center;
+  /* calm: unfocused icons sit back in the frame */
+  filter: saturate(0.82) brightness(0.78);
+  box-shadow: 0 8px 22px -14px rgba(0, 0, 0, 0.9);
+  transition:
+    transform 300ms cubic-bezier(.22, 1.28, .36, 1),
+    filter 260ms ease,
+    box-shadow 260ms ease,
+    border-color 260ms ease;
+}
+
+/* the focused tile: bigger, lifted, a THIN light ring and a wide
+   diffuse shadow tinted by its own accent */
+[data-console="ps"] .tile.focused {
+  transform: translateY(-6px) scale(1.35);
+  z-index: 3;
+  filter: none;
+  border-color: transparent;
+  box-shadow:
+    0 0 0 1.5px var(--ps-ring),
+    0 0 0 5px color-mix(in oklab, var(--tile-accent, var(--accent)) 20%, transparent),
+    0 22px 46px -12px rgba(0, 0, 0, 0.75),
+    0 10px 60px -6px color-mix(in oklab, var(--tile-accent, var(--accent)) 45%, transparent);
+}
+
+/* press feedback has to be re-stated: polish.css's .tile.focused:active
+   is 0-3-0, the same weight as the rule above, and loses on order */
+[data-console="ps"] .tile:active { transform: scale(0.95); }
+[data-console="ps"] .tile.focused:active { transform: translateY(-4px) scale(1.26); }
+
+[data-console="ps"] .tile .badge {
+  top: 7px;
+  right: 7px;
+  font-size: 9.5px;
+  padding: 2px 7px;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+/* no captions in the row on pointer devices — the hero below names the
+   focused app, exactly as the console does. 0-3-0 beats polish.css's
+   (hover:none) .tile .tile-label at 0-2-0; mobile.css re-enables the
+   in-tile nameplates with an ID selector. */
+[data-console="ps"] .tile .tile-label { opacity: 0; }
+
+[data-console="ps"] #rail:focus-visible {
+  border-radius: 18px;
+  box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--accent) 45%, transparent);
+}
+
+/* ---------- 6. the focused app, below the row --------------------
+   large LIGHT type, a short description under it, actions under that.
+   #hero keeps polish.css's overflow:hidden for the watermark — the
+   key-art pseudos are position:fixed, so they escape it. */
+
+[data-console="ps"] #hero {
+  display: block;
+  min-height: 0;
+  padding: 0 var(--ps-gutter);
+}
+
+[data-console="ps"] #hero-watermark {
+  right: 1%;
+  font-size: clamp(110px, 15vw, 210px);
+  opacity: 0.05;
+}
+
+[data-console="ps"] #hero-title {
+  font-size: clamp(26px, 4.4vw, 54px);
+  font-weight: 400;
+  letter-spacing: 0.004em;
+  line-height: 1.04;
   text-transform: none;
 }
 
-[data-console="ps"] .pill:hover { color: var(--ink-2); }
-[data-console="ps"] .pill.active { color: var(--ink); background: none; }
-
-/* tile row first, PS5-style; hero details below it */
-[data-console="ps"] #home {
-  justify-content: flex-start;
-  gap: clamp(10px, 2.2vh, 24px);
+[data-console="ps"] #hero-desc {
+  margin-top: 8px;
+  max-width: 52ch;
+  font-size: clamp(13.5px, 1.2vw, 16.5px);
+  line-height: 1.45;
+  color: var(--ink-2);
 }
 
-[data-console="ps"] #rail-wrap { order: -1; }
+[data-console="ps"] #hero-actions { margin-top: clamp(10px, 1.8vh, 20px); gap: 12px; }
 
-[data-console="ps"] #rail { padding-top: 14px; padding-bottom: 50px; }
+[data-console="ps"] .hero-btn {
+  font-weight: 600;
+  font-size: 13.5px;
+  letter-spacing: 0.05em;
+  padding: 10px 26px;
+  border-width: 1px;
+  border-color: color-mix(in oklab, var(--ink-3) 45%, transparent);
+}
 
-[data-console="ps"] .tile { width: clamp(96px, 10.5vw, 148px); }
+/* ---------- 7. activity: a quiet strip, lower still --------------- */
 
-[data-console="ps"] .tile.focused { transform: scale(1.24); }
+[data-console="ps"] #activity {
+  margin-top: clamp(2px, 2.2vh, 26px);
+  padding: 0 var(--ps-gutter);
+}
 
-/* PS5 widget cards in the lower half */
-[data-console="ps"] #activity { margin-top: clamp(6px, 5vh, 64px); }
+[data-console="ps"] .activity-cards { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+[data-console="ps"] .activity-cards::-webkit-scrollbar { display: none; }
 
 [data-console="ps"] .act-card {
-  min-width: 186px;
-  padding: 16px 20px;
-  border-radius: 12px;
-  background: color-mix(in oklab, var(--surface) 66%, transparent);
-  backdrop-filter: blur(10px);
-  border-color: color-mix(in oklab, var(--ink-3) 26%, transparent);
+  min-width: 132px;
+  flex: 0 0 auto;
+  padding: 11px 18px;
+  border-radius: 10px;
+  border-color: color-mix(in oklab, var(--ink-3) 16%, transparent);
+  background: color-mix(in oklab, var(--surface) 42%, transparent);
+  backdrop-filter: blur(12px);
 }
 
-[data-console="ps"] .act-card .act-value { font-size: 26px; }
+[data-console="ps"] .act-card .act-value { font-size: 20px; font-weight: 600; }
+[data-console="ps"] .act-card .act-label { font-size: 10px; letter-spacing: 0.13em; }
 
-@media (max-width: 720px) {
-  [data-console="ps"] .tile { width: 36vw; }
-  [data-console="ps"] .tile.focused { transform: scale(1.12); }
-  [data-console="ps"] #activity { margin-top: 8px; }
+/* ---------- 8. button hints, bottom right ------------------------- */
+
+[data-console="ps"] #hint {
+  text-align: right;
+  padding: 0 var(--ps-gutter);
+  font-size: 11.5px;
+  opacity: 0.62;
+}
+
+/* ---------- 9. reduced motion ------------------------------------
+   base.css already blanket-kills transitions; this states the static
+   end-state for the pieces whose whole point is movement. */
+
+@media (prefers-reduced-motion: reduce) {
+  [data-console="ps"] .tile { transition: none; }
+  [data-console="ps"] .tile.focused { transform: scale(1.35); }
+  [data-console="ps"] .tile.focused:active { transform: scale(1.35); }
+  [data-console="ps"] .tile:active { transform: none; }
+  [data-console="ps"] #hero-icon { transition: none; }
+  [data-console="ps"] .pill::after { transition: none; }
 }
 
 /* ---------- animated background layers (video / storm) ---------- */
@@ -91,3 +464,29 @@ html[data-bg="video"] #ambient {
 
 html[data-bg="video"] #ambient::before,
 html[data-bg="video"] #ambient::after { content: none; }
+
+/* storm mode keeps the theme's ambient art and layers a storm sky on top of it.
+   the first background layer paints highest, so the lit cloud break and the
+   cool blue-grey darkening sit over the theme radials, which still read
+   through at 20-48%. same shape as the video scrim above, one layer deeper. */
+html[data-bg="storm"] #ambient {
+  background:
+    radial-gradient(95% 62% at 68% -6%, rgba(126, 158, 214, 0.32), transparent 62%),
+    linear-gradient(180deg, rgba(12, 20, 38, 0.52), rgba(7, 12, 26, 0.70) 56%, rgba(4, 8, 18, 0.80)),
+    radial-gradient(120% 90% at 75% 10%, var(--ambient-a, transparent), transparent 60%),
+    radial-gradient(100% 80% at 15% 90%, var(--ambient-b, transparent), transparent 55%),
+    var(--bg);
+}
+
+/* assassins is the one light theme (dark ink on #eceae4) — a dark scrim would
+   destroy its contrast, so it gets a pale cool haze instead. alphas are held
+   low enough that the darkest point still clears 4.5:1 for --accent and 12:1
+   for --ink; the rain and lightning above supply the storm. */
+html[data-bg="storm"][data-theme="assassins"] #ambient {
+  background:
+    radial-gradient(95% 62% at 68% -6%, rgba(226, 236, 250, 0.50), transparent 62%),
+    linear-gradient(180deg, rgba(134, 156, 188, 0.16), rgba(134, 156, 188, 0.20) 56%, rgba(134, 156, 188, 0.24)),
+    radial-gradient(120% 90% at 75% 10%, var(--ambient-a, transparent), transparent 60%),
+    radial-gradient(100% 80% at 15% 90%, var(--ambient-b, transparent), transparent 55%),
+    var(--bg);
+}

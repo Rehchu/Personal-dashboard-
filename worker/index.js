@@ -5,8 +5,15 @@
 // cookies signed with a server-side secret kept in D1.
 
 const COL_RE = /^[a-zA-Z0-9._-]{1,40}$/;
+const ARCHIVE_ID_RE = /^[a-z0-9][a-z0-9._-]{0,39}$/;
 const MAX_BODY = 6 * 1024 * 1024;        // sync payload cap
 const MAX_VIDEO = 600 * 1024 * 1024;     // background video cap
+const MAX_PART = 40 * 1024 * 1024;       // one multipart part; the edge caps a request body at 100 MB
+const MAX_PARTS = 10000;                 // R2 multipart part-number ceiling
+const MAX_CHUNK = 25 * 1024 * 1024;      // one archive chunk body
+const MAX_CHUNKS = 512;                  // ids allowed in one archive index
+const MAX_MEMORIES = 256 * 1024;         // memories text, in stored bytes
+const MAX_INDEX_BODY = 512 * 1024;       // memories plus the id list
 const SESSION_MS = 30 * 24 * 3600 * 1000;
 
 // Paths that must work without a session (login itself, PWA niceties).
@@ -149,15 +156,26 @@ function parseRange(request, size) {
   return { offset: start, length: end - start + 1, start, end };
 }
 
+// R2 hands back an opaque id; only ever pass it straight back to R2.
+const validUploadId = id => typeof id === 'string' && id.length >= 1 && id.length <= 300;
+
+// a browser-trimmed clip is whatever MediaRecorder produced (webm on Chrome,
+// mp4 on Safari), so store the uploaded type rather than assuming mp4
+function videoType(request) {
+  const ct = (request.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+  return /^video\/[a-z0-9.+-]{1,30}$/.test(ct) ? ct : 'video/mp4';
+}
+
 async function serveVideo(request, env) {
   const head = await env.MEDIA.head('bg.mp4');
-  if (!head) return env.ASSETS.fetch(request); // fall back to a committed static file
+  // no asset fallback: SPA not_found_handling would answer a video request with index.html at 200
+  if (!head) return json({ error: 'no video' }, 404);
   const size = head.size;
   const range = parseRange(request, size);
   const obj = await env.MEDIA.get('bg.mp4', range ? { range: { offset: range.offset, length: range.length } } : undefined);
   if (!obj) return new Response('gone', { status: 404 });
   const headers = {
-    'content-type': 'video/mp4',
+    'content-type': head.httpMetadata?.contentType || 'video/mp4',
     'accept-ranges': 'bytes',
     'cache-control': 'private, max-age=3600',
     etag: head.httpEtag,
@@ -169,6 +187,165 @@ async function serveVideo(request, env) {
   }
   headers['content-length'] = String(size);
   return new Response(obj.body, { status: 200, headers });
+}
+
+/* ---------- chat archive (private, chunked in R2) ---------- */
+
+const ARCHIVE_INDEX_KEY = 'archive/index.json';
+const CHUNK_PREFIX = 'archive/chunk/';
+
+// R2 pages a listing at 1000 keys, so follow the cursor or a big archive is only half swept
+async function listChunkKeys(env) {
+  const keys = [];
+  let cursor;
+  for (;;) {
+    const page = await env.MEDIA.list({ prefix: CHUNK_PREFIX, cursor });
+    for (const o of page.objects) keys.push(o.key);
+    if (!page.truncated) return keys;
+    cursor = page.cursor;
+  }
+}
+
+// R2 takes at most 1000 keys per delete call
+async function deleteKeys(env, keys) {
+  for (let i = 0; i < keys.length; i += 1000) await env.MEDIA.delete(keys.slice(i, i + 1000));
+}
+
+const EMPTY_INDEX = { rev: 0, count: 0, chunks: [], updatedAt: 0, memories: '' };
+
+// Returns { index, etag }. Only a genuinely ABSENT object may read as empty:
+// reporting rev 0 for a populated archive invites a baseRev-0 push that
+// overwrites the index and sweeps away every chunk it named. A stream error or
+// corrupt JSON therefore throws, and the route wrapper answers 500.
+async function readArchiveIndex(env) {
+  const obj = await env.MEDIA.get(ARCHIVE_INDEX_KEY);
+  if (!obj) return { index: { ...EMPTY_INDEX }, etag: null };
+  const text = await obj.text(); // outside the guard: an IO failure is not "empty"
+  let stored;
+  try {
+    stored = JSON.parse(text);
+  } catch {
+    throw new Error('stored archive index is unreadable');
+  }
+  return {
+    index: {
+      rev: Number.isInteger(stored?.rev) && stored.rev >= 0 ? stored.rev : 0,
+      count: Number.isInteger(stored?.count) && stored.count >= 0 ? stored.count : 0,
+      chunks: Array.isArray(stored?.chunks)
+        ? stored.chunks.filter(id => typeof id === 'string' && ARCHIVE_ID_RE.test(id)).slice(0, MAX_CHUNKS)
+        : [],
+      updatedAt: Number.isInteger(stored?.updatedAt) && stored.updatedAt >= 0 ? stored.updatedAt : 0,
+      memories: typeof stored?.memories === 'string' ? stored.memories : '',
+    },
+    etag: obj.etag,
+  };
+}
+
+// chunks the new index no longer names are leftovers from a bigger push
+async function sweepChunks(env, keep) {
+  const stale = (await listChunkKeys(env)).filter(k => !keep.has(k.slice(CHUNK_PREFIX.length)));
+  await deleteKeys(env, stale);
+}
+
+function chunkType(request) {
+  const ct = (request.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+  return ct === 'application/gzip' || ct === 'application/json' ? ct : 'application/octet-stream';
+}
+
+async function handleArchive(request, env, path) {
+  if (path === '/api/archive') {
+    if (request.method !== 'DELETE') return json({ error: 'method not allowed' }, 405);
+    const keys = await listChunkKeys(env);
+    const index = await env.MEDIA.head(ARCHIVE_INDEX_KEY);
+    await deleteKeys(env, keys);
+    if (index) await env.MEDIA.delete(ARCHIVE_INDEX_KEY);
+    return json({ ok: true, deleted: keys.length + (index ? 1 : 0) });
+  }
+
+  if (path === '/api/archive/index') {
+    if (request.method === 'GET') return json((await readArchiveIndex(env)).index);
+    if (request.method === 'PUT') {
+      const len = Number(request.headers.get('content-length') || 0);
+      if (len > MAX_INDEX_BODY) return json({ error: 'body too large' }, 413);
+      const body = await request.json().catch(() => null);
+      if (!body || !Number.isInteger(body.baseRev) || body.baseRev < 0) {
+        return json({ error: 'expected {baseRev, count, chunks, updatedAt, memories}' }, 400);
+      }
+      if (!Number.isInteger(body.count) || body.count < 0) return json({ error: 'bad count' }, 400);
+      const chunks = body.chunks;
+      if (!Array.isArray(chunks) || chunks.length > MAX_CHUNKS ||
+          !chunks.every(id => typeof id === 'string' && ARCHIVE_ID_RE.test(id))) {
+        return json({ error: 'bad chunk list' }, 400);
+      }
+      if (body.memories !== undefined && typeof body.memories !== 'string') {
+        return json({ error: 'bad memories' }, 400);
+      }
+
+      const { index: current, etag } = await readArchiveIndex(env);
+      if (body.baseRev !== current.rev) return json({ conflict: true, ...current }, 409);
+
+      // an omitted field must not erase the stored text
+      const memories = body.memories === undefined ? current.memories : body.memories;
+      // the char length short-circuits so an oversized string is never encoded
+      if (memories.length > MAX_MEMORIES ||
+          new TextEncoder().encode(memories).length > MAX_MEMORIES) {
+        return json({ error: 'memories too large' }, 400);
+      }
+      const updatedAt = Number.isInteger(body.updatedAt) && body.updatedAt >= 0
+        ? body.updatedAt : Date.now();
+
+      const next = { rev: current.rev + 1, count: body.count, chunks, updatedAt, memories };
+      // compare-and-set in R2, not in JS: the rev check above is a read followed
+      // by a write, so two devices pushing at once would both pass it and one
+      // push would be lost along with the chunks the other's sweep deletes
+      const written = await env.MEDIA.put(ARCHIVE_INDEX_KEY, JSON.stringify(next), {
+        httpMetadata: { contentType: 'application/json' },
+        onlyIf: etag ? { etagMatches: etag } : { etagDoesNotMatch: '*' },
+      });
+      if (!written) {
+        const fresh = await readArchiveIndex(env);
+        return json({ conflict: true, ...fresh.index }, 409);
+      }
+      try {
+        await sweepChunks(env, new Set(chunks));
+      } catch {
+        // the index is already written; a failed sweep only leaves garbage behind
+      }
+      return json({ rev: next.rev });
+    }
+    return json({ error: 'method not allowed' }, 405);
+  }
+
+  const m = path.match(/^\/api\/archive\/chunk\/([^/]+)$/);
+  if (m) {
+    // the id charset never needs percent-encoding, so the raw segment is matched as-is
+    const id = m[1];
+    if (!ARCHIVE_ID_RE.test(id)) return json({ error: 'bad chunk id' }, 400);
+    const key = CHUNK_PREFIX + id;
+
+    if (request.method === 'GET') {
+      const obj = await env.MEDIA.get(key);
+      if (!obj) return json({ error: 'no chunk' }, 404);
+      return new Response(obj.body, {
+        headers: {
+          'content-type': obj.httpMetadata?.contentType || 'application/octet-stream',
+          'cache-control': 'no-store',
+        },
+      });
+    }
+    if (request.method === 'PUT') {
+      const len = Number(request.headers.get('content-length') || 0);
+      if (len > MAX_CHUNK) return json({ error: 'chunk larger than 25 MB' }, 413);
+      // buffered so the cap holds even when the request declares no length
+      const bytes = await request.arrayBuffer();
+      if (bytes.byteLength > MAX_CHUNK) return json({ error: 'chunk larger than 25 MB' }, 413);
+      await env.MEDIA.put(key, bytes, { httpMetadata: { contentType: chunkType(request) } });
+      return json({ ok: true, bytes: bytes.byteLength });
+    }
+    return json({ error: 'method not allowed' }, 405);
+  }
+
+  return json({ error: 'not found' }, 404);
 }
 
 /* ---------- main ---------- */
@@ -269,7 +446,7 @@ export default {
         if (!len) return json({ error: 'missing content-length' }, 411);
         if (len > MAX_VIDEO) return json({ error: 'video larger than 600 MB' }, 413);
         await env.MEDIA.put('bg.mp4', request.body, {
-          httpMetadata: { contentType: 'video/mp4' },
+          httpMetadata: { contentType: videoType(request) },
         });
         return json({ ok: true, bytes: len });
       }
@@ -277,7 +454,95 @@ export default {
         await env.MEDIA.delete('bg.mp4');
         return json({ ok: true });
       }
+
+      // multipart upload: the only way past the 100 MB edge limit on a request body
+      if (path === '/api/media/bg/mpu/start' && request.method === 'POST') {
+        // contentType can only be set when the upload is created, not at complete(),
+        // so a browser-trimmed webm has to declare its container up front
+        const started = await request.json().catch(() => null);
+        const declared = (started?.type || '').split(';')[0].trim().toLowerCase();
+        const contentType = /^video\/[a-z0-9.+-]{1,30}$/.test(declared) ? declared : 'video/mp4';
+        try {
+          const mpu = await env.MEDIA.createMultipartUpload('bg.mp4', {
+            httpMetadata: { contentType },
+          });
+          return json({ uploadId: mpu.uploadId });
+        } catch {
+          return json({ error: 'could not start upload' }, 500);
+        }
+      }
+
+      if (path === '/api/media/bg/mpu/part' && request.method === 'PUT') {
+        const uploadId = url.searchParams.get('uploadId');
+        if (!validUploadId(uploadId)) return json({ error: 'bad uploadId' }, 400);
+        const raw = url.searchParams.get('part');
+        const partNumber = Number(raw);
+        if (!raw || !Number.isInteger(partNumber) || partNumber < 1 || partNumber > MAX_PARTS) {
+          return json({ error: 'bad part number' }, 400);
+        }
+        const len = Number(request.headers.get('content-length') || 0);
+        if (len > MAX_PART) return json({ error: 'part larger than 40 MB' }, 413);
+        if (!request.body) return json({ error: 'missing part body' }, 400);
+        try {
+          const mpu = env.MEDIA.resumeMultipartUpload('bg.mp4', uploadId);
+          const part = await mpu.uploadPart(partNumber, request.body);
+          return json({ partNumber: part.partNumber, etag: part.etag });
+        } catch {
+          return json({ error: 'part upload failed' }, 400);
+        }
+      }
+
+      if (path === '/api/media/bg/mpu/complete' && request.method === 'POST') {
+        const body = await request.json().catch(() => null);
+        if (!validUploadId(body?.uploadId)) return json({ error: 'bad uploadId' }, 400);
+        if (!Array.isArray(body.parts) || !body.parts.length) {
+          return json({ error: 'expected {uploadId, parts}' }, 400);
+        }
+        const parts = [];
+        for (const p of body.parts) {
+          const n = p?.partNumber;
+          const etag = p?.etag;
+          if (!Number.isInteger(n) || n < 1 || n > MAX_PARTS || typeof etag !== 'string' || !etag) {
+            return json({ error: 'bad part list' }, 400);
+          }
+          parts.push({ partNumber: n, etag });
+        }
+        parts.sort((a, b) => a.partNumber - b.partNumber);
+        try {
+          const mpu = env.MEDIA.resumeMultipartUpload('bg.mp4', body.uploadId);
+          const obj = await mpu.complete(parts);
+          // the cap can only be checked once the parts are assembled
+          if (obj?.size > MAX_VIDEO) {
+            await env.MEDIA.delete('bg.mp4');
+            return json({ error: 'video larger than 600 MB' }, 413);
+          }
+          return json({ ok: true, bytes: obj?.size ?? 0 });
+        } catch {
+          return json({ error: 'could not complete upload' }, 400);
+        }
+      }
+
+      if (path === '/api/media/bg/mpu/abort' && request.method === 'POST') {
+        const body = await request.json().catch(() => null);
+        if (!validUploadId(body?.uploadId)) return json({ error: 'bad uploadId' }, 400);
+        try {
+          await env.MEDIA.resumeMultipartUpload('bg.mp4', body.uploadId).abort();
+        } catch {
+          // an unknown or already-aborted upload leaves nothing to clean up
+        }
+        return json({ ok: true });
+      }
+
       return json({ error: 'not found' }, 404);
+    }
+
+    if (path === '/api/archive' || path.startsWith('/api/archive/')) {
+      if (!authed) return json({ error: 'sign in first' }, 401);
+      try {
+        return await handleArchive(request, env, path);
+      } catch {
+        return json({ error: 'archive storage unavailable' }, 500);
+      }
     }
 
     if (path.startsWith('/api/')) return json({ error: 'not found' }, 404);
