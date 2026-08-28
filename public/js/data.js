@@ -81,11 +81,21 @@ export const TILES = [
   },
   {
     id: 'archive',
-    title: 'Claude Archive',
+    title: 'Chat Archive',
     glyph: '🗂️',
     accent: '#7a5a2f',
     kind: 'module',
-    desc: 'Your Claude history and memories — auto-sorted into categories, searchable, all on-device.',
+    icon: 'claude.ai',
+    desc: 'Claude and Grok history, memories and attached files — sorted into categories, searchable, synced across your devices.',
+    actions: [{ label: 'Open', action: 'open' }],
+  },
+  {
+    id: 'expenses',
+    title: 'Expenses',
+    glyph: '💵',
+    accent: '#2f7a55',
+    kind: 'module',
+    desc: 'Monthly spending by category, against a budget you set, with last month for comparison.',
     actions: [{ label: 'Open', action: 'open' }],
   },
   {

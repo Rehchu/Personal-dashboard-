@@ -16,6 +16,7 @@ import * as github from './github.js';
 import * as fitness from './fitness.js';
 import * as writing from './writing.js';
 import * as notebook from './notebook.js';
+import * as expenses from './expenses.js';
 import * as cloudflare from './cloudflare.js';
 import * as today from './today.js';
 import * as habits from './habits.js';
@@ -30,7 +31,8 @@ const MODULES = {
   notebook: { title: 'Notebook', mount: notebook.mount },
   habits: { title: 'Habits', mount: habits.mount },
   dragons: { title: 'Dragon Vault', mount: dragons.mount },
-  archive: { title: 'Claude Archive', mount: archive.mount },
+  archive: { title: 'Chat Archive', mount: archive.mount },
+  expenses: { title: 'Expenses', mount: expenses.mount },
   cloudflare: { title: 'Cloudflare Fleet', mount: cloudflare.mount },
 };
 
@@ -169,6 +171,17 @@ const rail = $('#rail');
 let focusIndex = Math.min(load('ui.tile', 0), TILES.length - 1);
 let tileEls = [];
 
+// the mark of whatever service a tile opens, taken from its own link
+function iconHost(t) {
+  if (t.icon) return t.icon;
+  const link = (t.actions || []).find(a => a.href && a.href.startsWith('https://'));
+  try {
+    return link ? new URL(link.href).hostname : '';
+  } catch {
+    return '';
+  }
+}
+
 function renderRail() {
   rail.innerHTML = '';
   tileEls = TILES.map((t, i) => {
@@ -177,9 +190,14 @@ function renderRail() {
     tile.setAttribute('role', 'option');
     tile.setAttribute('aria-label', t.title);
     tile.style.setProperty('--tile-accent', t.accent);
-    tile.innerHTML = `<span aria-hidden="true">${t.glyph}</span>
+    const host = iconHost(t);
+    tile.innerHTML = `<span class="tile-glyph" aria-hidden="true">${t.glyph}</span>
+      ${host ? `<img class="tile-logo" src="/api/icon?host=${encodeURIComponent(host)}" alt="" aria-hidden="true" loading="lazy">` : ''}
       ${t.badge ? `<span class="badge">${esc(t.badge)}</span>` : ''}
       <span class="tile-label">${esc(t.title)}</span>`;
+    // a host with no reachable mark keeps its glyph rather than showing a gap
+    const logo = tile.querySelector('.tile-logo');
+    if (logo) logo.addEventListener('error', () => logo.remove(), { once: true });
     tile.addEventListener('click', () => {
       // touch devices: one tap opens (the focus-then-open dance is for
       // pointer/keyboard consoles, not phones)

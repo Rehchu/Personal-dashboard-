@@ -653,7 +653,7 @@ export function mount(root, tools) {
     <span class="muted" id="ar-count"></span>
     <button class="btn small" id="ar-sync">☁ Sync</button>
     <label class="btn small" style="cursor:pointer">⬆ Import
-      <input id="ar-file" type="file" multiple accept=".json,.jsonl,.zip,application/json,application/zip" hidden></label>`;
+      <input id="ar-file" type="file" multiple hidden></label>`;
 
   root.innerHTML = `
     <style id="archive-style">

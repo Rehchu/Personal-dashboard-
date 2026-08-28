@@ -321,3 +321,41 @@
 @media (prefers-reduced-motion: reduce) {
   .tile, .tile:active { transition: none; }
 }
+
+/* ---------- real service marks on the tiles ----------
+   Each tile carries the mark of whatever it opens, fetched from that
+   service's own site by the Worker and cached privately. It fades in on the
+   focused tile (which is what "hover" means on a touch screen) and the
+   emoji stays as the resting state and the fallback. */
+
+.tile .tile-glyph { transition: opacity 180ms ease; }
+
+.tile .tile-logo {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 44%;
+  height: 44%;
+  object-fit: contain;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+  filter: drop-shadow(0 2px 7px rgba(0, 0, 0, 0.55));
+}
+
+.tile.focused .tile-logo { opacity: 1; }
+.tile.focused .tile-glyph { opacity: 0; }
+
+@media (hover: hover) {
+  .tile:hover .tile-logo { opacity: 1; }
+  .tile:hover .tile-glyph { opacity: 0; }
+}
+
+/* the light theme has no dark ground for a drop shadow to read against */
+[data-theme="assassins"] .tile .tile-logo {
+  filter: drop-shadow(0 1px 3px rgba(23, 23, 26, 0.35));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile .tile-glyph, .tile .tile-logo { transition: none; }
+}

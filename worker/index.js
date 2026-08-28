@@ -189,6 +189,60 @@ async function serveVideo(request, env) {
   return new Response(obj.body, { status: 200, headers });
 }
 
+/* ---------- service marks for the app tiles ---------- */
+
+// Each tile shows the real mark of the service it opens, fetched from that
+// service's own site and cached privately. A fixed allowlist, never a
+// caller-supplied URL: this endpoint must not become an open proxy.
+const ICON_HOSTS = new Set([
+  'github.com', 'dash.cloudflare.com', 'www.cloudflare.com', 'claude.ai', 'grok.com',
+  'arisehub.myfaithtech.com', 'itportal.myfaithtech.com', 'www.arisecenla.church',
+  'apextraining.dev', 'ctrl-alt-pc-repair.dyer-hq.workers.dev',
+]);
+const ICON_PATHS = ['/apple-touch-icon.png', '/favicon.svg', '/favicon.ico', '/favicon.png'];
+const ICON_TTL = 30 * 24 * 3600 * 1000;
+const ICON_MAX = 256 * 1024;
+
+const iconResponse = (body, type) => new Response(body, {
+  headers: { 'content-type': type, 'cache-control': 'private, max-age=86400' },
+});
+
+async function serveIcon(env, url) {
+  const host = (url.searchParams.get('host') || '').toLowerCase();
+  if (!ICON_HOSTS.has(host)) return json({ error: 'unknown host' }, 400);
+
+  const key = `icons/${host}`;
+  const cached = await env.MEDIA.get(key);
+  const age = Date.now() - Number(cached?.customMetadata?.at || 0);
+  if (cached && age < ICON_TTL) {
+    return iconResponse(cached.body, cached.httpMetadata?.contentType || 'image/png');
+  }
+
+  for (const path of ICON_PATHS) {
+    try {
+      const res = await fetch(`https://${host}${path}`, {
+        redirect: 'follow',
+        signal: AbortSignal.timeout(5000),
+      });
+      const type = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+      if (!res.ok || !type.startsWith('image/')) continue;
+      const buf = await res.arrayBuffer();
+      if (!buf.byteLength || buf.byteLength > ICON_MAX) continue;
+      await env.MEDIA.put(key, buf, {
+        httpMetadata: { contentType: type },
+        customMetadata: { at: String(Date.now()) },
+      });
+      return iconResponse(buf, type);
+    } catch {
+      // try the next candidate path
+    }
+  }
+
+  // a stale copy beats no mark at all when the site is unreachable
+  if (cached) return iconResponse(cached.body, cached.httpMetadata?.contentType || 'image/png');
+  return json({ error: 'no icon' }, 404);
+}
+
 /* ---------- chat archive (private, chunked in R2) ---------- */
 
 const ARCHIVE_INDEX_KEY = 'archive/index.json';
@@ -438,6 +492,15 @@ export default {
 
     /* --- everything below needs a session cookie --- */
     const authed = await hasSession(request, env);
+
+    if (path === '/api/icon' && request.method === 'GET') {
+      if (!authed) return json({ error: 'sign in first' }, 401);
+      try {
+        return await serveIcon(env, url);
+      } catch {
+        return json({ error: 'icon unavailable' }, 502);
+      }
+    }
 
     if (path.startsWith('/api/media/')) {
       if (!authed) return json({ error: 'sign in first' }, 401);
