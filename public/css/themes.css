@@ -1,0 +1,228 @@
+/* ============================================================
+   Game themes. Each theme overrides the design tokens and adds
+   its own decorative fx layer. Toggled via <html data-theme="…">
+   ============================================================ */
+
+/* ---------------- Assassin's Creed ----------------
+   Animus charcoal + Creed crimson, engraved serif display. */
+[data-theme="assassins"] {
+  --bg: #101013;
+  --surface: #1a1a1f;
+  --surface-2: #26262d;
+  --ink: #f3efe7;
+  --ink-2: #c9c4b8;
+  --ink-3: #8b877d;
+  --accent: #e0362c;
+  --accent-2: #f3efe7;
+  --on-accent: #ffffff;
+  --chart: #e0362c; /* validated: in-band, ≥3:1 on surface */
+  --ambient-a: rgba(224, 54, 44, 0.16);
+  --ambient-b: rgba(240, 234, 220, 0.05);
+  --tile-radius: 10px;
+  --panel-radius: 8px;
+  --font-display: "Cinzel", "Times New Roman", serif;
+  --font-body: "Rajdhani", system-ui, sans-serif;
+  --nb-paper: #17171b;
+}
+
+[data-theme="assassins"] #theme-fx {
+  background:
+    repeating-linear-gradient(115deg, transparent 0 90px, rgba(243, 239, 231, 0.022) 90px 92px),
+    repeating-linear-gradient(-65deg, transparent 0 140px, rgba(224, 54, 44, 0.03) 140px 141px);
+}
+
+[data-theme="assassins"] #brand { letter-spacing: 0.22em; }
+
+[data-theme="assassins"] #brand-mark {
+  border-radius: 0;
+  clip-path: polygon(50% 0, 100% 100%, 50% 78%, 0 100%);  /* the insignia chevron */
+  box-shadow: 0 0 16px rgba(224, 54, 44, 0.8);
+}
+
+/* ---------------- Cyberpunk ----------------
+   Night City yellow on black, cyan/magenta glitch. */
+[data-theme="cyberpunk"] {
+  --bg: #07070a;
+  --surface: #101018;
+  --surface-2: #191926;
+  --ink: #f4f3ee;
+  --ink-2: #bdbcc2;
+  --ink-3: #7e7d88;
+  --accent: #fcee0a;
+  --accent-2: #00f0ff;
+  --on-accent: #121205;
+  --chart: #a08d0e; /* validated: in-band gold, ≥3:1 on surface */
+  --ambient-a: rgba(252, 238, 10, 0.10);
+  --ambient-b: rgba(0, 240, 255, 0.10);
+  --tile-radius: 6px;
+  --panel-radius: 6px;
+  --font-display: "Orbitron", system-ui, sans-serif;
+  --font-body: "Rajdhani", system-ui, sans-serif;
+  --nb-paper: #0d0d13;
+}
+
+[data-theme="cyberpunk"] #theme-fx {
+  background: repeating-linear-gradient(0deg, transparent 0 3px, rgba(0, 240, 255, 0.018) 3px 4px);
+}
+
+[data-theme="cyberpunk"] .tile,
+[data-theme="cyberpunk"] #hero-icon {
+  clip-path: polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 20px 100%, 0 calc(100% - 20px));
+  border-radius: 0;
+}
+
+[data-theme="cyberpunk"] #brand {
+  text-shadow: 2px 0 rgba(255, 0, 60, 0.55), -2px 0 rgba(0, 240, 255, 0.55);
+}
+
+[data-theme="cyberpunk"] .tile.focused {
+  box-shadow:
+    0 0 0 2px var(--accent),
+    6px 6px 0 -1px rgba(255, 0, 60, 0.55),
+    -6px -6px 0 -1px rgba(0, 240, 255, 0.45);
+}
+
+/* ---------------- GTA V ----------------
+   Los Santos night: money green, Vinewood sunset haze. */
+[data-theme="gtav"] {
+  --bg: #101012;
+  --surface: #1a1a1d;
+  --surface-2: #242428;
+  --ink: #f5f5f2;
+  --ink-2: #c4c4c0;
+  --ink-3: #85857f;
+  --accent: #8ed36f;
+  --accent-2: #f7a8c4;
+  --on-accent: #0d1509;
+  --chart: #55a83a; /* validated: in-band, ≥3:1 on surface */
+  --ambient-a: rgba(247, 168, 196, 0.13);   /* Vinewood sunset pink */
+  --ambient-b: rgba(142, 211, 111, 0.10);
+  --tile-radius: 16px;
+  --panel-radius: 12px;
+  --font-display: "Archivo Black", system-ui, sans-serif;
+  --font-body: "Rajdhani", system-ui, sans-serif;
+  --nb-paper: #151517;
+}
+
+[data-theme="gtav"] #theme-fx {
+  background:
+    linear-gradient(200deg, rgba(255, 154, 60, 0.05), transparent 45%),
+    linear-gradient(340deg, rgba(120, 81, 169, 0.07), transparent 50%);
+}
+
+[data-theme="gtav"] #brand { letter-spacing: 0.05em; font-weight: 400; }
+[data-theme="gtav"] #hero-title { font-weight: 400; letter-spacing: 0.02em; }
+
+/* ---------------- Minecraft ----------------
+   Blocky pixels, grass green + dirt brown. */
+[data-theme="minecraft"] {
+  --bg: #1a1a1e;
+  --surface: #26262b;
+  --surface-2: #333339;
+  --ink: #f0f0ea;
+  --ink-2: #c6c6bd;
+  --ink-3: #8b8b83;
+  --accent: #6cc349;
+  --accent-2: #b0793f;
+  --on-accent: #10230b;
+  --chart: #55a53b; /* validated: in-band, ≥3:1 on surface */
+  --ambient-a: rgba(108, 195, 73, 0.10);
+  --ambient-b: rgba(176, 121, 63, 0.09);
+  --tile-radius: 0px;
+  --panel-radius: 0px;
+  --font-display: "VT323", monospace;
+  --font-body: "VT323", monospace;
+  --nb-paper: #1f1f24;
+}
+
+[data-theme="minecraft"] body { font-size: 20px; }
+
+[data-theme="minecraft"] #theme-fx {
+  background:
+    repeating-linear-gradient(0deg, transparent 0 31px, rgba(255, 255, 255, 0.014) 31px 32px),
+    repeating-linear-gradient(90deg, transparent 0 31px, rgba(255, 255, 255, 0.014) 31px 32px);
+}
+
+[data-theme="minecraft"] .tile,
+[data-theme="minecraft"] #hero-icon,
+[data-theme="minecraft"] .panel,
+[data-theme="minecraft"] .card,
+[data-theme="minecraft"] .stat-tile,
+[data-theme="minecraft"] .btn,
+[data-theme="minecraft"] input,
+[data-theme="minecraft"] select,
+[data-theme="minecraft"] textarea {
+  border-radius: 0;
+}
+
+[data-theme="minecraft"] .tile {
+  border-width: 3px;
+  border-color: rgba(0, 0, 0, 0.5);
+  box-shadow: inset 3px 3px 0 rgba(255, 255, 255, 0.14), inset -3px -3px 0 rgba(0, 0, 0, 0.36);
+  image-rendering: pixelated;
+}
+
+[data-theme="minecraft"] .tile.focused {
+  transform: scale(1.14);
+  box-shadow:
+    inset 3px 3px 0 rgba(255, 255, 255, 0.14),
+    inset -3px -3px 0 rgba(0, 0, 0, 0.36),
+    0 0 0 3px var(--accent);
+}
+
+[data-theme="minecraft"] .theme-dot,
+[data-theme="minecraft"] .hero-btn { border-radius: 0; }
+
+[data-theme="minecraft"] #brand, [data-theme="minecraft"] #hero-title { letter-spacing: 0.06em; }
+
+/* ---------------- Mass Effect ----------------
+   Normandy holo-blue on deep space, N7 stripe. */
+[data-theme="masseffect"] {
+  --bg: #05080f;
+  --surface: #0c1420;
+  --surface-2: #152131;
+  --ink: #eef4fa;
+  --ink-2: #b4c4d4;
+  --ink-3: #74869a;
+  --accent: #45b8f2;
+  --accent-2: #e3453b;
+  --on-accent: #041019;
+  --chart: #3396cc; /* validated: in-band, ≥3:1 on surface */
+  --ambient-a: rgba(69, 184, 242, 0.13);
+  --ambient-b: rgba(227, 69, 59, 0.07);
+  --tile-radius: 12px;
+  --panel-radius: 10px;
+  --font-display: "Exo 2", system-ui, sans-serif;
+  --font-body: "Rajdhani", system-ui, sans-serif;
+  --nb-paper: #0a111c;
+}
+
+[data-theme="masseffect"] #theme-fx {
+  background:
+    radial-gradient(1.5px 1.5px at 18% 26%, rgba(255,255,255,0.35), transparent 100%),
+    radial-gradient(1px 1px at 64% 12%, rgba(255,255,255,0.28), transparent 100%),
+    radial-gradient(1.5px 1.5px at 82% 58%, rgba(255,255,255,0.22), transparent 100%),
+    radial-gradient(1px 1px at 38% 74%, rgba(255,255,255,0.26), transparent 100%),
+    radial-gradient(1px 1px at 91% 86%, rgba(255,255,255,0.2), transparent 100%),
+    radial-gradient(1px 1px at 8% 64%, rgba(255,255,255,0.22), transparent 100%),
+    repeating-linear-gradient(0deg, transparent 0 4px, rgba(69, 184, 242, 0.014) 4px 5px);
+}
+
+/* N7 stripe down the left edge */
+[data-theme="masseffect"] #theme-fx::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: linear-gradient(180deg, #e3453b 0 62%, #f4f6f8 62% 70%, transparent 70%);
+  opacity: 0.85;
+}
+
+[data-theme="masseffect"] .tile.focused {
+  box-shadow:
+    0 0 0 2px color-mix(in oklab, var(--accent) 80%, transparent),
+    0 0 34px -4px color-mix(in oklab, var(--accent) 60%, transparent),
+    inset 0 0 22px -8px color-mix(in oklab, var(--accent) 50%, transparent);
+}

@@ -1,0 +1,13 @@
+{
+  // Personal Dashboard — Cloudflare Worker (static assets only).
+  // Deploy:  npm install && npx wrangler deploy
+  // (first time: npx wrangler login)
+  // Local dev: npx wrangler dev
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "personal-dashboard",
+  "compatibility_date": "2026-08-01",
+  "assets": {
+    "directory": "./public",
+    "not_found_handling": "single-page-application"
+  }
+}
