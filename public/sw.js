@@ -2,7 +2,7 @@
 // /api/* is never cached (sync must always hit the network). Cross-origin
 // requests (fonts, CDN, GitHub) pass through untouched.
 
-const CACHE = 'dyerhq-v4';
+const CACHE = 'dyerhq-v5';
 const CORE = [
   '/', '/index.html', '/manifest.webmanifest',
   '/css/base.css', '/css/themes.css', '/css/fx.css', '/css/xbox.css', '/css/polish.css',
@@ -37,6 +37,25 @@ self.addEventListener('fetch', e => {
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/')) return;   // sync/auth are network-only
   if (url.pathname.startsWith('/media/')) return; // video streams (Range) — never cache
+
+  // The shell and its modules go network-first: cache-first served STALE CODE
+  // for a whole load after every deploy, so a new feature appeared to be
+  // missing until the page was reloaded a second time. Styles, fonts and
+  // images stay stale-while-revalidate — they are cheap to be a beat behind.
+  if (url.pathname === '/' || /\.(html|js)$/.test(url.pathname)) {
+    e.respondWith(
+      fetch(e.request)
+        .then(res => {
+          if (res.ok && res.headers.get('X-App-Shell')) {
+            const clone = res.clone();
+            caches.open(CACHE).then(c => c.put(e.request, clone));
+          }
+          return res;
+        })
+        .catch(() => caches.match(e.request).then(hit => hit || Promise.reject(new Error('offline')))),
+    );
+    return;
+  }
 
   e.respondWith(
     caches.match(e.request).then(cached => {

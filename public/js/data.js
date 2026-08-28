@@ -85,6 +85,7 @@ export const TILES = [
     glyph: '🗂️',
     accent: '#7a5a2f',
     kind: 'module',
+    icon: 'claude.ai',
     desc: 'Claude and Grok history, memories and attached files — sorted into categories, searchable, synced across your devices.',
     actions: [{ label: 'Open', action: 'open' }],
   },
