@@ -87,12 +87,23 @@ function cloudflareCards() {
   ];
 }
 
+function archiveCards() {
+  const count = load('archive.count', 0);
+  if (!count) return [{ v: '⬆', l: 'import your export' }, { v: '🔒', l: 'on-device only' }];
+  return [
+    { v: count.toLocaleString(), l: 'conversations' },
+    { v: load('archive.msgs', 0).toLocaleString(), l: 'messages' },
+    { v: esc(load('archive.topcat', '💬')), l: `top of ${load('archive.catcount', 0)} categories` },
+  ];
+}
+
 const BUILDERS = {
   fitness: fitnessCards,
   writing: writingCards,
   notebook: notebookCards,
   projects: projectsCards,
   cloudflare: cloudflareCards,
+  archive: archiveCards,
 };
 
 export function activityCards(tileId) {

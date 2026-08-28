@@ -35,22 +35,103 @@ function msgText(m) {
 }
 
 function normalize(raw) {
-  const list = Array.isArray(raw) ? raw : raw?.conversations;
-  if (!Array.isArray(list)) throw new Error('not a claude.ai conversations export');
-  return list.filter(c => c && c.uuid).map(c => ({
-    uuid: c.uuid,
-    name: c.name || '(untitled chat)',
-    created: c.created_at || '',
-    updated: c.updated_at || c.created_at || '',
-    msgs: (c.chat_messages || []).map(m => ({
-      s: m.sender === 'human' ? 'h' : 'a',
+  // Tolerate every export shape seen so far: a bare array, {conversations:[…]},
+  // or any wrapper object whose values include the conversations array.
+  let list = Array.isArray(raw) ? raw : raw?.conversations;
+  if (!Array.isArray(list) && raw && typeof raw === 'object') {
+    list = Object.values(raw).find(v =>
+      Array.isArray(v) && v.length && typeof v[0] === 'object' && (v[0].chat_messages || v[0].messages));
+  }
+  if (!Array.isArray(list)) throw new Error('no conversations found in this file');
+  return list.filter(c => c && (c.uuid || c.id)).map(c => ({
+    uuid: c.uuid || c.id,
+    name: c.name || c.title || c.summary || '(untitled chat)',
+    created: c.created_at || c.created || '',
+    updated: c.updated_at || c.updated || c.created_at || c.created || '',
+    msgs: (c.chat_messages || c.messages || []).map(m => ({
+      s: (m.sender || m.role) === 'human' || (m.sender || m.role) === 'user' ? 'h' : 'a',
       t: msgText(m),
     })).filter(m => m.t),
   }));
 }
 
+function parseExportText(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    // JSONL fallback: one conversation object per line
+    const rows = text.split('\n').map(l => l.trim()).filter(Boolean).map(l => JSON.parse(l));
+    return rows;
+  }
+}
+
+let jszipLoading = null;
+function loadJSZip() {
+  if (window.JSZip) return Promise.resolve(window.JSZip);
+  if (!jszipLoading) {
+    jszipLoading = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = '/vendor/jszip.min.js';
+      s.onload = () => resolve(window.JSZip);
+      s.onerror = () => reject(new Error('could not load the zip reader (offline?)'));
+      document.head.append(s);
+    });
+  }
+  return jszipLoading;
+}
+
+// Returns { convosText, memoriesText } from a claude.ai export zip.
+async function readExportZip(file) {
+  const JSZip = await loadJSZip();
+  const zip = await JSZip.loadAsync(file);
+  const names = Object.keys(zip.files).filter(n => !zip.files[n].dir);
+  const convoEntry =
+    names.find(n => /conversation/i.test(n) && /\.jsonl?$/i.test(n)) ||
+    names.filter(n => /\.jsonl?$/i.test(n)).sort((a, b) => zip.files[b]._data?.uncompressedSize - zip.files[a]._data?.uncompressedSize)[0];
+  const memEntry = names.find(n => /memor/i.test(n) && /\.(json|md|txt)$/i.test(n));
+  return {
+    convosText: convoEntry ? await zip.files[convoEntry].async('string') : null,
+    memoriesText: memEntry ? await zip.files[memEntry].async('string') : null,
+  };
+}
+
 const fmtDate = iso => (iso ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '');
 const monthKey = iso => (iso ? new Date(iso).toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) : 'Undated');
+
+/* ---------- auto-categorization (on-device, keyword-scored) ---------- */
+
+const CATS = [
+  { id: 'dragons', name: 'Dragon Book', emoji: '🐉', kw: ['dragon', 'stoker', 'wyvern', 'book', 'chapter', 'novel', 'manuscript', 'worldbuild', 'plot', 'character', 'scene', 'writing'] },
+  { id: 'church', name: 'Church & Arise', emoji: '⛪', kw: ['church', 'arise', 'bible', 'verse', 'sermon', 'ministry', 'worship', 'pastor', 'prayer', 'sunday', 'check-in', 'chms'] },
+  { id: 'shop', name: 'PC Repair Shop', emoji: '🖥️', kw: ['repair', 'ctrl', 'pc build', 'ticket', 'invoice', 'customer', 'stripe', 'paypal', 'inventory', 'pos ', 'warranty', 'rma', 'prebuilt'] },
+  { id: 'fitness', name: 'Fitness', emoji: '💪', kw: ['workout', 'gym', 'fitness', 'exercise', 'protein', 'weight', 'training', 'apex', 'coach', 'muscle', 'cardio'] },
+  { id: 'code', name: 'Coding & Projects', emoji: '💻', kw: ['code', 'javascript', 'typescript', 'react', 'cloudflare', 'worker', 'api', 'github', 'deploy', 'database', 'sql', 'css', 'html', 'bug', 'error', 'function', 'app', 'server', 'dashboard'] },
+  { id: 'design', name: 'Design & 3D', emoji: '🎨', kw: ['design', 'logo', 'blender', '3d model', 'render', 'canva', 'mockup', 'poster', 'artwork', 'glb'] },
+  { id: 'business', name: 'Business & Money', emoji: '📈', kw: ['business', 'marketing', 'price', 'pricing', 'tax', 'llc', 'revenue', 'sales', 'budget', 'money'] },
+  { id: 'life', name: 'Life & Home', emoji: '🏠', kw: ['recipe', 'cook', 'car', 'house', 'home', 'family', 'travel', 'trip', 'health', 'doctor', 'insurance', 'gift'] },
+];
+
+const CAT_BY_ID = Object.fromEntries(CATS.map(c => [c, c] && [c.id, c]));
+const OTHER = { id: 'other', name: 'Everything Else', emoji: '💬' };
+
+function categorize(c) {
+  const title = c.name.toLowerCase();
+  // titles carry most signal; sample the first chunk of the transcript too
+  const body = c.msgs.map(m => m.t).join(' ').slice(0, 2000).toLowerCase();
+  let best = null;
+  let bestScore = 0;
+  for (const cat of CATS) {
+    let score = 0;
+    for (const k of cat.kw) {
+      if (title.includes(k)) score += 3;
+      else if (body.includes(k)) score += 1;
+    }
+    if (score > bestScore) { bestScore = score; best = cat; }
+  }
+  return bestScore >= 2 ? best.id : 'other';
+}
+
+const catOf = c => CAT_BY_ID[c.cat] || (c.cat === 'other' ? OTHER : CAT_BY_ID[categorize(c)] || OTHER);
 
 export function mount(root, tools) {
   let db = null;
@@ -61,7 +142,7 @@ export function mount(root, tools) {
   tools.innerHTML = `
     <span class="muted" id="ar-count"></span>
     <label class="btn small" style="cursor:pointer">⬆ Import
-      <input id="ar-file" type="file" accept="application/json,.json" hidden></label>`;
+      <input id="ar-file" type="file" accept=".json,.jsonl,.zip,application/json,application/zip" hidden></label>`;
 
   root.innerHTML = `
     <style id="archive-style">
@@ -86,6 +167,8 @@ export function mount(root, tools) {
   const setCount = () => { countEl.textContent = count ? `${count.toLocaleString()} chats` : ''; };
   setCount();
 
+  let activeCat = 'all'; // category menu selection
+
   function browseHTML() {
     return `
       <div class="stat-row">
@@ -94,7 +177,11 @@ export function mount(root, tools) {
         <div class="stat-tile"><div class="stat-value">🔒</div><div class="stat-label">on-device only</div></div>
       </div>
       <div class="panel" style="margin-bottom:16px">
-        <h3>Search everything</h3>
+        <h3>Categories</h3>
+        <div id="ar-cats" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+      </div>
+      <div class="panel" style="margin-bottom:16px">
+        <h3>Search ${activeCat === 'all' ? 'everything' : 'this category'}</h3>
         <input id="ar-q" placeholder="Search your Claude history and memories…" style="width:100%">
         <div id="ar-results"></div>
       </div>
@@ -109,9 +196,45 @@ export function mount(root, tools) {
       ${count ? '<p style="margin-top:16px"><button class="btn small danger" id="ar-del">✕ Delete archive from this device</button></p>' : ''}
       ${count ? '' : `
       <div class="panel" style="margin-top:16px"><h3>How to fill this</h3>
-        <p class="muted">The export only works from a computer: <strong>claude.ai → Settings → Privacy → Export data</strong> → Anthropic emails a download link → unzip it → import <code>conversations.json</code> here with the ⬆ Import button. Re-import any time — chats merge by ID, nothing duplicates.</p>
+        <p class="muted"><strong>claude.ai → Settings → Privacy → Export data</strong> gives you download links (works on your phone too). Download <code>conversations-000.zip</code> and import it here as-is — no unzipping needed. The <code>memories-000.zip</code> imports the same way. Re-import any time — chats merge by ID, nothing duplicates.</p>
       </div>`}`;
   }
+
+  async function renderCats() {
+    const tally = { all: 0 };
+    await tx(db, 'convos', 'readonly', store => {
+      store.openCursor().onsuccess = e => {
+        const cur = e.target.result;
+        if (!cur) return;
+        const id = catOf(cur.value).id;
+        tally[id] = (tally[id] || 0) + 1;
+        tally.all++;
+        cur.continue();
+      };
+    });
+    if (dead) return;
+    const el = main.querySelector('#ar-cats');
+    if (!el) return;
+    const chips = [{ id: 'all', name: 'All', emoji: '🗂️' }, ...CATS, OTHER]
+      .filter(c => c.id === 'all' || tally[c.id])
+      .map(c => `<button class="btn small" data-cat="${c.id}"
+        style="${activeCat === c.id ? 'border-color:var(--accent);color:var(--ink);' : ''}">
+        ${c.emoji} ${esc(c.name)}${c.id === 'all' ? '' : ` · ${tally[c.id]}`}</button>`);
+    el.innerHTML = chips.join('') || '<span class="muted">Import chats to see categories.</span>';
+    // feed the dashboard activity cards
+    const top = Object.entries(tally).filter(([k]) => k !== 'all').sort((a, b) => b[1] - a[1])[0];
+    if (top) {
+      const cat = CAT_BY_ID[top[0]] || OTHER;
+      save('archive.topcat', `${cat.emoji} ${cat.name}`);
+      save('archive.catcount', Object.keys(tally).length - 1);
+    }
+    el.querySelectorAll('[data-cat]').forEach(b => b.addEventListener('click', () => {
+      activeCat = b.dataset.cat;
+      renderBrowse();
+    }));
+  }
+
+  const inCat = c => activeCat === 'all' || catOf(c).id === activeCat;
 
   async function listNewest() {
     const rows = [];
@@ -120,22 +243,23 @@ export function mount(root, tools) {
       idx.openCursor(null, 'prev').onsuccess = e => {
         const cur = e.target.result;
         if (!cur || rows.length >= 30) return;
-        rows.push(cur.value);
+        if (inCat(cur.value)) rows.push(cur.value);
         cur.continue();
       };
     });
     if (dead) return;
     const listEl = main.querySelector('#ar-list');
-    if (!rows.length) { listEl.textContent = 'Nothing imported yet.'; return; }
+    if (!rows.length) { listEl.textContent = count ? 'Nothing in this category yet.' : 'Nothing imported yet.'; return; }
     let lastMonth = '';
     listEl.classList.remove('muted');
     listEl.innerHTML = rows.map(c => {
       const mk = monthKey(c.updated);
       const head = mk !== lastMonth ? `<div class="ar-month">${esc(mk)}</div>` : '';
       lastMonth = mk;
+      const cat = catOf(c);
       return `${head}<button class="ar-row" data-open="${esc(c.uuid)}">
         <div class="t">${esc(c.name)}</div>
-        <div class="m">${esc(fmtDate(c.updated))} · ${c.msgs.length} messages</div></button>`;
+        <div class="m">${cat.emoji} ${esc(cat.name)} · ${esc(fmtDate(c.updated))} · ${c.msgs.length} messages</div></button>`;
     }).join('');
   }
 
@@ -143,7 +267,7 @@ export function mount(root, tools) {
     const needle = q.toLowerCase();
     const hits = [];
     const mem = load('memories', '');
-    if (mem.toLowerCase().includes(needle)) {
+    if (activeCat === 'all' && mem.toLowerCase().includes(needle)) {
       const i = mem.toLowerCase().indexOf(needle);
       hits.push({ mem: true, snip: mem.slice(Math.max(0, i - 40), i + 90) });
     }
@@ -152,6 +276,7 @@ export function mount(root, tools) {
         const cur = e.target.result;
         if (!cur || hits.length >= 50) return;
         const c = cur.value;
+        if (!inCat(c)) { cur.continue(); return; }
         if (c.name.toLowerCase().includes(needle)) {
           hits.push({ c, snip: '' });
         } else {
@@ -216,6 +341,7 @@ export function mount(root, tools) {
   function renderBrowse() {
     main.innerHTML = browseHTML();
     wireBrowse();
+    renderCats();
     listNewest();
   }
 
@@ -224,7 +350,25 @@ export function mount(root, tools) {
     if (!file) return;
     showToast('Importing… large exports can take a minute');
     try {
-      const convos = normalize(JSON.parse(await file.text()));
+      let text;
+      if (/\.zip$/i.test(file.name) || file.type.includes('zip')) {
+        const { convosText, memoriesText } = await readExportZip(file);
+        if (memoriesText) {
+          save('memories', memoriesText);
+          const mem = main.querySelector('#ar-mem');
+          if (mem) mem.value = memoriesText;
+          showToast('Memories imported from the zip');
+        }
+        if (!convosText) {
+          if (memoriesText) { e.target.value = ''; return; }
+          throw new Error('no conversations file inside this zip');
+        }
+        text = convosText;
+      } else {
+        text = await file.text();
+      }
+      const convos = normalize(parseExportText(text));
+      for (const c of convos) c.cat = categorize(c);
       let fresh = 0;
       await tx(db, 'convos', 'readwrite', store => {
         for (const c of convos) {

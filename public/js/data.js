@@ -85,7 +85,7 @@ export const TILES = [
     glyph: '🗂️',
     accent: '#7a5a2f',
     kind: 'module',
-    desc: 'Your Claude history and memories — imported, organized, and searchable. All on-device.',
+    desc: 'Your Claude history and memories — auto-sorted into categories, searchable, all on-device.',
     actions: [{ label: 'Open', action: 'open' }],
   },
   {
