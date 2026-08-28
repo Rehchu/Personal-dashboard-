@@ -1,7 +1,8 @@
 // Book Writing module — books → chapters → editor, word goals, .md export.
 // Seeded with the Dragons project. Autosaves to localStorage as you type.
 
-import { load, save, uid, debounce, esc } from './store.js';
+import { load, save, uid, debounce, esc, todayISO, showToast } from './store.js';
+import { inboxList } from './capture.js';
 
 function seed() {
   return [{
@@ -38,8 +39,8 @@ export function mount(root, tools) {
   const remember = () => save('writing.sel', { book: book.id, chapter: chapter?.id });
 
   tools.innerHTML = `
+    <button class="btn small" id="wr-sprint">⏱ Sprint</button>
     <a class="btn small" href="https://github.com/Rehchu/Dragons" target="_blank" rel="noopener">Dragons repo ↗</a>
-    <a class="btn small" href="https://github.com/Rehchu/3d-models" target="_blank" rel="noopener">3D models ↗</a>
     <button class="btn small" id="wr-export">⬇ Export .md</button>`;
 
   root.innerHTML = `
@@ -54,6 +55,10 @@ export function mount(root, tools) {
           <h3>Chapters</h3>
           <div id="wr-chapters"></div>
           <button class="btn small" id="wr-add-ch" style="margin-top:10px">＋ New chapter</button>
+        </div>
+        <div class="panel" style="margin-top:14px">
+          <h3>Idea inbox</h3>
+          <div id="wr-inbox"></div>
         </div>
       </div>
       <div class="panel">
@@ -138,6 +143,13 @@ export function mount(root, tools) {
     savedNote.textContent = ok
       ? `Saved ${new Date().toLocaleTimeString()}`
       : '⚠ Storage full — recent changes are NOT saved';
+    // daily word log (feeds the Today briefing's "words today")
+    const totalAll = books.reduce((s, b) => s + bookWords(b), 0);
+    const daylog = load('writing.daylog', {});
+    if (daylog[todayISO()] !== totalAll) {
+      daylog[todayISO()] = totalAll;
+      save('writing.daylog', daylog);
+    }
     renderLists();
     window.dispatchEvent(new CustomEvent('pd:data-changed'));
   }
@@ -184,5 +196,62 @@ export function mount(root, tools) {
     URL.revokeObjectURL(a.href);
   });
 
+  // idea inbox → append captured thoughts into the open chapter
+  const inboxEl = inboxList({
+    limit: 8,
+    useLabel: '→ chapter',
+    onUse: entry => {
+      if (!chapter) return;
+      editor.value += (editor.value.trim() ? '\n\n' : '') + entry.text;
+      updateCounts();
+      commitNow();
+    },
+  });
+  root.querySelector('#wr-inbox').append(inboxEl);
+
+  // writing sprint timer
+  const sprintBtn = tools.querySelector('#wr-sprint');
+  let sprint = null; // {end, minutes, startWords, timer}
+  const totalWords = () => books.reduce((s, b) => s + bookWords(b), 0);
+
+  function endSprint(finished) {
+    clearInterval(sprint.timer);
+    const words = Math.max(0, totalWords() - sprint.startWords);
+    if (finished) {
+      const log = load('writing.sprints', []);
+      log.push({ id: uid(), ts: Date.now(), minutes: sprint.minutes, words });
+      save('writing.sprints', log);
+      showToast(`Sprint done — ${words} words in ${sprint.minutes} min 🐉`);
+      window.dispatchEvent(new CustomEvent('pd:data-changed'));
+    }
+    sprint = null;
+    sprintBtn.textContent = '⏱ Sprint';
+  }
+
+  sprintBtn.addEventListener('click', () => {
+    if (sprint) {
+      if (confirm('End this sprint early?')) endSprint(false);
+      return;
+    }
+    const minutes = Number(prompt('Sprint length in minutes?', '20'));
+    if (!minutes || minutes < 1 || minutes > 180) return;
+    commitNow();
+    sprint = { end: Date.now() + minutes * 60_000, minutes, startWords: totalWords() };
+    sprint.timer = setInterval(() => {
+      const left = sprint.end - Date.now();
+      if (left <= 0) { endSprint(true); return; }
+      const m = Math.floor(left / 60_000);
+      const s = Math.floor((left % 60_000) / 1000);
+      sprintBtn.textContent = `⏱ ${m}:${String(s).padStart(2, '0')} · +${Math.max(0, totalWords() - sprint.startWords)}w`;
+    }, 1000);
+    showToast(`Sprint started — ${minutes} minutes. Go.`);
+  });
+
   renderAll();
+
+  return () => {
+    if (sprint) endSprint(false);
+    commitNow(); // closing the module must not lose the last 600ms of typing
+    inboxEl.destroy?.();
+  };
 }

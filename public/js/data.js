@@ -5,6 +5,15 @@ export const GITHUB_USER = 'Rehchu';
 
 export const TILES = [
   {
+    id: 'today',
+    title: 'Today',
+    glyph: '🌅',
+    accent: '#2f6f8f',
+    kind: 'module',
+    desc: 'Your day at a glance — weather, verse of the day, Sunday countdown, streaks, quick capture.',
+    actions: [{ label: 'Open', action: 'open' }],
+  },
+  {
     id: 'projects',
     title: 'GitHub Projects',
     glyph: '📁',
@@ -46,6 +55,37 @@ export const TILES = [
     kind: 'module',
     badge: '✏ PENCIL',
     desc: 'Handwriting canvas built for Apple Pencil on iPad — pressure, pages, PNG export.',
+    actions: [{ label: 'Open', action: 'open' }],
+  },
+  {
+    id: 'habits',
+    title: 'Habits',
+    glyph: '🎯',
+    accent: '#6b5310',
+    kind: 'module',
+    desc: 'Daily habits with contribution-style streak grids — check them off, keep the chain alive.',
+    actions: [{ label: 'Open', action: 'open' }],
+  },
+  {
+    id: 'dragons',
+    title: 'Dragon Vault',
+    glyph: '🐲',
+    accent: '#356b45',
+    kind: 'module',
+    badge: '3D',
+    desc: 'Your worldbuilding models in 3D — spin the Stoker-class dragon and the dragon egg.',
+    actions: [
+      { label: 'Open', action: 'open' },
+      { label: '3D models repo', href: 'https://github.com/Rehchu/3d-models' },
+    ],
+  },
+  {
+    id: 'archive',
+    title: 'Claude Archive',
+    glyph: '🗂️',
+    accent: '#7a5a2f',
+    kind: 'module',
+    desc: 'Your Claude history and memories — imported, organized, and searchable. All on-device.',
     actions: [{ label: 'Open', action: 'open' }],
   },
   {

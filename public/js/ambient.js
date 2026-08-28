@@ -340,6 +340,8 @@ export function initAmbient(canvas) {
   start();
 
   return {
+    pause: stop,   // e.g. while an opaque module view covers the canvas
+    resume: start, // no-ops under prefers-reduced-motion
     setTheme(name) {
       theme = SYSTEMS[name] ? name : 'masseffect';
       seed();

@@ -1,0 +1,323 @@
+/* ============================================================
+   Polish layer (loads last):
+   1. Console fidelity — PS profile chip / Xbox pill nav / button glyphs
+   2. Theme signatures — big, unmistakable per-game background art
+   3. Responsive — phone / tablet / desktop layouts
+   ============================================================ */
+
+/* ---------- 1. console fidelity ---------- */
+
+#profile-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 10px 3px 3px;
+  border-radius: 999px;
+  border: 1.5px solid color-mix(in oklab, var(--ink-3) 45%, transparent);
+}
+
+#profile-chip:hover { border-color: var(--accent); }
+
+#profile-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--on-accent, #fff);
+  background: linear-gradient(140deg, var(--accent), color-mix(in oklab, var(--accent) 50%, black));
+}
+
+#profile-name { font-size: 14px; color: var(--ink-2); font-family: var(--font-display); font-weight: 600; }
+
+[data-console="xbox"] #profile-chip,
+[data-console="xbox"] #profile-avatar { border-radius: 8px; }
+[data-console="xbox"] #profile-chip { box-shadow: 0 0 10px -2px color-mix(in oklab, var(--accent) 45%, transparent); }
+
+/* pill nav — Xbox only */
+#pill-nav { display: none; }
+
+[data-console="xbox"] #pill-nav {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  gap: 10px;
+  padding: 2px clamp(18px, 3.5vw, 54px) 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+[data-console="xbox"] #pill-nav::-webkit-scrollbar { display: none; }
+
+.pill {
+  flex: 0 0 auto;
+  font-family: var(--font-display);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 8px 18px;
+  border-radius: 999px;
+  color: var(--ink-2);
+  background: color-mix(in oklab, var(--surface-2) 80%, transparent);
+  border: 1px solid color-mix(in oklab, var(--ink-3) 30%, transparent);
+}
+
+.pill:hover { color: var(--ink); border-color: var(--accent); }
+.pill.active { background: var(--accent); border-color: var(--accent); color: var(--on-accent, #06230a); }
+
+/* hero key-art watermark (PS mode) */
+#hero { position: relative; overflow: hidden; }
+
+#hero-watermark {
+  position: absolute;
+  right: -2%;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: clamp(170px, 24vw, 330px);
+  line-height: 1;
+  opacity: 0.09;
+  filter: blur(1.5px) saturate(1.4);
+  /* emoji glyphs often have rectangular backgrounds — vignette them into key art */
+  -webkit-mask-image: radial-gradient(closest-side, black 35%, transparent 75%);
+  mask-image: radial-gradient(closest-side, black 35%, transparent 75%);
+  pointer-events: none;
+  user-select: none;
+}
+
+[data-console="xbox"] #hero-watermark { display: none; }
+
+/* PS button-prompt glyphs in the hint bar */
+.btn-glyph {
+  display: inline-grid;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  margin-right: 2px;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in oklab, var(--ink-3) 70%, transparent);
+  font-size: 11px;
+  vertical-align: -5px;
+}
+
+[data-console="xbox"] .btn-glyph { border-radius: 6px; }
+#hint { line-height: 1.9; }
+
+/* tile press feedback, console-style */
+.tile { transition: transform 220ms cubic-bezier(.2,.9,.3,1.2), box-shadow 220ms ease, border-color 220ms ease, filter 220ms ease; }
+.tile:active { transform: scale(0.94); }
+.tile.focused:active { transform: scale(1.08); }
+[data-console="xbox"] .tile:active { transform: scale(0.97); }
+[data-console="xbox"] .tile.focused:active { transform: scale(1.0); }
+
+/* ---------- 2. theme signatures — big, obvious game art ---------- */
+/* Drawn on #ambient's pseudo-elements so they sit under the particles/UI. */
+
+#ambient::before, #ambient::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Assassin's Creed — giant faded insignia + red light shaft */
+[data-theme="assassins"] #ambient::before {
+  background:
+    linear-gradient(115deg, transparent 55%, rgba(224, 54, 44, 0.14) 74%, transparent 88%);
+}
+
+[data-theme="assassins"] #ambient::after {
+  left: 55%; right: -10%; top: 6%; bottom: 22%; inset-inline: auto;
+  width: 46vmin; height: 60vmin; left: auto; right: 4vw; top: 8vh; bottom: auto;
+  background: rgba(240, 234, 220, 0.05);
+  clip-path: polygon(50% 0%, 92% 82%, 66% 66%, 50% 100%, 34% 66%, 8% 82%);
+}
+
+/* Cyberpunk — neon horizon grid + corner glows */
+[data-theme="cyberpunk"] #ambient::before {
+  top: auto; height: 34vh;
+  background:
+    repeating-linear-gradient(90deg, rgba(0, 240, 255, 0.10) 0 1.5px, transparent 1.5px 80px),
+    repeating-linear-gradient(0deg, rgba(252, 238, 10, 0.10) 0 1.5px, transparent 1.5px 42px),
+    linear-gradient(0deg, rgba(252, 238, 10, 0.07), transparent 75%);
+  transform: perspective(340px) rotateX(48deg);
+  transform-origin: bottom;
+  mask-image: linear-gradient(0deg, black 30%, transparent);
+  -webkit-mask-image: linear-gradient(0deg, black 30%, transparent);
+}
+
+[data-theme="cyberpunk"] #ambient::after {
+  background:
+    radial-gradient(42vmax 30vmax at 108% -6%, rgba(255, 0, 60, 0.16), transparent 60%),
+    radial-gradient(38vmax 26vmax at -8% 108%, rgba(0, 240, 255, 0.13), transparent 60%);
+}
+
+/* GTA V — Vinewood sunset + star */
+[data-theme="gtav"] #ambient::before {
+  background:
+    radial-gradient(120vmax 55vmax at 50% 118%, rgba(255, 122, 40, 0.28), rgba(247, 110, 160, 0.16) 42%, rgba(120, 81, 169, 0.10) 62%, transparent 78%);
+}
+
+[data-theme="gtav"] #ambient::after {
+  left: auto; right: 9vw; top: 9vh; width: 30vmin; height: 30vmin;
+  background: rgba(245, 245, 242, 0.10);
+  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+}
+
+/* Minecraft — blocky terrain strip along the bottom */
+[data-theme="minecraft"] #ambient::before {
+  top: auto; height: 96px;
+  background:
+    repeating-linear-gradient(90deg, rgba(108, 195, 73, 0.34) 0 32px, rgba(94, 177, 62, 0.34) 32px 64px) 0 0 / 100% 32px no-repeat,
+    repeating-linear-gradient(90deg, rgba(134, 96, 60, 0.30) 0 32px, rgba(110, 78, 48, 0.30) 32px 64px) 0 32px / 100% 32px no-repeat,
+    repeating-linear-gradient(90deg, rgba(90, 90, 96, 0.26) 0 32px, rgba(74, 74, 80, 0.26) 32px 64px) 0 64px / 100% 32px no-repeat;
+  image-rendering: pixelated;
+}
+
+[data-theme="minecraft"] #ambient::after {
+  left: auto; right: 10vw; top: 10vh; width: 84px; height: 84px;
+  background: rgba(245, 236, 160, 0.22); /* blocky square sun */
+  box-shadow: 0 0 60px 18px rgba(245, 236, 160, 0.10);
+}
+
+/* Mass Effect — nebula + galaxy band */
+[data-theme="masseffect"] #ambient::before {
+  background:
+    radial-gradient(52vmax 34vmax at 82% 12%, rgba(69, 184, 242, 0.16), transparent 62%),
+    radial-gradient(40vmax 30vmax at 10% 86%, rgba(120, 90, 220, 0.12), transparent 60%),
+    radial-gradient(26vmax 18vmax at 30% 20%, rgba(227, 69, 59, 0.07), transparent 65%);
+}
+
+[data-theme="masseffect"] #ambient::after {
+  background: linear-gradient(24deg, transparent 44%, rgba(200, 224, 255, 0.05) 50%, transparent 56%);
+}
+
+/* Xbox — orbital green rings */
+[data-theme="xboxgreen"] #ambient::before {
+  background:
+    radial-gradient(46vmax 46vmax at 16% 0%, rgba(63, 212, 44, 0.14), transparent 55%),
+    radial-gradient(70vmax 70vmax at 110% 120%, rgba(63, 212, 44, 0.08), transparent 60%);
+}
+
+/* ---------- 3. responsive: phone / tablet / desktop ---------- */
+
+/* Touch devices: labels always visible so tiles are discoverable */
+@media (hover: none) {
+  .tile .tile-label { opacity: 1; }
+}
+
+/* Tablet */
+@media (max-width: 1100px) {
+  #hero-desc { max-width: 48ch; }
+}
+
+/* Phone */
+@media (max-width: 720px) {
+  #topbar {
+    flex-wrap: wrap;
+    row-gap: 10px;
+    padding-top: max(12px, env(safe-area-inset-top));
+  }
+
+  .topbar-right {
+    width: 100%;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  #theme-switcher {
+    order: 3;
+    width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+  #theme-switcher::-webkit-scrollbar { display: none; }
+
+  #hero {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 14px;
+    padding-top: 6px;
+  }
+  #hero-icon { width: 58px; height: 58px; font-size: 30px; border-radius: 12px; }
+  #hero-title { font-size: 24px; }
+  #hero-desc { font-size: 14.5px; }
+  .hero-btn { padding: 9px 16px; font-size: 13px; }
+  #hero-watermark { font-size: 150px; opacity: 0.06; }
+
+  #activity { overflow-x: auto; scrollbar-width: none; }
+  #activity::-webkit-scrollbar { display: none; }
+  .activity-cards { flex-wrap: nowrap; }
+  .act-card { min-width: 104px; flex: 0 0 auto; }
+
+  .tile { width: 37vw; }
+  .tile .tile-label { opacity: 1; font-size: 12px; }
+
+  #appview-bar { flex-wrap: wrap; row-gap: 8px; padding-top: max(10px, env(safe-area-inset-top)); }
+  #appview-title { flex: 1 1 auto; }
+  #appview-tools { flex-wrap: wrap; }
+  #appview-body { padding-left: 14px; padding-right: 14px; }
+
+  #wr-grid { grid-template-columns: 1fr !important; }
+
+  #cc-sheet {
+    width: 100%;
+    margin-bottom: 0;
+    border-radius: 20px 20px 0 0;
+    padding-bottom: max(18px, env(safe-area-inset-bottom));
+  }
+  .cc-btn { width: 72px; }
+
+  [data-console="xbox"] #pill-nav { padding-left: 14px; padding-right: 14px; }
+  #profile-name { display: none; }
+}
+
+/* Small phones */
+@media (max-width: 420px) {
+  .tile { width: 42vw; }
+  #brand { font-size: 17px; }
+  .theme-dot, .top-icon-btn { width: 34px; height: 34px; }
+}
+
+/* ---------- 4. cross-file conflict repairs (review findings) ---------- */
+
+/* theme-switch fx must play above the control center (CC stays open on console switch) */
+#switch-fx { z-index: 50; }
+
+/* xbox console × minecraft theme: restore xbox tile look over the hotbar slot rules */
+[data-console="xbox"][data-theme="minecraft"] #rail .tile {
+  background: linear-gradient(150deg,
+    color-mix(in oklab, var(--tile-accent, var(--surface-2)) 85%, white 6%),
+    color-mix(in oklab, var(--tile-accent, var(--surface-2)) 60%, black 32%));
+  border: 1.5px solid color-mix(in oklab, white 10%, transparent);
+  box-shadow: none;
+}
+
+[data-console="xbox"][data-theme="minecraft"] #rail .tile.focused {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent), 0 0 18px -2px color-mix(in oklab, var(--accent) 70%, transparent);
+}
+
+[data-console="xbox"][data-theme="minecraft"] #rail:focus-visible {
+  box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--accent) 55%, transparent);
+}
+
+/* cyberpunk clip-path eats box-shadows: hero icon glow via drop-shadow instead */
+[data-theme="cyberpunk"] #hero-icon {
+  box-shadow: none;
+  filter: drop-shadow(0 10px 24px color-mix(in oklab, var(--accent) 45%, transparent));
+}
+
+/* minecraft VT323 legibility for the newer components */
+[data-theme="minecraft"] .act-card .act-label,
+[data-theme="minecraft"] .cc-btn .cc-label,
+[data-theme="minecraft"] .pill { font-size: 15px; }
+[data-theme="minecraft"] #toast { font-size: 17px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tile, .tile:active { transition: none; }
+}

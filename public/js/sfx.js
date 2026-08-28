@@ -126,6 +126,9 @@ export const sfx = {
     addEventListener('keydown', unlock);
   },
   play(name) {
+    // iPadOS suspends the context on screen lock / app switch / Siri; play()
+    // runs from user gestures, so a resume here recovers audio permanently.
+    if (ctx && ctx.state === 'suspended') { try { ctx.resume(); } catch { /* noop */ } }
     if (muted || !ctx || !master || ctx.state !== 'running') return;
     const set = SETS[mode][name];
     if (!set) return;

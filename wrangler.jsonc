@@ -8,8 +8,20 @@
   // old LifeHQ app at https://lifehq.dyer-hq.workers.dev
   "name": "lifehq",
   "compatibility_date": "2026-08-01",
+  "main": "worker/index.js",
   "assets": {
     "directory": "./public",
-    "not_found_handling": "single-page-application"
-  }
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  // Cross-device sync storage (created via the Cloudflare connector)
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "lifehq-sync",
+      "database_id": "cca6b146-1962-4c62-9354-a2571103744a",
+      "migrations_dir": "migrations"
+    }
+  ]
 }

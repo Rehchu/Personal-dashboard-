@@ -9,17 +9,26 @@ import { initAmbient } from './ambient.js';
 import { ICONS } from './icons.js';
 import { initAchievements, trophyCaseHTML } from './achievements.js';
 import { activityCards } from './activity.js';
+import { sync } from './sync.js';
 import * as github from './github.js';
 import * as fitness from './fitness.js';
 import * as writing from './writing.js';
 import * as notebook from './notebook.js';
 import * as cloudflare from './cloudflare.js';
+import * as today from './today.js';
+import * as habits from './habits.js';
+import * as dragons from './dragons.js';
+import * as archive from './archive.js';
 
 const MODULES = {
+  today: { title: 'Today', mount: today.mount },
   projects: { title: 'GitHub Projects', mount: github.mount },
   fitness: { title: 'Fitness', mount: fitness.mount },
   writing: { title: 'Book Writing', mount: writing.mount },
   notebook: { title: 'Notebook', mount: notebook.mount },
+  habits: { title: 'Habits', mount: habits.mount },
+  dragons: { title: 'Dragon Vault', mount: dragons.mount },
+  archive: { title: 'Claude Archive', mount: archive.mount },
   cloudflare: { title: 'Cloudflare Fleet', mount: cloudflare.mount },
 };
 
@@ -164,6 +173,7 @@ function setFocus(i, scroll = true) {
   if (scroll) tileEls[focusIndex].scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   if (changed && uiReady) sfx.play('move');
 
+  $('#hero-watermark').textContent = t.glyph;
   $('#hero-title').textContent = t.title;
   $('#hero-desc').textContent = t.desc;
   const icon = $('#hero-icon');
@@ -215,6 +225,7 @@ function openModule(id) {
   tools.innerHTML = '';
   body.innerHTML = '';
   appview.hidden = false;
+  ambient.pause(); // the module view fully covers the particle canvas
   try {
     unmount = mod.mount(body, tools) || null;
   } catch (err) {
@@ -229,6 +240,7 @@ function closeModule() {
   appview.hidden = true;
   $('#appview-body').innerHTML = '';
   $('#appview-tools').innerHTML = '';
+  ambient.resume();
   sfx.play('back');
   setFocus(focusIndex, false); // refresh activity cards with any new data
   rail.focus({ preventScroll: true });
@@ -241,6 +253,19 @@ const ccenter = $('#ccenter');
 const ccActions = $('#cc-actions');
 const ccExtra = $('#cc-extra');
 
+function syncAction() {
+  if (!sync.enabled()) {
+    const pass = prompt('Set (or enter) your sync passphrase — the same one on every device:');
+    if (!pass) return;
+    sync.setup(pass.trim())
+      .then(() => buildCC())
+      .catch(err => showToast(`Sync setup failed: ${err.message}`));
+  } else if (confirm('Turn sync off on this device? (Data stays local.)')) {
+    sync.disable();
+    buildCC();
+  }
+}
+
 function buildCC() {
   const other = consoleMode === 'ps' ? 'xbox' : 'ps';
   const items = [
@@ -248,7 +273,7 @@ function buildCC() {
     { ico: other, label: other === 'xbox' ? 'Xbox view' : 'PS view', fn: () => { applyConsole(other, { announce: true }); buildCC(); } },
     { ico: sfx.isMuted() ? 'soundOff' : 'sound', label: sfx.isMuted() ? 'Sound off' : 'Sound on', fn: () => { sfx.setMuted(!sfx.isMuted()); if (!sfx.isMuted()) sfx.play('select'); buildCC(); } },
     { ico: 'trophy', label: 'Trophies', fn: toggleTrophies },
-    { ico: 'sparkle', label: 'GitHub', href: 'https://github.com/Rehchu' },
+    { ico: 'sparkle', label: sync.status(), fn: syncAction },
     { ico: 'controller', label: 'Cloudflare', href: 'https://dash.cloudflare.com' },
   ];
   ccActions.innerHTML = '';
@@ -260,6 +285,21 @@ function buildCC() {
     if (it.fn) node.addEventListener('click', it.fn);
     ccActions.append(node);
   });
+
+  // named theme row — the game skins, spelled out
+  const themeRow = document.createElement('div');
+  themeRow.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:16px;border-top:1px solid color-mix(in oklab, var(--ink-3) 25%, transparent);padding-top:14px';
+  const current = document.documentElement.dataset.theme;
+  THEMES.forEach(name => {
+    const b = document.createElement('button');
+    b.className = 'btn small';
+    if (name === current) b.style.borderColor = 'var(--accent)';
+    b.innerHTML = `${ICONS[name] || ''} ${esc(THEME_NAMES[name])}`;
+    b.querySelector('svg')?.style.setProperty('vertical-align', '-2px');
+    b.addEventListener('click', () => { applyTheme(name, { announce: true, fx: true }); buildCC(); });
+    themeRow.append(b);
+  });
+  ccActions.append(themeRow);
 }
 
 function toggleTrophies() {
@@ -283,6 +323,22 @@ function hideCC() {
 $('#cc-btn').innerHTML = ICONS.controller;
 $('#cc-btn').addEventListener('click', () => (ccenter.hidden ? showCC() : hideCC()));
 ccenter.addEventListener('click', e => { if (e.target === ccenter) hideCC(); });
+$('#profile-chip').addEventListener('click', () => (ccenter.hidden ? showCC() : hideCC()));
+
+/* ---------- pill nav (Xbox mode) ---------- */
+document.querySelectorAll('#pill-nav .pill').forEach(pill => {
+  pill.addEventListener('click', () => {
+    document.querySelectorAll('#pill-nav .pill').forEach(p =>
+      p.classList.toggle('active', p === pill));
+    sfx.play('select');
+    switch (pill.dataset.pill) {
+      case 'home': closeModule(); setFocus(0); break;
+      case 'apps': closeModule(); setFocus(TILES.findIndex(t => t.kind === 'link')); break;
+      case 'trophies': showCC(); toggleTrophies(); break;
+      case 'sync': showCC(); break;
+    }
+  });
+});
 
 /* ---------- keyboard (console feel) ---------- */
 document.addEventListener('keydown', e => {
@@ -305,11 +361,16 @@ document.addEventListener('keydown', e => {
   // buttons) must keep its native Enter/Space activation; the rail shortcuts
   // below are for when focus is on the rail/body, not an interactive element.
   const onInteractive = tag === 'A' || tag === 'BUTTON';
+  // Arrow keys move the rail selection; if DOM focus sits on a tile from an
+  // earlier click, follow it — otherwise Enter would fire the stale tile.
+  const chaseFocus = () => {
+    if (tileEls.includes(document.activeElement)) tileEls[focusIndex].focus({ preventScroll: true });
+  };
   switch (e.key) {
-    case 'ArrowRight': setFocus(focusIndex + 1); e.preventDefault(); break;
-    case 'ArrowLeft': setFocus(focusIndex - 1); e.preventDefault(); break;
-    case 'Home': setFocus(0); e.preventDefault(); break;
-    case 'End': setFocus(TILES.length - 1); e.preventDefault(); break;
+    case 'ArrowRight': setFocus(focusIndex + 1); chaseFocus(); e.preventDefault(); break;
+    case 'ArrowLeft': setFocus(focusIndex - 1); chaseFocus(); e.preventDefault(); break;
+    case 'Home': setFocus(0); chaseFocus(); e.preventDefault(); break;
+    case 'End': setFocus(TILES.length - 1); chaseFocus(); e.preventDefault(); break;
     case 'Enter':
     case ' ':
       if (onInteractive) return;
@@ -356,4 +417,8 @@ applyConsole(consoleMode);
 renderRail();
 boot();
 initAchievements(() => consoleMode);
+sync.init();
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => { /* offline support is best-effort */ });
+}
 uiReady = true;

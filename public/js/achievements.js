@@ -29,6 +29,9 @@ const DEFS = [
   { id: 'pages-3', name: 'Sketchbook', desc: 'Put ink on 3 notebook pages.', test: d => d.inked >= 3 },
   { id: 'multiverse', name: 'Multiverse', desc: 'Try all five game themes.', test: d => GAME_THEMES.every(t => d.themes.includes(t)) },
   { id: 'crossplay', name: 'Crossplay', desc: 'Use both console views.', test: d => d.consoles.includes('ps') && d.consoles.includes('xbox') },
+  { id: 'sprint-1', name: 'Sprinter', desc: 'Finish a writing sprint.', test: d => d.sprints >= 1 },
+  { id: 'capture-1', name: 'Lightning Rod', desc: 'Capture an idea in the inbox.', test: d => d.captured >= 1 },
+  { id: 'habit-7', name: 'Habit Forming', desc: 'Hold a 7-day streak on any habit.', test: d => d.habitStreak >= 7 },
 ];
 
 function gather() {
@@ -41,6 +44,17 @@ function gather() {
     inked: load('nb.pages', []).filter(p => (p.strokes || []).length).length,
     themes: load('ui.themesUsed', []),
     consoles: load('ui.consolesUsed', []),
+    sprints: load('writing.sprints', []).length,
+    captured: load('inbox', []).length,
+    habitStreak: Math.max(0, ...load('habits', []).map(h => {
+      const days = h.days || {};
+      let n = 0;
+      const d = new Date();
+      const key = () => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      if (!days[key()]) d.setDate(d.getDate() - 1); // streak may end yesterday
+      while (days[key()]) { n++; d.setDate(d.getDate() - 1); }
+      return n;
+    })),
   };
 }
 
@@ -85,8 +99,10 @@ function ensureStyle() {
     @keyframes trophy-fade { to { opacity: 1; } }
     @keyframes trophy-fade-out { to { opacity: 0; } }
     @media (prefers-reduced-motion: reduce) {
-      #trophy-banner.trophy-ps, #trophy-banner.trophy-xbox { animation: trophy-fade .3s ease forwards; }
-      #trophy-banner.trophy-hide { animation: trophy-fade-out .3s ease forwards; }
+      /* base.css kills ALL animations under reduced motion, so visibility can't
+         come from an animation here — set the end states directly. */
+      #trophy-banner.trophy-ps, #trophy-banner.trophy-xbox { animation: none; opacity: 1 !important; transform: none !important; }
+      #trophy-banner.trophy-hide { animation: none; opacity: 0 !important; }
     }
     .trophy-row {
       display: flex; align-items: center; gap: 12px;
