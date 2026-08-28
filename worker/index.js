@@ -211,20 +211,33 @@ async function deleteKeys(env, keys) {
   for (let i = 0; i < keys.length; i += 1000) await env.MEDIA.delete(keys.slice(i, i + 1000));
 }
 
+const EMPTY_INDEX = { rev: 0, count: 0, chunks: [], updatedAt: 0, memories: '' };
+
+// Returns { index, etag }. Only a genuinely ABSENT object may read as empty:
+// reporting rev 0 for a populated archive invites a baseRev-0 push that
+// overwrites the index and sweeps away every chunk it named. A stream error or
+// corrupt JSON therefore throws, and the route wrapper answers 500.
 async function readArchiveIndex(env) {
   const obj = await env.MEDIA.get(ARCHIVE_INDEX_KEY);
-  if (!obj) return { rev: 0, count: 0, chunks: [], updatedAt: 0, memories: '' };
-  let stored = null;
-  // an unreadable index reads as empty so the next push (baseRev 0) heals it
-  try { stored = JSON.parse(await obj.text()); } catch { stored = null; }
+  if (!obj) return { index: { ...EMPTY_INDEX }, etag: null };
+  const text = await obj.text(); // outside the guard: an IO failure is not "empty"
+  let stored;
+  try {
+    stored = JSON.parse(text);
+  } catch {
+    throw new Error('stored archive index is unreadable');
+  }
   return {
-    rev: Number.isInteger(stored?.rev) && stored.rev >= 0 ? stored.rev : 0,
-    count: Number.isInteger(stored?.count) && stored.count >= 0 ? stored.count : 0,
-    chunks: Array.isArray(stored?.chunks)
-      ? stored.chunks.filter(id => typeof id === 'string' && ARCHIVE_ID_RE.test(id)).slice(0, MAX_CHUNKS)
-      : [],
-    updatedAt: Number.isInteger(stored?.updatedAt) && stored.updatedAt >= 0 ? stored.updatedAt : 0,
-    memories: typeof stored?.memories === 'string' ? stored.memories : '',
+    index: {
+      rev: Number.isInteger(stored?.rev) && stored.rev >= 0 ? stored.rev : 0,
+      count: Number.isInteger(stored?.count) && stored.count >= 0 ? stored.count : 0,
+      chunks: Array.isArray(stored?.chunks)
+        ? stored.chunks.filter(id => typeof id === 'string' && ARCHIVE_ID_RE.test(id)).slice(0, MAX_CHUNKS)
+        : [],
+      updatedAt: Number.isInteger(stored?.updatedAt) && stored.updatedAt >= 0 ? stored.updatedAt : 0,
+      memories: typeof stored?.memories === 'string' ? stored.memories : '',
+    },
+    etag: obj.etag,
   };
 }
 
@@ -250,7 +263,7 @@ async function handleArchive(request, env, path) {
   }
 
   if (path === '/api/archive/index') {
-    if (request.method === 'GET') return json(await readArchiveIndex(env));
+    if (request.method === 'GET') return json((await readArchiveIndex(env)).index);
     if (request.method === 'PUT') {
       const len = Number(request.headers.get('content-length') || 0);
       if (len > MAX_INDEX_BODY) return json({ error: 'body too large' }, 413);
@@ -267,7 +280,12 @@ async function handleArchive(request, env, path) {
       if (body.memories !== undefined && typeof body.memories !== 'string') {
         return json({ error: 'bad memories' }, 400);
       }
-      const memories = body.memories || '';
+
+      const { index: current, etag } = await readArchiveIndex(env);
+      if (body.baseRev !== current.rev) return json({ conflict: true, ...current }, 409);
+
+      // an omitted field must not erase the stored text
+      const memories = body.memories === undefined ? current.memories : body.memories;
       // the char length short-circuits so an oversized string is never encoded
       if (memories.length > MAX_MEMORIES ||
           new TextEncoder().encode(memories).length > MAX_MEMORIES) {
@@ -276,13 +294,18 @@ async function handleArchive(request, env, path) {
       const updatedAt = Number.isInteger(body.updatedAt) && body.updatedAt >= 0
         ? body.updatedAt : Date.now();
 
-      const current = await readArchiveIndex(env);
-      if (body.baseRev !== current.rev) return json({ conflict: true, ...current }, 409);
-
       const next = { rev: current.rev + 1, count: body.count, chunks, updatedAt, memories };
-      await env.MEDIA.put(ARCHIVE_INDEX_KEY, JSON.stringify(next), {
+      // compare-and-set in R2, not in JS: the rev check above is a read followed
+      // by a write, so two devices pushing at once would both pass it and one
+      // push would be lost along with the chunks the other's sweep deletes
+      const written = await env.MEDIA.put(ARCHIVE_INDEX_KEY, JSON.stringify(next), {
         httpMetadata: { contentType: 'application/json' },
+        onlyIf: etag ? { etagMatches: etag } : { etagDoesNotMatch: '*' },
       });
+      if (!written) {
+        const fresh = await readArchiveIndex(env);
+        return json({ conflict: true, ...fresh.index }, 409);
+      }
       try {
         await sweepChunks(env, new Set(chunks));
       } catch {
