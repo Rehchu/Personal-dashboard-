@@ -16,6 +16,7 @@ import * as github from './github.js';
 import * as fitness from './fitness.js';
 import * as writing from './writing.js';
 import * as notebook from './notebook.js';
+import * as expenses from './expenses.js';
 import * as cloudflare from './cloudflare.js';
 import * as today from './today.js';
 import * as habits from './habits.js';
@@ -31,6 +32,7 @@ const MODULES = {
   habits: { title: 'Habits', mount: habits.mount },
   dragons: { title: 'Dragon Vault', mount: dragons.mount },
   archive: { title: 'Claude Archive', mount: archive.mount },
+  expenses: { title: 'Expenses', mount: expenses.mount },
   cloudflare: { title: 'Cloudflare Fleet', mount: cloudflare.mount },
 };
 

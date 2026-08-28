@@ -9,7 +9,7 @@ import { load, save, onSave, debounce, showToast } from './store.js';
 const COLS = [
   'fit.workouts', 'fit.weights', 'books', 'nb.pages', 'habits', 'inbox',
   'trophies', 'writing.daylog', 'writing.sprints',
-  'ui.themesUsed', 'ui.consolesUsed', 'memories',
+  'ui.themesUsed', 'ui.consolesUsed', 'memories', 'expenses', 'expenses.settings',
 ];
 
 let key = load('sync.key', null);
