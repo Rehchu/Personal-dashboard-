@@ -10,7 +10,7 @@ const CORE = [
   '/js/fitness.js', '/js/writing.js', '/js/notebook.js', '/js/cloudflare.js',
   '/js/sfx.js', '/js/ambient.js', '/js/icons.js', '/js/achievements.js',
   '/js/activity.js', '/js/sync.js', '/js/capture.js', '/js/today.js',
-  '/js/habits.js', '/js/dragons.js', '/js/archive.js',
+  '/js/habits.js', '/js/dragons.js', '/js/archive.js', '/vendor/jszip.min.js',
 ];
 
 self.addEventListener('install', e => {
