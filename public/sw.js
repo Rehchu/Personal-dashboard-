@@ -2,7 +2,7 @@
 // /api/* is never cached (sync must always hit the network). Cross-origin
 // requests (fonts, CDN, GitHub) pass through untouched.
 
-const CACHE = 'dyerhq-v2';
+const CACHE = 'dyerhq-v3';
 const CORE = [
   '/', '/index.html', '/manifest.webmanifest',
   '/css/base.css', '/css/themes.css', '/css/fx.css', '/css/xbox.css', '/css/polish.css',
@@ -12,7 +12,7 @@ const CORE = [
   '/js/activity.js', '/js/sync.js', '/js/capture.js', '/js/today.js',
   '/js/habits.js', '/js/dragons.js', '/js/archive.js', '/vendor/jszip.min.js',
   '/css/game/assassins.css', '/css/game/cyberpunk.css', '/css/game/gtav.css',
-  '/css/game/minecraft.css', '/css/game/xboxhome.css', '/css/game/ps5home.css', '/js/storm.js',
+  '/css/game/minecraft.css', '/css/game/xboxhome.css', '/css/game/ps5home.css', '/css/mobile.css', '/js/storm.js',
 ];
 
 self.addEventListener('install', e => {
@@ -35,13 +35,16 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
   if (url.origin !== self.location.origin) return;
-  if (url.pathname.startsWith('/api/')) return; // sync is network-only
+  if (url.pathname.startsWith('/api/')) return;   // sync/auth are network-only
+  if (url.pathname.startsWith('/media/')) return; // video streams (Range) — never cache
 
   e.respondWith(
     caches.match(e.request).then(cached => {
       const refresh = fetch(e.request)
         .then(res => {
-          if (res.ok) {
+          // Only cache authed app-shell responses — the login page (no
+          // X-App-Shell header, no-store) must never overwrite the app.
+          if (res.ok && res.headers.get('X-App-Shell')) {
             const clone = res.clone();
             caches.open(CACHE).then(c => c.put(e.request, clone));
           }

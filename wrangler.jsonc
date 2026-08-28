@@ -13,8 +13,16 @@
     "directory": "./public",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    // every request goes through the Worker so the login gate covers the app
+    "run_worker_first": ["/*"]
   },
+  // Private media storage (background video), streamed only to a signed-in session
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "lifehq-media"
+    }
+  ],
   // Cross-device sync storage (created via the Cloudflare connector)
   "d1_databases": [
     {
