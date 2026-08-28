@@ -367,7 +367,12 @@ async function uploadMultipart(file, panel, signal) {
   if (state) {
     showToast(`Resuming at part ${state.parts.length + 1}`);
   } else {
-    const { uploadId } = await mpuFetch('/api/media/bg/mpu/start', { method: 'POST', signal });
+    const { uploadId } = await mpuFetch('/api/media/bg/mpu/start', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: file.type || 'video/mp4' }),
+      signal,
+    });
     state = { uploadId, name, size: file.size, partSize: MPU_PART, parts: [] };
     save('ui.bgUpload', state);
   }

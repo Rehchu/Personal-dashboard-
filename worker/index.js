@@ -293,10 +293,14 @@ export default {
 
       // multipart upload: the only way past the 100 MB edge limit on a request body
       if (path === '/api/media/bg/mpu/start' && request.method === 'POST') {
+        // contentType can only be set when the upload is created, not at complete(),
+        // so a browser-trimmed webm has to declare its container up front
+        const started = await request.json().catch(() => null);
+        const declared = (started?.type || '').split(';')[0].trim().toLowerCase();
+        const contentType = /^video\/[a-z0-9.+-]{1,30}$/.test(declared) ? declared : 'video/mp4';
         try {
-          // contentType can only be set when the upload is created, not at complete()
           const mpu = await env.MEDIA.createMultipartUpload('bg.mp4', {
-            httpMetadata: { contentType: 'video/mp4' },
+            httpMetadata: { contentType },
           });
           return json({ uploadId: mpu.uploadId });
         } catch {
@@ -342,8 +346,13 @@ export default {
         parts.sort((a, b) => a.partNumber - b.partNumber);
         try {
           const mpu = env.MEDIA.resumeMultipartUpload('bg.mp4', body.uploadId);
-          await mpu.complete(parts);
-          return json({ ok: true });
+          const obj = await mpu.complete(parts);
+          // the cap can only be checked once the parts are assembled
+          if (obj?.size > MAX_VIDEO) {
+            await env.MEDIA.delete('bg.mp4');
+            return json({ error: 'video larger than 600 MB' }, 413);
+          }
+          return json({ ok: true, bytes: obj?.size ?? 0 });
         } catch {
           return json({ error: 'could not complete upload' }, 400);
         }
