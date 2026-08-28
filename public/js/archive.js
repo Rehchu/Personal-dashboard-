@@ -675,7 +675,10 @@ export function mount(root, tools) {
       try {
         entries = await listImportEntries(file);
       } catch (err) {
-        out.error = err.message;
+        // an expired one-time download link saves a web page under the .zip name
+        out.error = /central directory|corrupted zip|end of data/i.test(err.message)
+          ? 'not a readable zip — an expired download link saves a web page instead'
+          : err.message;
         continue;
       }
       if (!entries.length) { out.notes.push('no json, md or txt entries inside'); continue; }
