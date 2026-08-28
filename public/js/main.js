@@ -1,7 +1,14 @@
-// Dashboard shell — PS5-style tile rail, hero panel, theming, module host.
+// Dashboard shell — console-style tile rail, hero panel, theming, module host.
+// Two console modes (PlayStation-style layout + Xbox-style layout), six themes,
+// synthesized UI sounds, ambient particles, control center, trophies.
 
 import { TILES } from './data.js';
 import { load, save, esc, showToast } from './store.js';
+import { sfx } from './sfx.js';
+import { initAmbient } from './ambient.js';
+import { ICONS } from './icons.js';
+import { initAchievements, trophyCaseHTML } from './achievements.js';
+import { activityCards } from './activity.js';
 import * as github from './github.js';
 import * as fitness from './fitness.js';
 import * as writing from './writing.js';
@@ -18,36 +25,93 @@ const MODULES = {
 
 const $ = sel => document.querySelector(sel);
 
-/* ---------- theme ---------- */
-const THEMES = ['assassins', 'cyberpunk', 'gtav', 'minecraft', 'masseffect'];
+/* ---------- themes & consoles ---------- */
+const GAME_THEMES = ['assassins', 'cyberpunk', 'gtav', 'minecraft', 'masseffect'];
+const THEMES = [...GAME_THEMES, 'xboxgreen'];
 const THEME_NAMES = {
   assassins: "Assassin's Creed",
   cyberpunk: 'Cyberpunk',
   gtav: 'GTA V',
   minecraft: 'Minecraft',
   masseffect: 'Mass Effect',
+  xboxgreen: 'Xbox',
 };
 
-function applyTheme(name, announce = false) {
-  if (!THEMES.includes(name)) name = 'masseffect';
+let consoleMode = load('console', 'ps') === 'xbox' ? 'xbox' : 'ps';
+let uiReady = false; // suppress sounds/fx during initial paint
+
+const ambient = initAmbient($('#fx-canvas'));
+
+function trackUse(key, value) {
+  const used = new Set(load(key, []));
+  if (!used.has(value)) {
+    used.add(value);
+    save(key, [...used]);
+    window.dispatchEvent(new CustomEvent('pd:data-changed'));
+  }
+}
+
+function runSwitchFx(theme) {
+  const fx = $('#switch-fx');
+  if (!fx || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  fx.className = '';
+  void fx.offsetWidth; // restart the animation
+  fx.className = `run fx-${theme}`;
+  clearTimeout(runSwitchFx.t);
+  runSwitchFx.t = setTimeout(() => { fx.className = ''; }, 800);
+}
+
+function applyTheme(name, { announce = false, fx = false } = {}) {
+  if (!THEMES.includes(name)) name = consoleMode === 'xbox' ? 'xboxgreen' : 'masseffect';
   document.documentElement.dataset.theme = name;
-  save('theme', name);
+  save(`theme.${consoleMode}`, name);
+  if (GAME_THEMES.includes(name)) trackUse('ui.themesUsed', name);
   document.querySelectorAll('.theme-dot').forEach(b => {
     const active = b.dataset.setTheme === name;
     b.classList.toggle('active', active);
     b.setAttribute('aria-pressed', String(active));
   });
+  ambient.setTheme(name);
+  if (fx && uiReady) runSwitchFx(name);
   requestAnimationFrame(() => {
     const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', bg);
   });
-  if (announce) showToast(`${THEME_NAMES[name]} theme`);
+  if (announce) { sfx.play('switch'); showToast(`${THEME_NAMES[name]} theme`); }
 }
 
-document.querySelectorAll('.theme-dot').forEach(btn =>
-  btn.addEventListener('click', () => applyTheme(btn.dataset.setTheme, true)));
+function updateConsoleBtn() {
+  const btn = $('#console-btn');
+  const target = consoleMode === 'ps' ? 'xbox' : 'ps';
+  btn.innerHTML = ICONS[target];
+  const label = target === 'xbox' ? 'Switch to Xbox view' : 'Switch to PlayStation view';
+  btn.title = label;
+  btn.setAttribute('aria-label', label);
+}
 
-applyTheme(load('theme', 'masseffect'));
+function applyConsole(mode, { announce = false } = {}) {
+  consoleMode = mode === 'xbox' ? 'xbox' : 'ps';
+  document.documentElement.dataset.console = consoleMode;
+  save('console', consoleMode);
+  sfx.setConsole(consoleMode);
+  trackUse('ui.consolesUsed', consoleMode);
+  applyTheme(load(`theme.${consoleMode}`, consoleMode === 'xbox' ? 'xboxgreen' : 'masseffect'),
+    { fx: uiReady });
+  updateConsoleBtn();
+  if (announce) {
+    sfx.play('switch');
+    showToast(consoleMode === 'xbox' ? 'Xbox view' : 'PlayStation view');
+  }
+}
+
+document.querySelectorAll('.theme-dot').forEach(btn => {
+  const ico = ICONS[btn.dataset.setTheme];
+  if (ico) btn.innerHTML = ico;
+  btn.addEventListener('click', () => applyTheme(btn.dataset.setTheme, { announce: true, fx: true }));
+});
+
+$('#console-btn').addEventListener('click', () =>
+  applyConsole(consoleMode === 'ps' ? 'xbox' : 'ps', { announce: true }));
 
 /* ---------- clock ---------- */
 function tickClock() {
@@ -88,7 +152,9 @@ function renderRail() {
 }
 
 function setFocus(i, scroll = true) {
-  focusIndex = Math.max(0, Math.min(TILES.length - 1, i));
+  const next = Math.max(0, Math.min(TILES.length - 1, i));
+  const changed = next !== focusIndex;
+  focusIndex = next;
   save('ui.tile', focusIndex);
   tileEls.forEach((el, j) => {
     el.classList.toggle('focused', j === focusIndex);
@@ -96,6 +162,7 @@ function setFocus(i, scroll = true) {
   });
   const t = TILES[focusIndex];
   if (scroll) tileEls[focusIndex].scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  if (changed && uiReady) sfx.play('move');
 
   $('#hero-title').textContent = t.title;
   $('#hero-desc').textContent = t.desc;
@@ -122,14 +189,18 @@ function setFocus(i, scroll = true) {
     node.className = 'hero-btn' + (k === 0 ? ' primary' : '');
     actions.append(node);
   });
+
+  // PS5-style activity cards for the focused tile
+  const act = $('#activity');
+  const cards = activityCards(t.id);
+  if (cards) act.replaceChildren(cards);
+  else act.replaceChildren();
 }
 
 function activate(t) {
-  if (t.kind === 'module') openModule(t.id);
-  else if (t.url) window.open(t.url, '_blank', 'noopener');
+  if (t.kind === 'module') { sfx.play('open'); openModule(t.id); }
+  else if (t.url) { sfx.play('select'); window.open(t.url, '_blank', 'noopener'); }
 }
-
-renderRail();
 
 /* ---------- module host ---------- */
 const appview = $('#appview');
@@ -158,16 +229,67 @@ function closeModule() {
   appview.hidden = true;
   $('#appview-body').innerHTML = '';
   $('#appview-tools').innerHTML = '';
+  sfx.play('back');
+  setFocus(focusIndex, false); // refresh activity cards with any new data
   rail.focus({ preventScroll: true });
 }
 
 $('#appview-back').addEventListener('click', closeModule);
+
+/* ---------- control center / guide ---------- */
+const ccenter = $('#ccenter');
+const ccActions = $('#cc-actions');
+const ccExtra = $('#cc-extra');
+
+function buildCC() {
+  const other = consoleMode === 'ps' ? 'xbox' : 'ps';
+  const items = [
+    { ico: 'home', label: 'Home', fn: () => { closeModule(); hideCC(); } },
+    { ico: other, label: other === 'xbox' ? 'Xbox view' : 'PS view', fn: () => { applyConsole(other, { announce: true }); buildCC(); } },
+    { ico: sfx.isMuted() ? 'soundOff' : 'sound', label: sfx.isMuted() ? 'Sound off' : 'Sound on', fn: () => { sfx.setMuted(!sfx.isMuted()); if (!sfx.isMuted()) sfx.play('select'); buildCC(); } },
+    { ico: 'trophy', label: 'Trophies', fn: toggleTrophies },
+    { ico: 'sparkle', label: 'GitHub', href: 'https://github.com/Rehchu' },
+    { ico: 'controller', label: 'Cloudflare', href: 'https://dash.cloudflare.com' },
+  ];
+  ccActions.innerHTML = '';
+  items.forEach(it => {
+    const node = document.createElement(it.href ? 'a' : 'button');
+    node.className = 'cc-btn';
+    if (it.href) { node.href = it.href; node.target = '_blank'; node.rel = 'noopener'; node.style.textDecoration = 'none'; }
+    node.innerHTML = `<span class="cc-ico">${ICONS[it.ico] || ''}</span><span class="cc-label">${esc(it.label)}</span>`;
+    if (it.fn) node.addEventListener('click', it.fn);
+    ccActions.append(node);
+  });
+}
+
+function toggleTrophies() {
+  ccExtra.hidden = !ccExtra.hidden;
+  if (!ccExtra.hidden) ccExtra.innerHTML = `<div class="trophy-case">${trophyCaseHTML()}</div>`;
+}
+
+function showCC() {
+  buildCC();
+  ccExtra.hidden = true;
+  ccenter.hidden = false;
+  sfx.play('open');
+}
+
+function hideCC() {
+  if (ccenter.hidden) return;
+  ccenter.hidden = true;
+  sfx.play('back');
+}
+
+$('#cc-btn').innerHTML = ICONS.controller;
+$('#cc-btn').addEventListener('click', () => (ccenter.hidden ? showCC() : hideCC()));
+ccenter.addEventListener('click', e => { if (e.target === ccenter) hideCC(); });
 
 /* ---------- keyboard (console feel) ---------- */
 document.addEventListener('keydown', e => {
   const tag = document.activeElement?.tagName;
   if (e.key === 'Escape') {
     if (e.isComposing) return; // don't cancel IME composition into a close
+    if (!ccenter.hidden) { hideCC(); return; }
     // First Escape in a module form field just leaves the field.
     if (!appview.hidden && (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT')) {
       document.activeElement.blur();
@@ -176,8 +298,9 @@ document.addEventListener('keydown', e => {
     closeModule();
     return;
   }
-  if (!appview.hidden) return; // typing inside a module
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if (e.key === 'c' && appview.hidden) { ccenter.hidden ? showCC() : hideCC(); return; }
+  if (!appview.hidden || !ccenter.hidden) return;
   // A Tab-focused link/button (hero actions, theme dots, tiles — tiles are
   // buttons) must keep its native Enter/Space activation; the rail shortcuts
   // below are for when focus is on the rail/body, not an interactive element.
@@ -194,8 +317,9 @@ document.addEventListener('keydown', e => {
       e.preventDefault();
       break;
     case 't': {
-      const next = THEMES[(THEMES.indexOf(document.documentElement.dataset.theme) + 1) % THEMES.length];
-      applyTheme(next, true);
+      const list = THEMES;
+      const next = list[(list.indexOf(document.documentElement.dataset.theme) + 1) % list.length];
+      applyTheme(next, { announce: true, fx: true });
       break;
     }
   }
@@ -208,3 +332,28 @@ rail.addEventListener('wheel', e => {
     e.preventDefault();
   }
 }, { passive: false });
+
+/* ---------- boot splash ---------- */
+function boot() {
+  const el = $('#boot');
+  let seen = false;
+  try { seen = sessionStorage.getItem('pd.booted') === '1'; } catch { /* private mode */ }
+  if (seen || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    el.hidden = true;
+    return;
+  }
+  $('#boot-icon').innerHTML = ICONS[consoleMode === 'xbox' ? 'xbox' : 'ps'];
+  setTimeout(() => {
+    el.classList.add('done');
+    try { sessionStorage.setItem('pd.booted', '1'); } catch { /* noop */ }
+    setTimeout(() => { el.hidden = true; }, 550);
+  }, 1400);
+}
+
+/* ---------- init ---------- */
+sfx.init();
+applyConsole(consoleMode);
+renderRail();
+boot();
+initAchievements(() => consoleMode);
+uiReady = true;

@@ -1,0 +1,168 @@
+/* ============================================================
+   Xbox. Two independent layers:
+   A) [data-theme="xboxgreen"]  — green-on-black token set, like
+      any other theme in themes.css.
+   B) [data-console="xbox"]     — layout overrides that reshape
+      the whole app into an Xbox dashboard under ANY theme.
+   Loaded last, so equal-specificity rules here win the cascade.
+   ============================================================ */
+
+/* ---------------- A) Xbox Green theme ----------------
+   Near-black neutrals, signature bright green. */
+[data-theme="xboxgreen"] {
+  --bg: #0e0e10;
+  --surface: #1a1a1e;
+  --surface-2: #252529;
+  --ink: #f4f4f6;
+  --ink-2: #c3c3ca;
+  --ink-3: #85858e;
+  --accent: #3fd42c;
+  --accent-2: #9bf00b;
+  --on-accent: #06230a;
+  --chart: #2fae37; /* validated: in-band green, ≥3:1 on surface */
+  --ambient-a: rgba(63, 212, 44, 0.10);
+  --ambient-b: rgba(155, 240, 11, 0.05);
+  --tile-radius: 8px;
+  --panel-radius: 8px;
+  --font-display: "Segoe UI", "Exo 2", system-ui, sans-serif;
+  --font-body: "Segoe UI", "Exo 2", system-ui, sans-serif;
+  --nb-paper: #141417;
+}
+
+/* soft vertical dark-to-darker wash + faint green glow top-left */
+[data-theme="xboxgreen"] #theme-fx {
+  background:
+    radial-gradient(60% 50% at 10% 6%, rgba(63, 212, 44, 0.09), transparent 65%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(0, 0, 0, 0.4));
+}
+
+/* ---------------- B) Xbox console layout ----------------
+   Must compose with every data-theme, so PS-era theme quirks
+   (clips, pills, big scale-ups) are explicitly neutralized. */
+
+[data-console="xbox"] body {
+  font-family: "Segoe UI", "Exo 2", system-ui, sans-serif;
+}
+
+/* tiles: uniform 8px squares, no notches */
+[data-console="xbox"] .tile,
+[data-console="xbox"] #hero-icon {
+  --tile-radius: 8px;
+  border-radius: var(--tile-radius);
+  clip-path: none; /* cyberpunk notch off */
+}
+
+/* focus: small lift + crisp ring + breathing glow */
+[data-console="xbox"] .tile.focused {
+  transform: scale(1.06);
+  border-color: var(--accent);
+  filter: none; /* cyberpunk glitch shadows off */
+  box-shadow:
+    0 0 0 2.5px var(--accent),
+    0 0 16px 2px color-mix(in oklab, var(--accent) 40%, transparent);
+  animation: xbox-breathe 2s ease-in-out infinite;
+}
+
+@keyframes xbox-breathe {
+  0%, 100% {
+    box-shadow:
+      0 0 0 2.5px var(--accent),
+      0 0 10px 0 color-mix(in oklab, var(--accent) 30%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2.5px var(--accent),
+      0 0 28px 6px color-mix(in oklab, var(--accent) 65%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-console="xbox"] .tile.focused {
+    animation: none;
+    box-shadow:
+      0 0 0 2.5px var(--accent),
+      0 0 16px 2px color-mix(in oklab, var(--accent) 40%, transparent);
+  }
+}
+
+/* labels always on, Xbox-style */
+[data-console="xbox"] .tile .tile-label {
+  opacity: 1;
+  color: var(--ink-3);
+  bottom: -26px; /* back outside the tile (cyberpunk moves it in) */
+  text-shadow: none;
+}
+
+[data-console="xbox"] .tile.focused .tile-label { color: var(--ink); }
+
+/* compact hero */
+[data-console="xbox"] #hero {
+  min-height: 96px;
+  gap: clamp(14px, 2vw, 24px);
+}
+
+[data-console="xbox"] #hero-title {
+  font-size: clamp(22px, 2.6vw, 30px);
+  letter-spacing: 0.04em;
+}
+
+[data-console="xbox"] #hero-desc {
+  margin-top: 4px;
+  font-size: clamp(14px, 1.3vw, 16px);
+}
+
+[data-console="xbox"] #hero-actions { margin-top: 10px; }
+
+[data-console="xbox"] #hero-icon {
+  width: clamp(56px, 7.5vw, 88px);
+  height: clamp(56px, 7.5vw, 88px);
+  font-size: clamp(26px, 3.6vw, 42px);
+}
+
+/* pill-less rectangles */
+[data-console="xbox"] .hero-btn { border-radius: 4px; }
+
+[data-console="xbox"] .hero-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent, #06090d);
+}
+
+/* keep assassins' AA-contrast primary (see themes.css) */
+[data-console="xbox"][data-theme="assassins"] .hero-btn.primary,
+[data-console="xbox"][data-theme="assassins"] .btn.primary {
+  background: #c62a21;
+  border-color: #c62a21;
+}
+
+/* topbar: rounded squares instead of circles */
+[data-console="xbox"] .top-icon-btn,
+[data-console="xbox"] .theme-dot {
+  border-radius: 6px;
+}
+
+/* appview + module UI: 8px, flatter borders */
+[data-console="xbox"] .panel,
+[data-console="xbox"] .card,
+[data-console="xbox"] .stat-tile,
+[data-console="xbox"] .act-card,
+[data-console="xbox"] .nb-group,
+[data-console="xbox"] #nb-stage,
+[data-console="xbox"] .btn,
+[data-console="xbox"] input,
+[data-console="xbox"] select,
+[data-console="xbox"] textarea {
+  border-radius: 8px;
+  border-width: 1px;
+}
+
+[data-console="xbox"] #appview-back { border-radius: 6px; }
+
+/* minecraft hotbar (fx.css) off under xbox — plain rail.
+   Compound selector outranks any [data-theme] #rail rule. */
+[data-console="xbox"][data-theme="minecraft"] #rail {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  padding: 26px 18px 52px;
+}

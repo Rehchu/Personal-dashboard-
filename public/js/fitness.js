@@ -160,6 +160,7 @@ export function mount(root, tools) {
     e.target.reset();
     root.querySelector('#fw-date').value = todayISO();
     render();
+    window.dispatchEvent(new CustomEvent('pd:data-changed'));
   });
 
   root.querySelector('#wt-form').addEventListener('submit', e => {
@@ -172,6 +173,7 @@ export function mount(root, tools) {
     save('fit.weights', [...rest, { id: uid(), date, value }]);
     root.querySelector('#wt-val').value = '';
     render();
+    window.dispatchEvent(new CustomEvent('pd:data-changed'));
   });
 
   render();

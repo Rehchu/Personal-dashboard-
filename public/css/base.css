@@ -650,6 +650,187 @@ table.data td:first-child { color: var(--ink); }
 
 #toast.show { opacity: 1; transform: translateX(-50%); }
 
+/* ---------- ambient particle canvas ---------- */
+
+#fx-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* ---------- topbar icon buttons ---------- */
+
+.top-icon-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 19px;
+  color: var(--ink-2);
+  border: 1.5px solid color-mix(in oklab, var(--ink-3) 55%, transparent);
+  transition: transform 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.top-icon-btn:hover { transform: scale(1.1); color: var(--ink); border-color: var(--accent); }
+.top-icon-btn svg { width: 20px; height: 20px; }
+
+/* ---------- activity cards (PS5 game-hub style) ---------- */
+
+#activity {
+  padding: 0 clamp(18px, 4vw, 60px);
+  min-height: 0;
+}
+
+.activity-cards {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  animation: act-in 300ms ease;
+}
+
+@keyframes act-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.act-card {
+  min-width: 118px;
+  padding: 10px 16px;
+  border-radius: var(--panel-radius);
+  background: color-mix(in oklab, var(--surface) 78%, transparent);
+  border: 1px solid color-mix(in oklab, var(--ink-3) 22%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+.act-card .act-value {
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.act-card .act-label {
+  margin-top: 2px;
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* ---------- control center / guide ---------- */
+
+#ccenter {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: color-mix(in oklab, black 55%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+#ccenter[hidden] { display: none; }
+
+#cc-sheet {
+  width: min(720px, 96vw);
+  margin-bottom: clamp(14px, 4vh, 40px);
+  background: color-mix(in oklab, var(--surface) 94%, transparent);
+  border: 1px solid color-mix(in oklab, var(--ink-3) 30%, transparent);
+  border-radius: 20px;
+  padding: 18px 20px;
+  animation: cc-in 240ms cubic-bezier(.2,.9,.3,1.1);
+}
+
+[data-console="xbox"] #cc-sheet { border-radius: 8px; }
+
+@keyframes cc-in {
+  from { opacity: 0; transform: translateY(26px); }
+  to   { opacity: 1; transform: none; }
+}
+
+#cc-actions {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.cc-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  width: 86px;
+  padding: 10px 4px;
+  border-radius: 14px;
+  color: var(--ink-2);
+  transition: background 130ms ease, color 130ms ease, transform 130ms ease;
+}
+
+.cc-btn:hover { background: color-mix(in oklab, var(--accent) 16%, transparent); color: var(--ink); transform: translateY(-2px); }
+
+.cc-btn .cc-ico {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid color-mix(in oklab, var(--ink-3) 50%, transparent);
+}
+
+[data-console="xbox"] .cc-btn .cc-ico { border-radius: 8px; }
+.cc-btn .cc-ico svg { width: 22px; height: 22px; }
+.cc-btn .cc-label { font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; }
+
+#cc-extra {
+  margin-top: 16px;
+  max-height: min(42vh, 380px);
+  overflow: auto;
+  border-top: 1px solid color-mix(in oklab, var(--ink-3) 25%, transparent);
+  padding-top: 12px;
+}
+
+/* ---------- boot splash ---------- */
+
+#boot {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  transition: opacity 500ms ease;
+}
+
+#boot.done { opacity: 0; pointer-events: none; }
+#boot[hidden] { display: none; }
+
+#boot-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  animation: boot-pulse 1.6s ease-in-out infinite;
+}
+
+#boot-icon svg { width: 54px; height: 54px; color: var(--accent); }
+
+#boot-text {
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 0.34em;
+  padding-left: 0.34em; /* optically center the tracked text */
+}
+
+@keyframes boot-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
 /* small screens */
 @media (max-width: 720px) {
   body { overflow: auto; }

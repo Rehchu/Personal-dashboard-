@@ -30,6 +30,7 @@ export function mount(root, tools) {
       warnedStorage = true;
       showToast('⚠ Storage full — recent ink may not be saved');
     }
+    window.dispatchEvent(new CustomEvent('pd:data-changed'));
   }, 400);
 
   tools.innerHTML = `
