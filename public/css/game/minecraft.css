@@ -1,0 +1,346 @@
+/* ============================================================
+   Minecraft — Bedrock "Play" screen skin.
+   World-card tiles (thumbnail + dark nameplate), square Worlds/
+   Realms/Friends-style tabs, chunky beveled slab buttons, dirt
+   panels, recessed inputs. Loads after base/themes/fx/xbox/
+   polish: equal-specificity rules here win by order.
+   Every selector is scoped to [data-theme="minecraft"] (some
+   compound with [data-console] to compose with xbox mode).
+   Bevel grammar: raised = light top-left inset + dark bottom-
+   right inset; pressed/recessed = the inverse.
+   ============================================================ */
+
+/* ---------- square tabs: show #pill-nav in PS mode too ---------- */
+
+[data-theme="minecraft"] #pill-nav {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  gap: 10px;
+  padding: 2px clamp(18px, 3.5vw, 54px) 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+[data-theme="minecraft"] #pill-nav::-webkit-scrollbar { display: none; }
+
+/* the tab row now eats vertical space #home used to have */
+[data-theme="minecraft"] #home { height: calc(100% - 150px); }
+
+[data-theme="minecraft"] .pill {
+  border-radius: 0;
+  border: 3px solid #1b1b1b;
+  background: #48494a;
+  color: #f0f0ea; /* 7.9:1 on #48494a */
+  min-height: 38px;
+  padding: 6px 18px;
+  letter-spacing: 0.05em;
+  box-shadow:
+    inset 2px 2px 0 rgba(255, 255, 255, 0.22),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.45);
+}
+
+[data-theme="minecraft"] .pill:hover {
+  color: #ffffff;
+  border-color: #1b1b1b;
+  background: #55565a;
+}
+
+/* active tab: grass green, pressed-in bevel */
+[data-theme="minecraft"] .pill.active {
+  background: #6cc349;
+  border-color: #1b1b1b;
+  color: #10230b; /* 7.5:1 on #6cc349 */
+  box-shadow:
+    inset 2px 2px 0 rgba(0, 0, 0, 0.35),
+    inset -2px -2px 0 rgba(255, 255, 255, 0.25);
+}
+
+/* ---------- tiles as world cards ---------- */
+/* hotbar-slot base (fx.css) stays; padding-bottom reserves the
+   nameplate strip so the grid-centered glyph rides slightly high
+   ("thumbnail" area) at every tile size */
+
+[data-theme="minecraft"] #rail .tile {
+  padding-bottom: 26px;
+}
+
+/* nameplate: full-width dark strip inside the tile bottom
+   (overrides the outside-the-tile label default) */
+[data-theme="minecraft"] .tile .tile-label {
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.55);
+  color: #ffffff; /* ≥12:1 over any tile art behind the scrim */
+  font-size: 16px; /* keeps the VT323 legibility floor */
+  font-weight: 400;
+  padding: 4px 6px;
+  opacity: 1;
+  letter-spacing: 0.05em;
+  line-height: 1.1;
+}
+
+[data-theme="minecraft"] .tile.focused .tile-label { color: #ffffff; }
+
+/* focused world card: thick white outline + slight raise */
+[data-theme="minecraft"] #rail .tile.focused {
+  transform: scale(1.08) translateY(-4px);
+  border-color: rgba(0, 0, 0, 0.55);
+  box-shadow:
+    inset 3px 3px 0 rgba(0, 0, 0, 0.4),
+    inset -3px -3px 0 rgba(255, 255, 255, 0.10),
+    0 0 0 3px #ffffff,
+    0 0 0 5px rgba(0, 0, 0, 0.55);
+}
+
+/* badge: green MC chip */
+[data-theme="minecraft"] .tile .badge {
+  border-radius: 0;
+  background: #6cc349;
+  color: #10230b; /* 7.5:1 */
+  border: 2px solid #1b1b1b;
+  padding: 2px 8px;
+}
+
+/* hero icon gets the same block-frame treatment */
+[data-theme="minecraft"] #hero-icon {
+  border: 3px solid #1b1b1b;
+  box-shadow:
+    inset 3px 3px 0 rgba(255, 255, 255, 0.18),
+    inset -3px -3px 0 rgba(0, 0, 0, 0.35);
+}
+
+/* ---------- chunky bevel buttons ---------- */
+
+[data-theme="minecraft"] .btn,
+[data-theme="minecraft"] .hero-btn {
+  border-radius: 0;
+  border: 3px solid #1b1b1b;
+  background: #6d6e70;
+  color: #ffffff; /* 5.1:1 on #6d6e70 */
+  font-size: 16px;
+  font-weight: 400;
+  min-height: 36px; /* VT323's tight line-height: keep tap targets ≥34px */
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.35);
+  box-shadow:
+    inset 2px 2px 0 rgba(255, 255, 255, 0.30),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.40);
+}
+
+[data-theme="minecraft"] .btn.small { font-size: 15px; }
+
+[data-theme="minecraft"] .btn:hover,
+[data-theme="minecraft"] .hero-btn:not(.primary):hover {
+  border-color: #1b1b1b;
+  background: #737476; /* 4.7:1 with white */
+}
+
+/* 'Create new world' green */
+[data-theme="minecraft"] .btn.primary,
+[data-theme="minecraft"] .hero-btn.primary {
+  background: #5fb944;
+  border-color: #1b1b1b;
+  color: #0f2309; /* 6.7:1 on #5fb944 */
+  text-shadow: none;
+  box-shadow:
+    inset 2px 2px 0 rgba(255, 255, 255, 0.35),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.30);
+}
+
+[data-theme="minecraft"] .btn.primary:hover,
+[data-theme="minecraft"] .hero-btn.primary:hover {
+  background: #6cc349;
+  border-color: #1b1b1b;
+}
+
+/* base's danger-hover text fails on the new grey slab — full red slab */
+[data-theme="minecraft"] .btn.danger:hover {
+  background: #a02722;
+  border-color: #1b1b1b;
+  color: #ffffff; /* 7.5:1 */
+}
+
+/* pressed: inverted bevel + 2px sink */
+[data-theme="minecraft"] .btn:active,
+[data-theme="minecraft"] .hero-btn:active {
+  transform: translateY(2px);
+  box-shadow:
+    inset 2px 2px 0 rgba(0, 0, 0, 0.40),
+    inset -2px -2px 0 rgba(255, 255, 255, 0.18);
+}
+
+/* back button joins the slab family */
+[data-theme="minecraft"] #appview-back {
+  border-radius: 0;
+  border: 3px solid #1b1b1b;
+  background: #48494a;
+  color: #f0f0ea;
+  box-shadow:
+    inset 2px 2px 0 rgba(255, 255, 255, 0.22),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.45);
+}
+
+[data-theme="minecraft"] #appview-back:hover {
+  color: #ffffff;
+  border-color: #1b1b1b;
+  background: #55565a;
+}
+
+/* the bevel box-shadows above outrank base's focus ring — restore
+   a visible focus indicator without losing the bevels */
+[data-theme="minecraft"] .btn:focus-visible,
+[data-theme="minecraft"] .hero-btn:focus-visible,
+[data-theme="minecraft"] .pill:focus-visible,
+[data-theme="minecraft"] #appview-back:focus-visible,
+[data-theme="minecraft"] .cc-btn:focus-visible {
+  outline: 3px solid #ffffff;
+  outline-offset: 2px;
+}
+
+/* ---------- panels: dark dirt slabs ---------- */
+
+[data-theme="minecraft"] .panel,
+[data-theme="minecraft"] .card,
+[data-theme="minecraft"] .stat-tile,
+[data-theme="minecraft"] .act-card,
+[data-theme="minecraft"] .nb-group {
+  background: #2f2f34;
+  border: 3px solid #1b1b1b;
+  border-radius: 0;
+  box-shadow:
+    inset 2px 2px 0 rgba(255, 255, 255, 0.08),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.35);
+}
+
+[data-theme="minecraft"] .panel h3 {
+  color: #f0f0ea; /* 11.6:1 on #2f2f34 */
+  font-size: 18px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+}
+
+/* selected-slot white edge instead of the glow lift */
+[data-theme="minecraft"] .card:hover {
+  border-color: #ffffff;
+  box-shadow:
+    inset 2px 2px 0 rgba(255, 255, 255, 0.08),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.35);
+}
+
+/* XP-bar progress + square tooltip/toast to match */
+[data-theme="minecraft"] .progress {
+  border-radius: 0;
+  border: 2px solid #1b1b1b;
+  background: #17171a;
+}
+
+[data-theme="minecraft"] .progress > div {
+  border-radius: 0;
+  background: linear-gradient(180deg, #7fd45e, #5fb944);
+}
+
+[data-theme="minecraft"] .chart-tip,
+[data-theme="minecraft"] #toast {
+  border-radius: 0;
+  border: 2px solid #1b1b1b;
+  background: #2f2f34;
+  color: #f0f0ea;
+}
+
+/* ---------- inputs: recessed text fields ---------- */
+
+[data-theme="minecraft"] input,
+[data-theme="minecraft"] select,
+[data-theme="minecraft"] textarea {
+  border-radius: 0;
+  border: 2px solid #1b1b1b;
+  background: #17171a;
+  color: #f0f0ea;
+  box-shadow:
+    inset 2px 2px 0 rgba(0, 0, 0, 0.55),
+    inset -2px -2px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* MC selected-field white border as the focus cue */
+[data-theme="minecraft"] input:focus,
+[data-theme="minecraft"] select:focus,
+[data-theme="minecraft"] textarea:focus {
+  border-color: #f0f0ea;
+  box-shadow:
+    inset 2px 2px 0 rgba(0, 0, 0, 0.55),
+    inset -2px -2px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* ---------- control center: same slab ---------- */
+
+[data-theme="minecraft"] #cc-sheet {
+  background: #2f2f34;
+  border: 3px solid #1b1b1b;
+  border-radius: 0;
+  box-shadow:
+    inset 2px 2px 0 rgba(255, 255, 255, 0.08),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.35),
+    0 14px 44px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="minecraft"] .cc-btn { border-radius: 0; }
+
+[data-theme="minecraft"] .cc-btn .cc-ico {
+  border-radius: 0;
+  border: 2px solid #1b1b1b;
+  background: #48494a;
+  box-shadow:
+    inset 2px 2px 0 rgba(255, 255, 255, 0.22),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.45);
+}
+
+[data-theme="minecraft"] .cc-btn:hover { background: rgba(108, 195, 73, 0.18); }
+
+/* ---------- xbox composition ---------- */
+/* xbox.css + polish.css deliberately flatten minecraft's rail
+   under the xbox console; hand the world-card bits back too */
+
+[data-console="xbox"][data-theme="minecraft"] #rail .tile {
+  padding-bottom: 0;
+}
+
+[data-console="xbox"][data-theme="minecraft"] #rail .tile.focused {
+  transform: scale(1.06);
+}
+
+[data-console="xbox"][data-theme="minecraft"] .tile .tile-label {
+  bottom: -26px;
+  background: none;
+  color: var(--ink-3);
+  padding: 0;
+}
+
+[data-console="xbox"][data-theme="minecraft"] .tile.focused .tile-label {
+  color: var(--ink);
+}
+
+/* ---------- responsive tuning ---------- */
+
+@media (max-width: 720px) {
+  /* give back base's phone auto-height (our #home rule outranks it) */
+  [data-theme="minecraft"] #home { height: auto; }
+
+  [data-theme="minecraft"] #pill-nav {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+}
+
+/* ---------- reduced motion: no pressed sink, states stay ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="minecraft"] .btn:active,
+  [data-theme="minecraft"] .hero-btn:active {
+    transform: none;
+  }
+
+  [data-theme="minecraft"] #rail .tile.focused {
+    transform: scale(1.08);
+  }
+}

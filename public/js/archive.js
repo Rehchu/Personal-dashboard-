@@ -133,6 +133,47 @@ function categorize(c) {
 
 const catOf = c => CAT_BY_ID[c.cat] || (c.cat === 'other' ? OTHER : CAT_BY_ID[categorize(c)] || OTHER);
 
+/* ---------- topic extraction (specific things inside the chats) ---------- */
+
+const STOP = new Set(('the a an and or but if then else for with without from into onto this that these those there here ' +
+  'is are was were be been being have has had do does did will would can could should shall may might must not no yes ' +
+  'i you he she it we they me him her us them my your his its our their mine yours what which who whom when where why how ' +
+  'about above after again against all am any because before below between both down during each few further more most ' +
+  'other some such only own same so than too very just also like get got make made want need know think going go really ' +
+  'help please thanks thank hey okay ok sure right now new one two way thing things something anything everything nothing ' +
+  'lets let does doing done use using used tell told say said see look looking looked good great well much many lot bit ' +
+  'claude assistant chat question answer').split(' '));
+
+const tokenize = s => s.toLowerCase().replace(/[^a-z0-9' -]/g, ' ').split(/\s+/).filter(Boolean);
+
+const topicCache = new Map();
+
+function topicsOf(c) {
+  if (Array.isArray(c.topics)) return c.topics;
+  if (topicCache.has(c.uuid)) return topicCache.get(c.uuid);
+  const title = tokenize(c.name);
+  const body = tokenize(c.msgs.map(m => m.t).join(' ').slice(0, 3000));
+  const score = new Map();
+  const bump = (w, n) => score.set(w, (score.get(w) || 0) + n);
+  const usable = w => w.length >= 4 && !STOP.has(w) && !/^\d+$/.test(w);
+  title.filter(usable).forEach(w => bump(w, 5));
+  body.filter(usable).forEach(w => bump(w, 1));
+  // bigrams ("dragon egg", "check in") from the title carry the most identity
+  for (let i = 0; i < title.length - 1; i++) {
+    if (usable(title[i]) && usable(title[i + 1])) bump(`${title[i]} ${title[i + 1]}`, 8);
+  }
+  for (let i = 0; i < body.length - 1; i++) {
+    if (usable(body[i]) && usable(body[i + 1])) bump(`${body[i]} ${body[i + 1]}`, 1.5);
+  }
+  const topics = [...score.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .filter(([, v]) => v >= 4)
+    .map(([w]) => w);
+  topicCache.set(c.uuid, topics);
+  return topics;
+}
+
 export function mount(root, tools) {
   let db = null;
   let count = load('archive.count', 0);
@@ -159,6 +200,7 @@ export function mount(root, tools) {
         white-space: pre-wrap; overflow-wrap: break-word; font-size: 15px; line-height:1.55; }
       .ar-msg.h { margin-left:auto; background: color-mix(in oklab, var(--accent) 20%, var(--surface)); }
       .ar-msg.a { margin-right:auto; background: color-mix(in oklab, var(--surface-2) 92%, transparent); }
+      #ar-main mark { background: color-mix(in oklab, var(--accent) 45%, transparent); color: var(--ink); border-radius: 3px; padding: 0 2px; }
     </style>
     <div id="ar-main"></div>`;
 
@@ -179,6 +221,10 @@ export function mount(root, tools) {
       <div class="panel" style="margin-bottom:16px">
         <h3>Categories</h3>
         <div id="ar-cats" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+      </div>
+      <div class="panel" style="margin-bottom:16px">
+        <h3>Topics ${activeCat === 'all' ? '' : 'in this category'}</h3>
+        <div id="ar-topics" class="muted">Scanning…</div>
       </div>
       <div class="panel" style="margin-bottom:16px">
         <h3>Search ${activeCat === 'all' ? 'everything' : 'this category'}</h3>
@@ -235,6 +281,79 @@ export function mount(root, tools) {
   }
 
   const inCat = c => activeCat === 'all' || catOf(c).id === activeCat;
+  let lastQuery = ''; // carried into the reader for highlighting
+
+  async function renderTopics() {
+    const tally = new Map(); // topic → convo count
+    await tx(db, 'convos', 'readonly', store => {
+      store.openCursor().onsuccess = e => {
+        const cur = e.target.result;
+        if (!cur) return;
+        if (inCat(cur.value)) {
+          for (const t of topicsOf(cur.value)) tally.set(t, (tally.get(t) || 0) + 1);
+        }
+        cur.continue();
+      };
+    });
+    if (dead) return;
+    const el = main.querySelector('#ar-topics');
+    if (!el) return;
+    const sorted = [...tally.entries()].sort((a, b) => b[1] - a[1]);
+    const repeated = sorted.filter(([, n]) => n >= 2);
+    // prefer topics shared across chats; fall back to the strongest singles
+    const top = (repeated.length >= 4 ? repeated : sorted).slice(0, 18);
+    if (!top.length) { el.textContent = 'Topics appear once chats are imported.'; return; }
+    el.classList.remove('muted');
+    el.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap">` +
+      top.map(([t, n]) => `<button class="btn small" data-topic="${esc(t)}">${esc(t)} · ${n}</button>`).join('') + '</div>';
+    el.querySelectorAll('[data-topic]').forEach(b => b.addEventListener('click', () => {
+      const q = b.dataset.topic;
+      const input = main.querySelector('#ar-q');
+      input.value = q;
+      search(q);
+      input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }));
+  }
+
+  const mark = (text, needle) => {
+    const safe = esc(text);
+    const escNeedle = esc(needle).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return safe.replace(new RegExp(`(${escNeedle})`, 'gi'), '<mark>$1</mark>');
+  };
+
+  function snippetAround(text, needle) {
+    const i = text.toLowerCase().indexOf(needle);
+    if (i < 0) return null;
+    return (i > 45 ? '…' : '') + text.slice(Math.max(0, i - 45), i + 110) + '…';
+  }
+
+  // hits: [{c, snips:[string]} | {mem:true, snip}] → grouped by category
+  function renderGrouped(hits, needle) {
+    const box = main.querySelector('#ar-results');
+    if (!hits.length) { box.innerHTML = '<p class="muted" style="margin-top:8px">No matches.</p>'; return; }
+    const groups = new Map();
+    for (const h of hits) {
+      const key = h.mem ? 'mem' : catOf(h.c).id;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(h);
+    }
+    let html = '';
+    for (const [key, list] of groups) {
+      const cat = key === 'mem' ? { emoji: '🧠', name: 'Memories' } : (CAT_BY_ID[key] || OTHER);
+      html += `<div class="ar-month">${cat.emoji} ${esc(cat.name)} · ${list.length}</div>`;
+      for (const h of list) {
+        if (h.mem) {
+          html += `<button class="ar-row"><div class="t">🧠 Memory</div><div class="snip">${mark(h.snip, needle)}</div></button>`;
+        } else {
+          html += `<button class="ar-row" data-open="${esc(h.c.uuid)}">
+            <div class="t">${esc(h.c.name)}</div>
+            <div class="m">${esc(fmtDate(h.c.updated))} · ${h.c.msgs.length} messages</div>
+            ${h.snips.map(s => `<div class="snip">${mark(s, needle)}</div>`).join('')}</button>`;
+        }
+      }
+    }
+    box.innerHTML = html;
+  }
 
   async function listNewest() {
     const rows = [];
@@ -265,37 +384,34 @@ export function mount(root, tools) {
 
   async function search(q) {
     const needle = q.toLowerCase();
+    lastQuery = needle;
     const hits = [];
     const mem = load('memories', '');
     if (activeCat === 'all' && mem.toLowerCase().includes(needle)) {
       const i = mem.toLowerCase().indexOf(needle);
-      hits.push({ mem: true, snip: mem.slice(Math.max(0, i - 40), i + 90) });
+      hits.push({ mem: true, snip: mem.slice(Math.max(0, i - 45), i + 110) });
     }
     await tx(db, 'convos', 'readonly', store => {
       store.openCursor().onsuccess = e => {
         const cur = e.target.result;
-        if (!cur || hits.length >= 50) return;
+        if (!cur || hits.length >= 60) return;
         const c = cur.value;
         if (!inCat(c)) { cur.continue(); return; }
-        if (c.name.toLowerCase().includes(needle)) {
-          hits.push({ c, snip: '' });
-        } else {
-          for (const m of c.msgs) {
-            const i = m.t.toLowerCase().indexOf(needle);
-            if (i >= 0) { hits.push({ c, snip: m.t.slice(Math.max(0, i - 40), i + 90) }); break; }
-          }
+        const snips = [];
+        if (c.name.toLowerCase().includes(needle)) snips.push(''); // title hit
+        for (const m of c.msgs) {
+          if (snips.length >= 4) break;
+          const s = snippetAround(m.t, needle);
+          if (s) snips.push(s);
         }
+        const clean = snips.filter(Boolean);
+        if (snips.length) hits.push({ c, snips: clean.slice(0, 3), titleHit: snips[0] === '' });
         cur.continue();
       };
     });
     if (dead) return;
-    main.querySelector('#ar-results').innerHTML = hits.length
-      ? hits.map(h => h.mem
-        ? `<button class="ar-row"><div class="t">🧠 Memory</div><div class="snip">…${esc(h.snip)}…</div></button>`
-        : `<button class="ar-row" data-open="${esc(h.c.uuid)}">
-            <div class="t">${esc(h.c.name)}</div><div class="m">${esc(fmtDate(h.c.updated))}</div>
-            ${h.snip ? `<div class="snip">…${esc(h.snip)}…</div>` : ''}</button>`).join('')
-      : '<p class="muted" style="margin-top:8px">No matches.</p>';
+    hits.sort((a, b) => (b.titleHit ? 1 : 0) - (a.titleHit ? 1 : 0));
+    renderGrouped(hits, needle);
   }
 
   async function openConvo(uuid) {
@@ -305,14 +421,26 @@ export function mount(root, tools) {
       return out;
     }).then(o => o.v);
     if (!c || dead) return;
+    const cat = catOf(c);
+    const paint = t => (lastQuery ? mark(t, lastQuery) : esc(t));
     main.innerHTML = `
       <p><button class="btn small" id="ar-back">‹ Archive</button>
         <a class="btn small" target="_blank" rel="noopener" href="https://claude.ai/chat/${esc(c.uuid)}">↗ open on claude.ai</a></p>
       <h3 style="font-family:var(--font-display);margin:14px 0 4px">${esc(c.name)}</h3>
-      <p class="muted" style="margin-bottom:16px">${esc(fmtDate(c.created))} · ${c.msgs.length} messages</p>
-      ${c.msgs.map(m => `<div class="ar-msg ${m.s}">${esc(m.t)}</div>`).join('')}`;
+      <p class="muted" style="margin-bottom:6px">${cat.emoji} ${esc(cat.name)} · ${esc(fmtDate(c.created))} · ${c.msgs.length} messages</p>
+      <p style="margin-bottom:16px">${topicsOf(c).map(t => `<button class="btn small" data-topicjump="${esc(t)}">${esc(t)}</button>`).join(' ')}</p>
+      ${c.msgs.map(m => `<div class="ar-msg ${m.s}">${paint(m.t)}</div>`).join('')}`;
     main.querySelector('#ar-back').addEventListener('click', renderBrowse);
-    root.closest('#appview-body')?.scrollTo(0, 0);
+    main.querySelectorAll('[data-topicjump]').forEach(b => b.addEventListener('click', () => {
+      renderBrowse();
+      const input = main.querySelector('#ar-q');
+      input.value = b.dataset.topicjump;
+      search(b.dataset.topicjump);
+    }));
+    const scroller = root.closest('#appview-body');
+    scroller?.scrollTo(0, 0);
+    const first = main.querySelector('mark');
+    if (first) first.scrollIntoView({ block: 'center' });
   }
 
   function wireBrowse() {
@@ -342,6 +470,7 @@ export function mount(root, tools) {
     main.innerHTML = browseHTML();
     wireBrowse();
     renderCats();
+    renderTopics();
     listNewest();
   }
 
@@ -368,7 +497,7 @@ export function mount(root, tools) {
         text = await file.text();
       }
       const convos = normalize(parseExportText(text));
-      for (const c of convos) c.cat = categorize(c);
+      for (const c of convos) { c.cat = categorize(c); c.topics = topicsOf({ ...c, topics: undefined }); }
       let fresh = 0;
       await tx(db, 'convos', 'readwrite', store => {
         for (const c of convos) {

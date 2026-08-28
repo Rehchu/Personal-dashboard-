@@ -1,0 +1,291 @@
+/* ============================================================
+   Assassin's Creed — LIGHT Animus rework (Unity / Black Flag menus).
+   White fog, thin gray hairlines, hexagon lattice, deep Creed red,
+   engraved letter-spaced type. Loads after base/themes/fx/xbox/polish,
+   so equal-specificity rules here win by order.
+   Every rule is scoped under [data-theme="assassins"].
+   ============================================================ */
+
+/* ---------- (A) light Animus tokens ---------- */
+
+[data-theme="assassins"] {
+  --bg: #eceae4;
+  --surface: #f7f6f2;
+  --surface-2: #ffffff;
+  --ink: #17171a;
+  --ink-2: #45454a;
+  --ink-3: #84847e;
+  --accent: #b3241c;        /* deep Creed red — 5.5:1 on --bg, 6.6:1 on white */
+  --accent-2: #17171a;
+  --on-accent: #ffffff;     /* 6.6:1 on --accent */
+  --chart: #b3241c;
+  --ambient-a: rgba(255, 255, 255, 0.85);   /* soft white fog */
+  --ambient-b: rgba(255, 255, 255, 0.60);
+  --tile-radius: 2px;
+  --panel-radius: 2px;
+  --font-display: "Cinzel", "Times New Roman", serif;
+  --font-body: "Rajdhani", system-ui, sans-serif;
+  --nb-paper: #fdfdfa;
+  --focus-ring: 0 0 0 3px rgba(179, 36, 28, 0.6);
+  --tile-glow: 0 8px 24px rgba(0, 0, 0, 0.08);  /* no glows: soft gray shadow */
+  scrollbar-color: #b8b6af #eceae4;             /* inherits everywhere (Firefox) */
+}
+
+/* ---------- (B) atmosphere: white fog + hex lattice + red beam ---------- */
+
+/* fog radials over a self-authored tessellating honeycomb (~4–5% ink) */
+[data-theme="assassins"] #ambient::before {
+  background:
+    radial-gradient(90vmax 60vmax at 18% 8%, rgba(255, 255, 255, 0.78), transparent 62%),
+    radial-gradient(75vmax 55vmax at 85% 72%, rgba(255, 255, 255, 0.62), transparent 58%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27.7' height='48' viewBox='0 0 27.7 48'%3E%3Cpath d='M0 8L13.85 0L27.7 8M0 8V24M27.7 8V24M0 24L13.85 32L27.7 24M13.85 32V48' fill='none' stroke='%2317171a' stroke-opacity='.05' stroke-width='1'/%3E%3C/svg%3E") repeat,
+    radial-gradient(70vmax 50vmax at 48% 112%, rgba(252, 251, 247, 0.8), transparent 60%);
+}
+
+/* thin red beam drifting diagonally (resets polish.css's insignia geometry) */
+[data-theme="assassins"] #ambient::after {
+  inset: -25%;
+  width: auto;
+  height: auto;
+  clip-path: none;
+  background: linear-gradient(115deg,
+    transparent 46%,
+    rgba(179, 36, 28, 0.05) 49.4%,
+    rgba(179, 36, 28, 0.12) 50%,
+    rgba(179, 36, 28, 0.05) 50.6%,
+    transparent 54%);
+  animation: ac-beam-sweep 16s ease-in-out infinite alternate;
+}
+
+@keyframes ac-beam-sweep {
+  from { transform: translate3d(-12%, 0, 0); }
+  to   { transform: translate3d(12%, 0, 0); }
+}
+
+/* dark-theme fx neutralized: only a whisper-faint hairline grid remains */
+[data-theme="assassins"] #theme-fx {
+  background:
+    repeating-linear-gradient(90deg, transparent 0 119px, rgba(23, 23, 26, 0.03) 119px 120px),
+    repeating-linear-gradient(0deg, transparent 0 119px, rgba(23, 23, 26, 0.03) 119px 120px);
+}
+
+/* Animus scan bar (fx.css) recolored for the light ground, glow removed */
+[data-theme="assassins"] #theme-fx::after {
+  background: linear-gradient(90deg,
+    transparent, rgba(179, 36, 28, 0.35) 18%, rgba(179, 36, 28, 0.35) 82%, transparent);
+  box-shadow: none;
+}
+
+/* ---------- (C) chrome ---------- */
+
+/* topbar: hairline base, engraved brand, no glowing mark */
+[data-theme="assassins"] #topbar { border-bottom: 1px solid rgba(23, 23, 26, 0.12); }
+[data-theme="assassins"] #brand-mark { box-shadow: none; }
+[data-theme="assassins"] #brand { font-weight: 700; }
+
+[data-theme="assassins"] .theme-dot.active {
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+/* engraved display type: tight caps, white top-bevel */
+[data-theme="assassins"] #brand,
+[data-theme="assassins"] #hero-title,
+[data-theme="assassins"] #appview-title,
+[data-theme="assassins"] .panel h3 {
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+[data-theme="assassins"] #hero-title { letter-spacing: 0.12em; font-weight: 700; }
+[data-theme="assassins"] #hero-desc { color: var(--ink-2); }
+[data-theme="assassins"] #appview-title { letter-spacing: 0.14em; }
+[data-theme="assassins"] .panel h3 { letter-spacing: 0.18em; }
+
+/* white surfaces: 1px warm-gray border, sharp corners, soft gray shadow */
+[data-theme="assassins"] .panel,
+[data-theme="assassins"] .card,
+[data-theme="assassins"] .stat-tile,
+[data-theme="assassins"] .act-card,
+[data-theme="assassins"] .nb-group,
+[data-theme="assassins"] .chart-tip,
+[data-theme="assassins"] #toast,
+[data-theme="assassins"] #nb-stage {
+  background: #ffffff;
+  border: 1px solid #d8d6cf;
+  border-radius: 2px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="assassins"] #nb-stage { background: var(--nb-paper); }
+
+/* tiles: white framed cards */
+[data-theme="assassins"] .tile {
+  background: #ffffff;
+  border: 1px solid #d8d6cf;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+/* focused: red 2px frame + slight scale, no glow */
+[data-theme="assassins"] .tile.focused {
+  transform: scale(1.08);
+  border-color: #b3241c;
+  box-shadow: 0 0 0 2px #b3241c, 0 12px 28px rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="assassins"] .tile .tile-label { letter-spacing: 0.16em; }
+[data-theme="assassins"] .tile.focused .tile-label { color: var(--ink); }
+
+[data-theme="assassins"] .tile .badge {
+  background: #ffffff;
+  border: 1px solid #d8d6cf;
+  border-radius: 2px;
+  color: #45454a;
+}
+
+/* buttons: rectangular, thin-bordered; primary = deep red on white text */
+[data-theme="assassins"] .hero-btn,
+[data-theme="assassins"] .btn,
+[data-theme="assassins"] #appview-back,
+[data-theme="assassins"] .pill {
+  border-radius: 2px;
+  border-width: 1px;
+  border-color: #b8b6af;
+}
+
+[data-theme="assassins"] .hero-btn { letter-spacing: 0.14em; }
+[data-theme="assassins"] .btn { letter-spacing: 0.1em; }
+
+[data-theme="assassins"] .hero-btn.primary,
+[data-theme="assassins"] .btn.primary {
+  background: #b3241c;
+  border-color: #b3241c;
+  color: #ffffff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="assassins"] .btn.danger:hover { border-color: #b3241c; color: #b3241c; }
+
+/* re-assert hover/active accent borders lost to the border-color overrides above */
+[data-theme="assassins"] .btn:hover,
+[data-theme="assassins"] .pill:hover,
+[data-theme="assassins"] #appview-back:hover,
+[data-theme="assassins"] .pill.active { border-color: #b3241c; }
+
+/* radiating-menu vibe: small red hex bullet on hero actions */
+[data-theme="assassins"] .hero-btn::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 9px;
+  height: 10px;
+  background: var(--accent);
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+}
+
+[data-theme="assassins"] .hero-btn.primary::before { background: #ffffff; }
+
+[data-theme="assassins"] #hero-icon { border: 1px solid #d8d6cf; }
+
+/* hint glyph chips: thin dark outlines */
+[data-theme="assassins"] #hint .btn-glyph {
+  border: 1px solid rgba(23, 23, 26, 0.6);
+  color: #45454a;
+}
+
+/* inputs light + sharp */
+[data-theme="assassins"] input,
+[data-theme="assassins"] select,
+[data-theme="assassins"] textarea {
+  background: #ffffff;
+  border: 1px solid #b8b6af;
+  border-radius: 2px;
+  color: var(--ink);
+}
+
+[data-theme="assassins"] input:focus,
+[data-theme="assassins"] select:focus,
+[data-theme="assassins"] textarea:focus {
+  border-color: #b3241c;
+  box-shadow: 0 0 0 3px rgba(179, 36, 28, 0.16);
+}
+
+/* scrollbars light (WebKit; Firefox via scrollbar-color token above) */
+[data-theme="assassins"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="assassins"] ::-webkit-scrollbar-track { background: #eceae4; }
+[data-theme="assassins"] ::-webkit-scrollbar-thumb {
+  background: #c6c4bd;
+  border: 2px solid #eceae4;
+  border-radius: 2px;
+}
+[data-theme="assassins"] ::-webkit-scrollbar-thumb:hover { background: #adaba3; }
+
+[data-theme="assassins"] .progress,
+[data-theme="assassins"] .progress > div { border-radius: 2px; }
+
+/* boot splash: Animus white-out (dark text on light void) */
+[data-theme="assassins"] #boot { background: #f4f2ec; }
+[data-theme="assassins"] #boot-text { color: #17171a; letter-spacing: 0.4em; }
+
+/* ---------- (D) control center: light fog + dark text ---------- */
+
+[data-theme="assassins"] #ccenter {
+  background: rgba(240, 238, 232, 0.75);
+  backdrop-filter: blur(10px);
+}
+
+[data-theme="assassins"] #cc-sheet {
+  background: #ffffff;
+  border: 1px solid #d8d6cf;
+  border-radius: 2px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="assassins"] .cc-btn { color: #45454a; }
+[data-theme="assassins"] .cc-btn .cc-ico { border: 1px solid #b8b6af; }
+[data-theme="assassins"] .cc-btn:hover { color: var(--ink); }
+
+/* ---------- xbox-console composition (glow-free on light) ---------- */
+
+[data-console="xbox"][data-theme="assassins"] .hero-btn.primary,
+[data-console="xbox"][data-theme="assassins"] .btn.primary {
+  background: #b3241c;
+  border-color: #b3241c;
+}
+
+[data-console="xbox"][data-theme="assassins"] .tile.focused {
+  animation: none;
+  box-shadow: 0 0 0 2px var(--accent), 0 12px 28px rgba(0, 0, 0, 0.12);
+}
+
+[data-console="xbox"][data-theme="assassins"] #profile-chip {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* ---------- contrast repairs for --ink-3 small text on light ----------
+   #84847e is only 3.5:1 on the light surfaces — fine for borders and
+   decoration, not for small text. Small ink-3 text darkens to #5d5d57
+   (≥5.5:1 on --bg, ≥6.1:1 on white). */
+
+[data-theme="assassins"] #brand-sub,
+[data-theme="assassins"] #clock-date,
+[data-theme="assassins"] #hint,
+[data-theme="assassins"] .tile .tile-label,
+[data-theme="assassins"] .field > label,
+[data-theme="assassins"] table.data th,
+[data-theme="assassins"] .muted,
+[data-theme="assassins"] .stat-tile .stat-label,
+[data-theme="assassins"] .card .card-meta,
+[data-theme="assassins"] .act-card .act-label {
+  color: #5d5d57;
+}
+
+/* re-assert (the group above ties with base's focused-label rule) */
+[data-theme="assassins"] .tile.focused .tile-label { color: var(--ink); }
+
+/* ---------- reduced motion: beam parks, scan already removed by fx.css ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="assassins"] #ambient::after {
+    animation: none;
+    transform: none;
+  }
+}

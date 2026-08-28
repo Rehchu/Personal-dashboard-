@@ -6,6 +6,7 @@ import { TILES } from './data.js';
 import { load, save, esc, showToast } from './store.js';
 import { sfx } from './sfx.js';
 import { initAmbient } from './ambient.js';
+import { initStorm } from './storm.js';
 import { ICONS } from './icons.js';
 import { initAchievements, trophyCaseHTML } from './achievements.js';
 import { activityCards } from './activity.js';
@@ -50,6 +51,33 @@ let consoleMode = load('console', 'ps') === 'xbox' ? 'xbox' : 'ps';
 let uiReady = false; // suppress sounds/fx during initial paint
 
 const ambient = initAmbient($('#fx-canvas'));
+
+/* ---------- animated background: storm / video / off ---------- */
+const storm = initStorm($('#storm-canvas'));
+const bgVideo = $('#bg-video');
+let videoOk = false;
+bgVideo.addEventListener('canplay', () => { videoOk = true; });
+bgVideo.addEventListener('error', () => { videoOk = false; });
+let bgMode = load('ui.bg', 'storm');
+
+function applyBg(mode) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) mode = 'off';
+  if (mode === 'video' && !videoOk) mode = 'storm';
+  bgMode = mode;
+  document.documentElement.dataset.bg = mode;
+  save('ui.bg', mode);
+  bgVideo.hidden = mode !== 'video';
+  if (mode === 'video') bgVideo.play().catch(() => { applyBg('storm'); });
+  else bgVideo.pause();
+  if (mode === 'storm') storm.start(); else storm.stop();
+}
+
+function cycleBg() {
+  const order = videoOk ? ['storm', 'video', 'off'] : ['storm', 'off'];
+  applyBg(order[(order.indexOf(bgMode) + 1) % order.length]);
+}
+
+const BG_LABEL = { storm: 'Bg: Storm', video: 'Bg: Video', off: 'Bg: Off' };
 
 function trackUse(key, value) {
   const used = new Set(load(key, []));
@@ -225,7 +253,9 @@ function openModule(id) {
   tools.innerHTML = '';
   body.innerHTML = '';
   appview.hidden = false;
-  ambient.pause(); // the module view fully covers the particle canvas
+  ambient.pause(); // the module view fully covers the background layers
+  storm.stop();
+  if (!bgVideo.hidden) bgVideo.pause();
   try {
     unmount = mod.mount(body, tools) || null;
   } catch (err) {
@@ -241,6 +271,8 @@ function closeModule() {
   $('#appview-body').innerHTML = '';
   $('#appview-tools').innerHTML = '';
   ambient.resume();
+  if (bgMode === 'storm') storm.start();
+  if (bgMode === 'video' && !bgVideo.hidden) bgVideo.play().catch(() => { /* noop */ });
   sfx.play('back');
   setFocus(focusIndex, false); // refresh activity cards with any new data
   rail.focus({ preventScroll: true });
@@ -273,7 +305,8 @@ function buildCC() {
     { ico: other, label: other === 'xbox' ? 'Xbox view' : 'PS view', fn: () => { applyConsole(other, { announce: true }); buildCC(); } },
     { ico: sfx.isMuted() ? 'soundOff' : 'sound', label: sfx.isMuted() ? 'Sound off' : 'Sound on', fn: () => { sfx.setMuted(!sfx.isMuted()); if (!sfx.isMuted()) sfx.play('select'); buildCC(); } },
     { ico: 'trophy', label: 'Trophies', fn: toggleTrophies },
-    { ico: 'sparkle', label: sync.status(), fn: syncAction },
+    { ico: 'sparkle', label: BG_LABEL[bgMode] || 'Bg', fn: () => { cycleBg(); sfx.play('select'); buildCC(); } },
+    { ico: 'home', label: sync.status(), fn: syncAction },
     { ico: 'controller', label: 'Cloudflare', href: 'https://dash.cloudflare.com' },
   ];
   ccActions.innerHTML = '';
@@ -324,6 +357,14 @@ $('#cc-btn').innerHTML = ICONS.controller;
 $('#cc-btn').addEventListener('click', () => (ccenter.hidden ? showCC() : hideCC()));
 ccenter.addEventListener('click', e => { if (e.target === ccenter) hideCC(); });
 $('#profile-chip').addEventListener('click', () => (ccenter.hidden ? showCC() : hideCC()));
+
+// gamerscore-style points: 500 per trophy, shown on the profile chip
+function updateScore() {
+  const n = Object.keys(load('trophies', {})).length;
+  $('#profile-score').textContent = n ? `G ${(n * 500).toLocaleString()}` : '';
+}
+updateScore();
+window.addEventListener('pd:data-changed', updateScore);
 
 /* ---------- pill nav (Xbox mode) ---------- */
 document.querySelectorAll('#pill-nav .pill').forEach(pill => {
@@ -418,6 +459,9 @@ renderRail();
 boot();
 initAchievements(() => consoleMode);
 sync.init();
+applyBg(bgMode);
+// if the video file exists it becomes selectable a moment after load
+bgVideo.addEventListener('canplay', () => { if (load('ui.bg', 'storm') === 'video') applyBg('video'); }, { once: true });
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => { /* offline support is best-effort */ });
 }

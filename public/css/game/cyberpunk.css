@@ -1,0 +1,197 @@
+/* ============================================================
+   Cyberpunk — in-game HUD skin (cyberware / inventory screens).
+   Black-red HUD panels, angular clipped corners, red edge tabs,
+   cyan data readouts, yellow status marks, thin scanlines.
+   Loads after base/themes/fx/xbox/polish: equal-specificity
+   rules here win by order. Every selector is scoped to
+   [data-theme="cyberpunk"].
+   ============================================================ */
+
+/* ---------- HUD panels: black-red, one corner clipped ---------- */
+
+[data-theme="cyberpunk"] .panel,
+[data-theme="cyberpunk"] .card {
+  border: 1px solid rgba(255, 0, 60, 0.35);
+  border-radius: 0;
+  clip-path: polygon(
+    0 0, 100% 0,
+    100% calc(100% - 14px), calc(100% - 14px) 100%,
+    0 100%);
+  /* thin scanline texture over near-black */
+  background:
+    repeating-linear-gradient(0deg,
+      rgba(255, 255, 255, 0.016) 0 1px, transparent 1px 3px),
+    #0d0d12ee;
+}
+
+/* clip-path eats outer box-shadows — swap the card hover glow for a
+   post-clip drop-shadow so the lift still reads */
+[data-theme="cyberpunk"] .card:hover {
+  border-color: rgba(0, 240, 255, 0.6);
+  box-shadow: none;
+  filter: drop-shadow(0 8px 20px rgba(0, 240, 255, 0.22));
+}
+
+/* section headers: red EDGE TAB */
+[data-theme="cyberpunk"] .panel h3 {
+  border-left: 4px solid #ff003c;
+  padding-left: 10px;
+  background: linear-gradient(90deg, rgba(255, 0, 60, 0.14), transparent 60%);
+  color: #f4f3ee;
+  letter-spacing: 0.14em;
+}
+
+/* ---------- cyan data-readout surfaces ---------- */
+
+[data-theme="cyberpunk"] #appview .stat-tile {
+  border-color: rgba(0, 240, 255, 0.4);
+  background:
+    linear-gradient(180deg, rgba(0, 240, 255, 0.05), transparent 45%),
+    #0d0d12ee;
+}
+
+[data-theme="cyberpunk"] .act-card {
+  border-color: rgba(0, 240, 255, 0.4);
+}
+
+[data-theme="cyberpunk"] .chart-tip {
+  border: 1px solid rgba(0, 240, 255, 0.4);
+  border-radius: 0;
+  background: #0d0d12f2;
+  color: #5ff5ff; /* 14.7:1 on #0d0d12 */
+}
+
+/* readout values: cyan, tabular digits, short red underline accent */
+[data-theme="cyberpunk"] #appview .stat-tile .stat-value,
+[data-theme="cyberpunk"] .act-card .act-value {
+  color: #5ff5ff; /* ≥4.5:1 on all surfaces above */
+  font-variant-numeric: tabular-nums;
+  padding-bottom: 4px;
+  background: linear-gradient(90deg, #ff003c, rgba(255, 0, 60, 0.35))
+    left bottom / 40% 2px no-repeat;
+}
+
+/* ---------- data tables: yellow small-caps headers ---------- */
+
+[data-theme="cyberpunk"] table.data th {
+  color: #fcee0a; /* ~16:1 on panel black */
+  text-transform: none;
+  font-variant-caps: all-small-caps;
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  border-bottom: 1px solid rgba(252, 238, 10, 0.4);
+}
+
+[data-theme="cyberpunk"] table.data tr:hover td {
+  background: rgba(0, 240, 255, 0.05);
+}
+
+/* ---------- tiles: keep the notch, add HUD framing ---------- */
+
+/* inner red hairline frame (inset shadow survives the clip-path) */
+[data-theme="cyberpunk"] .tile {
+  box-shadow: inset 0 0 0 1px rgba(255, 0, 60, 0.25);
+}
+
+/* tiny yellow status square, top-left (top-right corner is the notch) */
+[data-theme="cyberpunk"] .tile::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 6px;
+  height: 6px;
+  background: #fcee0a;
+  pointer-events: none;
+}
+
+/* focused: themes.css keeps the yellow inset ring + RGB drop-shadows;
+   here we only add a scanline sweep blended over the tile art */
+[data-theme="cyberpunk"] .tile.focused {
+  background:
+    repeating-linear-gradient(0deg,
+      rgba(0, 240, 255, 0.07) 0 1px, transparent 1px 3px),
+    linear-gradient(150deg,
+      color-mix(in oklab, var(--tile-accent, var(--surface-2)) 85%, white 6%),
+      color-mix(in oklab, var(--tile-accent, var(--surface-2)) 60%, black 32%));
+  background-blend-mode: screen, normal;
+}
+
+/* ---------- appview: red HUD rule with yellow segment ---------- */
+
+[data-theme="cyberpunk"] #appview-bar {
+  position: relative;
+  border-bottom: 2px solid #ff003c;
+}
+
+[data-theme="cyberpunk"] #appview-bar::after {
+  content: "";
+  position: absolute;
+  left: clamp(16px, 3vw, 42px);
+  bottom: -2px;
+  width: 110px;
+  height: 2px;
+  background: linear-gradient(90deg, #fcee0a 0 70%, transparent);
+  pointer-events: none;
+}
+
+[data-theme="cyberpunk"] #appview-title {
+  text-shadow: 2px 0 rgba(255, 0, 60, 0.55), -2px 0 rgba(0, 240, 255, 0.55);
+}
+
+/* ---------- buttons ---------- */
+
+[data-theme="cyberpunk"] .btn {
+  border-radius: 0;
+}
+
+[data-theme="cyberpunk"] .btn:hover {
+  border-color: #00f0ff;
+  transform: translateY(-1px) skewX(-2deg);
+}
+
+[data-theme="cyberpunk"] .btn.primary {
+  background: #fcee0a;
+  border-color: #fcee0a;
+  color: #0d0d08; /* ~16:1 on the yellow */
+  clip-path: polygon(
+    0 0, 100% 0,
+    100% calc(100% - 10px), calc(100% - 10px) 100%,
+    0 100%);
+}
+
+/* hero buttons squared to match the HUD (tap size unchanged) */
+[data-theme="cyberpunk"] .hero-btn {
+  border-radius: 2px;
+}
+
+[data-theme="cyberpunk"] .hero-btn.primary {
+  clip-path: polygon(
+    0 0, 100% 0,
+    100% calc(100% - 10px), calc(100% - 10px) 100%,
+    0 100%);
+}
+
+/* ---------- responsive tuning ---------- */
+
+@media (max-width: 720px) {
+  [data-theme="cyberpunk"] .panel,
+  [data-theme="cyberpunk"] .card {
+    clip-path: polygon(
+      0 0, 100% 0,
+      100% calc(100% - 10px), calc(100% - 10px) 100%,
+      0 100%);
+  }
+
+  [data-theme="cyberpunk"] #appview-bar::after {
+    width: 70px;
+  }
+}
+
+/* ---------- reduced motion: no skew, everything else static ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="cyberpunk"] .btn:hover {
+    transform: none;
+  }
+}

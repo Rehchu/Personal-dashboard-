@@ -21,9 +21,17 @@
   <link rel="stylesheet" href="/css/fx.css">
   <link rel="stylesheet" href="/css/xbox.css">
   <link rel="stylesheet" href="/css/polish.css">
+  <link rel="stylesheet" href="/css/game/ps5home.css">
+  <link rel="stylesheet" href="/css/game/assassins.css">
+  <link rel="stylesheet" href="/css/game/cyberpunk.css">
+  <link rel="stylesheet" href="/css/game/gtav.css">
+  <link rel="stylesheet" href="/css/game/minecraft.css">
+  <link rel="stylesheet" href="/css/game/xboxhome.css">
 </head>
 <body>
+  <video id="bg-video" muted loop playsinline preload="metadata" src="/media/bg.mp4" hidden aria-hidden="true"></video>
   <div id="ambient" aria-hidden="true"></div>
+  <canvas id="storm-canvas" hidden aria-hidden="true"></canvas>
   <div id="theme-fx" aria-hidden="true"></div>
   <canvas id="fx-canvas" aria-hidden="true"></canvas>
 
@@ -36,7 +44,7 @@
     <div class="topbar-right">
       <button id="console-btn" class="top-icon-btn" title="Switch console view" aria-label="Switch console view"></button>
       <button id="cc-btn" class="top-icon-btn" title="Control center (c)" aria-label="Open control center"></button>
-      <button id="profile-chip" title="Bradly"><span id="profile-avatar">B</span><span id="profile-name">Bradly</span></button>
+      <button id="profile-chip" title="Bradly"><span id="profile-avatar">B</span><span id="profile-name">Bradly</span><span id="profile-score"></span></button>
       <nav id="theme-switcher" aria-label="Theme">
         <button class="theme-dot" data-set-theme="assassins"  title="Assassin's Creed theme"><span>AC</span></button>
         <button class="theme-dot" data-set-theme="cyberpunk"  title="Cyberpunk theme"><span>CP</span></button>

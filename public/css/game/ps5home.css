@@ -1,0 +1,93 @@
+/* PS5 home layout (PlayStation console mode): Games/Media-style text tabs
+   top-left, tile row up top with a big focused tile, hero details beneath,
+   widget cards in the lower half. Scoped to [data-console="ps"]; theme files
+   loading after this may restyle the tabs (GTA pause-menu, Minecraft tabs). */
+
+[data-console="ps"] #pill-nav {
+  display: flex;
+  gap: 4px;
+  padding: 0 clamp(18px, 3.5vw, 54px) 4px;
+  position: relative;
+  z-index: 5;
+}
+
+[data-console="ps"] .pill {
+  background: none;
+  border: none;
+  border-radius: 8px;
+  color: var(--ink-3);
+  font-family: var(--font-display);
+  font-size: clamp(16px, 1.8vw, 21px);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 6px 14px;
+  text-transform: none;
+}
+
+[data-console="ps"] .pill:hover { color: var(--ink-2); }
+[data-console="ps"] .pill.active { color: var(--ink); background: none; }
+
+/* tile row first, PS5-style; hero details below it */
+[data-console="ps"] #home {
+  justify-content: flex-start;
+  gap: clamp(10px, 2.2vh, 24px);
+}
+
+[data-console="ps"] #rail-wrap { order: -1; }
+
+[data-console="ps"] #rail { padding-top: 14px; padding-bottom: 50px; }
+
+[data-console="ps"] .tile { width: clamp(96px, 10.5vw, 148px); }
+
+[data-console="ps"] .tile.focused { transform: scale(1.24); }
+
+/* PS5 widget cards in the lower half */
+[data-console="ps"] #activity { margin-top: clamp(6px, 5vh, 64px); }
+
+[data-console="ps"] .act-card {
+  min-width: 186px;
+  padding: 16px 20px;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--surface) 66%, transparent);
+  backdrop-filter: blur(10px);
+  border-color: color-mix(in oklab, var(--ink-3) 26%, transparent);
+}
+
+[data-console="ps"] .act-card .act-value { font-size: 26px; }
+
+@media (max-width: 720px) {
+  [data-console="ps"] .tile { width: 36vw; }
+  [data-console="ps"] .tile.focused { transform: scale(1.12); }
+  [data-console="ps"] #activity { margin-top: 8px; }
+}
+
+/* ---------- animated background layers (video / storm) ---------- */
+
+#bg-video {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+}
+
+#bg-video[hidden] { display: none; }
+
+#storm-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+#storm-canvas[hidden] { display: none; }
+
+/* when a video plays, the ambient layer becomes a readability scrim instead
+   of an opaque background, and the painted theme art steps aside */
+html[data-bg="video"] #ambient {
+  background: linear-gradient(rgba(4, 6, 12, 0.42), rgba(4, 6, 12, 0.72));
+}
+
+html[data-bg="video"] #ambient::before,
+html[data-bg="video"] #ambient::after { content: none; }

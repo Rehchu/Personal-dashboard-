@@ -1,0 +1,284 @@
+/* ============================================================
+   GTA V — pause-menu skin.
+   Translucent dark surfaces over the Vinewood sunset (polish.css
+   ambient stays), iconic top tab bar, settings-list panels,
+   small-caps letterspaced labels. Every rule scoped to
+   [data-theme="gtav"]; loads after polish.css so equal
+   specificity wins by order.
+   ============================================================ */
+
+/* ---------- tokens: square everything off ---------- */
+
+[data-theme="gtav"] {
+  --tile-radius: 2px;
+  --panel-radius: 2px;
+}
+
+/* ---------- pause-menu vignette (ambient sunset stays) ---------- */
+
+[data-theme="gtav"] #theme-fx {
+  box-shadow:
+    inset 0 0 22vmax rgba(0, 0, 0, 0.42),
+    inset 0 0 6vmax rgba(0, 0, 0, 0.28);
+}
+
+/* ---------- top bar: game-title lockup + money clock ---------- */
+
+[data-theme="gtav"] #brand {
+  font-weight: 400;              /* Archivo Black is single-weight (black) */
+  font-stretch: condensed;
+  letter-spacing: -0.015em;      /* tight, title-lockup tracking */
+  color: #f5f5f2;
+}
+
+[data-theme="gtav"] #brand-sub {
+  font-variant: small-caps;
+  text-transform: lowercase;
+  letter-spacing: 0.3em;
+}
+
+[data-theme="gtav"] #brand-mark {
+  border-radius: 1px;            /* square chip, not PS dot */
+}
+
+[data-theme="gtav"] #clock-time { color: #8ed36f; }   /* money green */
+
+/* character-portrait chip: square, 4px */
+[data-theme="gtav"] #profile-chip {
+  border-radius: 4px;
+  border: 1px solid rgba(245, 245, 242, 0.35);
+  padding: 3px 10px 3px 3px;
+}
+
+[data-theme="gtav"] #profile-avatar { border-radius: 3px; }
+[data-theme="gtav"] #profile-score { color: #8ed36f; }
+
+/* ---------- iconic tab bar: pill nav shown in PS mode too ---------- */
+
+[data-theme="gtav"] #pill-nav {
+  position: relative;
+  z-index: 5;
+  display: flex;                 /* overrides polish.css display:none */
+  justify-content: center;
+  gap: 0;
+  margin: 0;
+  padding: 2px clamp(14px, 3.5vw, 54px) 0;
+  border-bottom: 1px solid rgba(245, 245, 242, 0.35);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+[data-theme="gtav"] #pill-nav::-webkit-scrollbar { display: none; }
+
+[data-theme="gtav"] .pill {
+  background: none;
+  border: none;
+  border-radius: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-weight: 700;
+  font-size: 13px;
+  color: #cfcfc8;
+  padding: 10px 22px;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+[data-theme="gtav"] .pill:hover {
+  color: #ffffff;
+  background: rgba(245, 245, 242, 0.12);
+}
+
+[data-theme="gtav"] .pill.active {
+  background: rgba(245, 245, 242, 0.92);
+  color: #111;
+}
+
+/* pill row adds ~44px under the topbar; keep the home column from
+   clipping inside the fixed-height shell on desktop */
+@media (min-width: 721px) {
+  [data-theme="gtav"] #home { height: calc(100% - 142px); }
+}
+
+/* ---------- panels: translucent dark, hard corners ---------- */
+
+[data-theme="gtav"] .panel,
+[data-theme="gtav"] .card,
+[data-theme="gtav"] .stat-tile,
+[data-theme="gtav"] .act-card,
+[data-theme="gtav"] .nb-group {
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(245, 245, 242, 0.18);
+  border-radius: 2px;
+}
+
+[data-theme="gtav"] .panel h3 {
+  position: relative;
+  font-family: var(--font-body);
+  font-variant: small-caps;
+  text-transform: lowercase;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  color: #cfcfc8;
+  padding-bottom: 9px;
+  margin-bottom: 14px;
+}
+
+[data-theme="gtav"] .panel h3::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 60px;
+  height: 2px;
+  background: #8ed36f;
+}
+
+/* ---------- settings-list: table + field pairs ---------- */
+
+[data-theme="gtav"] table.data th {
+  font-family: var(--font-body);
+  font-variant: small-caps;
+  text-transform: lowercase;
+  letter-spacing: 0.2em;
+  font-weight: 700;
+  color: #a9a9a2;
+  border-bottom: 1px solid rgba(245, 245, 242, 0.35);
+}
+
+[data-theme="gtav"] table.data td {
+  border-bottom: 1px solid rgba(245, 245, 242, 0.1);
+}
+
+/* selected-row highlight: light bar, dark text — BOTH columns */
+[data-theme="gtav"] table.data tr:hover td {
+  background: rgba(245, 245, 242, 0.9);
+  color: #111;
+}
+
+[data-theme="gtav"] table.data tr:hover td .muted { color: #3a3a36; }
+
+[data-theme="gtav"] table.data tr:hover td .btn {
+  color: #111;
+  border-color: rgba(17, 17, 17, 0.55);
+}
+
+[data-theme="gtav"] .field > label {
+  font-variant: small-caps;
+  text-transform: lowercase;
+  letter-spacing: 0.2em;
+  font-weight: 600;
+  color: #b6b6b0;
+}
+
+[data-theme="gtav"] input,
+[data-theme="gtav"] select,
+[data-theme="gtav"] textarea {
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(245, 245, 242, 0.28);
+  border-radius: 2px;
+}
+
+/* ---------- tiles: hard corners, white selection frame ---------- */
+
+[data-theme="gtav"] .tile { border-radius: 2px; }
+
+[data-theme="gtav"] .tile.focused {
+  border-color: #f5f5f2;
+  box-shadow:
+    0 0 0 2px #f5f5f2,
+    0 18px 44px -14px rgba(0, 0, 0, 0.85);
+}
+
+[data-theme="gtav"] .tile .tile-label {
+  font-family: var(--font-body);
+  font-variant: small-caps;
+  text-transform: lowercase;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+}
+
+[data-theme="gtav"] .tile .badge { border-radius: 2px; }
+
+[data-theme="gtav"] #hero-icon { border-radius: 2px; }
+
+/* ---------- buttons: pause-menu 'Apply Changes' style ---------- */
+
+[data-theme="gtav"] .hero-btn,
+[data-theme="gtav"] .btn,
+[data-theme="gtav"] #appview-back {
+  border-radius: 2px;
+}
+
+[data-theme="gtav"] .hero-btn { border: 1px solid rgba(245, 245, 242, 0.55); }
+
+[data-theme="gtav"] .hero-btn.primary,
+[data-theme="gtav"] .btn.primary {
+  background: #f5f5f2;
+  border-color: #f5f5f2;
+  color: #111;
+  box-shadow: 0 8px 26px -10px rgba(0, 0, 0, 0.9);
+}
+
+[data-theme="gtav"] .hero-btn:not(.primary):hover,
+[data-theme="gtav"] .btn:not(.primary):hover {
+  border-color: #f5f5f2;
+}
+
+/* ---------- bottom hint bar: right-aligned prompt chips ---------- */
+
+[data-theme="gtav"] #hint {
+  text-align: right;
+  padding: 0 clamp(18px, 4vw, 60px);
+  letter-spacing: 0.18em;
+  color: #a9a9a2;
+}
+
+[data-theme="gtav"] .btn-glyph {
+  border-radius: 6px;
+  border: 1px solid rgba(245, 245, 242, 0.5);
+  background: rgba(0, 0, 0, 0.4);
+  color: #f5f5f2;
+}
+
+/* ---------- control center + activity, same menu language ---------- */
+
+[data-theme="gtav"] #cc-sheet {
+  background: rgba(12, 12, 14, 0.94);
+  border: 1px solid rgba(245, 245, 242, 0.18);
+  border-radius: 4px;
+}
+
+[data-theme="gtav"] .cc-btn { border-radius: 2px; }
+[data-theme="gtav"] .cc-btn .cc-ico { border-radius: 4px; }
+
+[data-theme="gtav"] .cc-btn .cc-label,
+[data-theme="gtav"] .act-card .act-label,
+[data-theme="gtav"] .stat-tile .stat-label {
+  font-variant: small-caps;
+  text-transform: lowercase;
+  letter-spacing: 0.18em;
+}
+
+/* ---------- responsive: phone tab bar ---------- */
+
+@media (max-width: 720px) {
+  [data-theme="gtav"] #pill-nav {
+    justify-content: flex-start;  /* centered overflow clips the first tab */
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  [data-theme="gtav"] .pill {
+    letter-spacing: 0.12em;
+    padding: 10px 14px;
+  }
+}
+
+/* ---------- reduced motion ----------
+   This skin is static (no keyframes). Its only transition (.pill)
+   is disabled by base.css's global reduced-motion kill; restated
+   here so the guarantee is local. */
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="gtav"] .pill { transition: none; }
+}
