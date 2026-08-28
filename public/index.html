@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="masseffect">
+<html lang="en" data-theme="masseffect" data-console="ps">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -12,10 +12,13 @@
   <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Cinzel:wght@500;700&family=Exo+2:wght@400;600;700;800&family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&family=VT323&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/base.css">
   <link rel="stylesheet" href="/css/themes.css">
+  <link rel="stylesheet" href="/css/fx.css">
+  <link rel="stylesheet" href="/css/xbox.css">
 </head>
 <body>
   <div id="ambient" aria-hidden="true"></div>
   <div id="theme-fx" aria-hidden="true"></div>
+  <canvas id="fx-canvas" aria-hidden="true"></canvas>
 
   <header id="topbar">
     <div class="topbar-left">
@@ -24,12 +27,15 @@
       <span id="brand-sub">personal dashboard</span>
     </div>
     <div class="topbar-right">
+      <button id="console-btn" class="top-icon-btn" title="Switch console view" aria-label="Switch console view"></button>
+      <button id="cc-btn" class="top-icon-btn" title="Control center (c)" aria-label="Open control center"></button>
       <nav id="theme-switcher" aria-label="Theme">
         <button class="theme-dot" data-set-theme="assassins"  title="Assassin's Creed theme"><span>AC</span></button>
         <button class="theme-dot" data-set-theme="cyberpunk"  title="Cyberpunk theme"><span>CP</span></button>
         <button class="theme-dot" data-set-theme="gtav"       title="GTA V theme"><span>V</span></button>
         <button class="theme-dot" data-set-theme="minecraft"  title="Minecraft theme"><span>MC</span></button>
         <button class="theme-dot" data-set-theme="masseffect" title="Mass Effect theme"><span>N7</span></button>
+        <button class="theme-dot" data-set-theme="xboxgreen" title="Xbox theme"><span>XB</span></button>
       </nav>
       <div id="clock" aria-live="off">
         <span id="clock-time">--:--</span>
@@ -48,12 +54,28 @@
       </div>
     </section>
 
+    <section id="activity" aria-label="Activity"></section>
+
     <section id="rail-wrap">
       <div id="rail" role="listbox" aria-label="Apps and projects" tabindex="0"></div>
     </section>
 
-    <p id="hint" aria-hidden="true">◀ ▶ browse&nbsp;&nbsp;·&nbsp;&nbsp;⏎ open&nbsp;&nbsp;·&nbsp;&nbsp;esc back</p>
+    <p id="hint" aria-hidden="true">◀ ▶ browse&nbsp;&nbsp;·&nbsp;&nbsp;⏎ open&nbsp;&nbsp;·&nbsp;&nbsp;c center&nbsp;&nbsp;·&nbsp;&nbsp;esc back</p>
   </main>
+
+  <!-- Control center / guide (populated by main.js) -->
+  <div id="ccenter" hidden>
+    <div id="cc-sheet" role="dialog" aria-label="Control center">
+      <div id="cc-actions"></div>
+      <div id="cc-extra" hidden></div>
+    </div>
+  </div>
+
+  <!-- theme-switch transition overlay (fx.css) -->
+  <div id="switch-fx" aria-hidden="true"></div>
+
+  <!-- boot splash -->
+  <div id="boot" aria-hidden="true"><div id="boot-inner"><span id="boot-icon"></span><span id="boot-text">DYER HQ</span></div></div>
 
   <!-- Full-screen module view (fitness / writing / notebook / projects) -->
   <div id="appview" hidden>

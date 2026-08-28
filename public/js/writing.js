@@ -139,6 +139,7 @@ export function mount(root, tools) {
       ? `Saved ${new Date().toLocaleTimeString()}`
       : '⚠ Storage full — recent changes are NOT saved';
     renderLists();
+    window.dispatchEvent(new CustomEvent('pd:data-changed'));
   }
   const commit = debounce(commitNow, 600);
 

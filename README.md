@@ -15,10 +15,27 @@ Cloudflare Worker. One horizontal tile rail launches everything:
 | **Ctrl+Alt PC Repair** | [ctrl-alt-pc-repair.dyer-hq.workers.dev](https://ctrl-alt-pc-repair.dyer-hq.workers.dev) |
 | **Arise IT Portal / Super Spork / 3D Models** | The rest of the workshop |
 
+## Consoles
+
+Two dashboard experiences, switchable any time (top-right button or the control
+center): **PlayStation view** — big tile rail, hero panel with live activity
+cards, bottom control center; **Xbox view** — squared tiles with always-visible
+labels, breathing green focus ring, guide overlay, achievement banners. Each
+console remembers its own theme.
+
+Console extras: synthesized UI sounds per console (mutable in the control
+center), a boot splash, per-theme ambient particles (drifting starfield, pixel
+blocks, glyph rain, Animus dust, sunset haze, green bokeh), and a
+**trophy/achievement system** — 12 unlockables driven by your real fitness,
+writing, and notebook activity, with PS trophy or Xbox achievement banners.
+
 ## Themes
 
-Five game skins, switchable from the top-right (or press `t`), remembered per device:
-**Assassin's Creed** · **Cyberpunk** · **GTA V** · **Minecraft** · **Mass Effect**
+Six skins, switchable from the top-right (or press `t`), remembered per console
+per device: **Assassin's Creed** (Animus sync flash, scan bars) ·
+**Cyberpunk** (RGB-split glitches, neon flicker) · **GTA V** (star flash,
+sunset sweep) · **Minecraft** (hotbar rail, pixel dissolve) · **Mass Effect**
+(relay-jump streaks, holo shimmer) · **Xbox** green.
 
 ## Console controls
 
