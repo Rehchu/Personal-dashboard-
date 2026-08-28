@@ -24,14 +24,15 @@ export function mount(root, tools) {
   const redoStack = [];
 
   let warnedStorage = false;
-  const persist = debounce(() => {
+  function persistNow() {
     const ok = save('nb.pages', pages) && save('nb.page', pageIndex);
     if (!ok && !warnedStorage) {
       warnedStorage = true;
       showToast('⚠ Storage full — recent ink may not be saved');
     }
     window.dispatchEvent(new CustomEvent('pd:data-changed'));
-  }, 400);
+  }
+  const persist = debounce(persistNow, 400);
 
   tools.innerHTML = `
     <button class="btn small" id="nb-prev" title="Previous page">‹</button>
@@ -254,15 +255,32 @@ export function mount(root, tools) {
     b.addEventListener('click', () => { color = b.dataset.color; save('nb.color', color); tool = tool === 'eraser' ? 'pen' : tool; syncToolbar(); }));
   root.querySelector('#nb-size').addEventListener('input', e => { size = Number(e.target.value); save('nb.size', size); });
   root.querySelector('#nb-pressure').addEventListener('change', e => { usePressure = e.target.checked; save('nb.pressure', usePressure); });
-  // With pencil-only on, fingers should scroll the page (native-app feel);
-  // pen and mouse pointers are unaffected by touch-action.
-  const applyTouchAction = () => { canvas.style.touchAction = pencilOnly ? 'pan-x pan-y' : 'none'; };
+  // touch-action stays 'none' in every mode: on iPadOS a CSS pan gesture also
+  // captures Apple Pencil (stylus counts as direct manipulation), which would
+  // turn strokes into scrolls. Finger-scroll in pencil-only mode is done in JS.
   root.querySelector('#nb-pencil').addEventListener('change', e => {
     pencilOnly = e.target.checked;
     save('nb.pencilOnly', pencilOnly);
-    applyTouchAction();
   });
-  applyTouchAction();
+
+  // pencil-only: one-finger drag pans the surrounding scroll container
+  let panPointer = null;
+  let panLastY = 0;
+  const scroller = () => canvas.closest('#appview-body') || document.scrollingElement;
+  canvas.addEventListener('pointerdown', e => {
+    if (pencilOnly && e.pointerType === 'touch' && panPointer === null) {
+      panPointer = e.pointerId;
+      panLastY = e.clientY;
+    }
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (e.pointerId !== panPointer) return;
+    scroller().scrollTop -= e.clientY - panLastY;
+    panLastY = e.clientY;
+  });
+  const endPan = e => { if (e.pointerId === panPointer) panPointer = null; };
+  canvas.addEventListener('pointerup', endPan);
+  canvas.addEventListener('pointercancel', endPan);
 
   root.querySelector('#nb-undo').addEventListener('click', () => {
     const s = page().strokes.pop();
@@ -310,5 +328,8 @@ export function mount(root, tools) {
   syncToolbar();
   resize();
 
-  return () => ro.disconnect(); // unmount cleanup
+  return () => { // unmount cleanup: never lose the last 400ms of ink
+    ro.disconnect();
+    persistNow();
+  };
 }

@@ -6,6 +6,12 @@
   <meta name="description" content="Bradly's personal dashboard — projects, fitness, book writing, notebook.">
   <meta name="theme-color" content="#05080f">
   <title>Dyer HQ — Dashboard</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/icons/icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Dyer HQ">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎮</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -14,6 +20,7 @@
   <link rel="stylesheet" href="/css/themes.css">
   <link rel="stylesheet" href="/css/fx.css">
   <link rel="stylesheet" href="/css/xbox.css">
+  <link rel="stylesheet" href="/css/polish.css">
 </head>
 <body>
   <div id="ambient" aria-hidden="true"></div>
@@ -29,6 +36,7 @@
     <div class="topbar-right">
       <button id="console-btn" class="top-icon-btn" title="Switch console view" aria-label="Switch console view"></button>
       <button id="cc-btn" class="top-icon-btn" title="Control center (c)" aria-label="Open control center"></button>
+      <button id="profile-chip" title="Bradly"><span id="profile-avatar">B</span><span id="profile-name">Bradly</span></button>
       <nav id="theme-switcher" aria-label="Theme">
         <button class="theme-dot" data-set-theme="assassins"  title="Assassin's Creed theme"><span>AC</span></button>
         <button class="theme-dot" data-set-theme="cyberpunk"  title="Cyberpunk theme"><span>CP</span></button>
@@ -44,8 +52,16 @@
     </div>
   </header>
 
+  <nav id="pill-nav" aria-label="Sections">
+    <button class="pill active" data-pill="home">Home</button>
+    <button class="pill" data-pill="apps">My apps</button>
+    <button class="pill" data-pill="trophies">Achievements</button>
+    <button class="pill" data-pill="sync">Sync</button>
+  </nav>
+
   <main id="home" aria-label="Dashboard">
     <section id="hero" aria-live="polite">
+      <span id="hero-watermark" aria-hidden="true"></span>
       <div id="hero-icon" aria-hidden="true"></div>
       <div id="hero-text">
         <h2 id="hero-title">&nbsp;</h2>
@@ -60,7 +76,7 @@
       <div id="rail" role="listbox" aria-label="Apps and projects" tabindex="0"></div>
     </section>
 
-    <p id="hint" aria-hidden="true">◀ ▶ browse&nbsp;&nbsp;·&nbsp;&nbsp;⏎ open&nbsp;&nbsp;·&nbsp;&nbsp;c center&nbsp;&nbsp;·&nbsp;&nbsp;esc back</p>
+    <p id="hint" aria-hidden="true"><span class="btn-glyph">✕</span> open&nbsp;&nbsp;<span class="btn-glyph">○</span> back&nbsp;&nbsp;<span class="btn-glyph">▤</span> center&nbsp;&nbsp;·&nbsp;&nbsp;◀ ▶ browse</p>
   </main>
 
   <!-- Control center / guide (populated by main.js) -->

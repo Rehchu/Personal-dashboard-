@@ -15,6 +15,22 @@ Cloudflare Worker. One horizontal tile rail launches everything:
 | **Ctrl+Alt PC Repair** | [ctrl-alt-pc-repair.dyer-hq.workers.dev](https://ctrl-alt-pc-repair.dyer-hq.workers.dev) |
 | **Arise IT Portal / Super Spork / 3D Models** | The rest of the workshop |
 
+## What's inside
+
+**Modules**: Today briefing (weather, verse of the day, Sunday countdown, quick
+capture) · GitHub projects · Fitness · Book Writing (sprints, idea inbox,
+word-goal tracking) · Notebook (Apple Pencil) · Habits (streak grids) · Dragon
+Vault (3D models) · Claude Archive (imported claude.ai history + memories,
+searched entirely on-device) · Cloudflare Fleet.
+
+**Cross-device sync**: opt-in via the control center — set a passphrase once and
+fitness/writing/notebook/habits/trophies sync through the Worker's D1 database
+(`/api/sync`, passphrase-gated, same-origin only). Off by default; everything
+works local-only without it.
+
+**PWA**: installable (Add to Home Screen), offline-capable via a
+stale-while-revalidate service worker.
+
 ## Consoles
 
 Two dashboard experiences, switchable any time (top-right button or the control

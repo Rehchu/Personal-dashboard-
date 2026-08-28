@@ -3,6 +3,10 @@
 
 const PREFIX = 'pd.';
 
+// Save subscribers (sync engine): called with (key, value) after each write.
+const saveHooks = [];
+export function onSave(fn) { saveHooks.push(fn); }
+
 export function load(key, fallback) {
   try {
     const raw = localStorage.getItem(PREFIX + key);
@@ -15,10 +19,11 @@ export function load(key, fallback) {
 export function save(key, value) {
   try {
     localStorage.setItem(PREFIX + key, JSON.stringify(value));
-    return true;
   } catch {
     return false; // private mode / quota — app keeps working in memory
   }
+  for (const fn of saveHooks) { try { fn(key, value); } catch { /* noop */ } }
+  return true;
 }
 
 export function uid() {
