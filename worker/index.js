@@ -7,6 +7,8 @@
 const COL_RE = /^[a-zA-Z0-9._-]{1,40}$/;
 const MAX_BODY = 6 * 1024 * 1024;        // sync payload cap
 const MAX_VIDEO = 600 * 1024 * 1024;     // background video cap
+const MAX_PART = 40 * 1024 * 1024;       // one multipart part; the edge caps a request body at 100 MB
+const MAX_PARTS = 10000;                 // R2 multipart part-number ceiling
 const SESSION_MS = 30 * 24 * 3600 * 1000;
 
 // Paths that must work without a session (login itself, PWA niceties).
@@ -149,15 +151,26 @@ function parseRange(request, size) {
   return { offset: start, length: end - start + 1, start, end };
 }
 
+// R2 hands back an opaque id; only ever pass it straight back to R2.
+const validUploadId = id => typeof id === 'string' && id.length >= 1 && id.length <= 300;
+
+// a browser-trimmed clip is whatever MediaRecorder produced (webm on Chrome,
+// mp4 on Safari), so store the uploaded type rather than assuming mp4
+function videoType(request) {
+  const ct = (request.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+  return /^video\/[a-z0-9.+-]{1,30}$/.test(ct) ? ct : 'video/mp4';
+}
+
 async function serveVideo(request, env) {
   const head = await env.MEDIA.head('bg.mp4');
-  if (!head) return env.ASSETS.fetch(request); // fall back to a committed static file
+  // no asset fallback: SPA not_found_handling would answer a video request with index.html at 200
+  if (!head) return json({ error: 'no video' }, 404);
   const size = head.size;
   const range = parseRange(request, size);
   const obj = await env.MEDIA.get('bg.mp4', range ? { range: { offset: range.offset, length: range.length } } : undefined);
   if (!obj) return new Response('gone', { status: 404 });
   const headers = {
-    'content-type': 'video/mp4',
+    'content-type': head.httpMetadata?.contentType || 'video/mp4',
     'accept-ranges': 'bytes',
     'cache-control': 'private, max-age=3600',
     etag: head.httpEtag,
@@ -269,7 +282,7 @@ export default {
         if (!len) return json({ error: 'missing content-length' }, 411);
         if (len > MAX_VIDEO) return json({ error: 'video larger than 600 MB' }, 413);
         await env.MEDIA.put('bg.mp4', request.body, {
-          httpMetadata: { contentType: 'video/mp4' },
+          httpMetadata: { contentType: videoType(request) },
         });
         return json({ ok: true, bytes: len });
       }
@@ -277,6 +290,76 @@ export default {
         await env.MEDIA.delete('bg.mp4');
         return json({ ok: true });
       }
+
+      // multipart upload: the only way past the 100 MB edge limit on a request body
+      if (path === '/api/media/bg/mpu/start' && request.method === 'POST') {
+        try {
+          // contentType can only be set when the upload is created, not at complete()
+          const mpu = await env.MEDIA.createMultipartUpload('bg.mp4', {
+            httpMetadata: { contentType: 'video/mp4' },
+          });
+          return json({ uploadId: mpu.uploadId });
+        } catch {
+          return json({ error: 'could not start upload' }, 500);
+        }
+      }
+
+      if (path === '/api/media/bg/mpu/part' && request.method === 'PUT') {
+        const uploadId = url.searchParams.get('uploadId');
+        if (!validUploadId(uploadId)) return json({ error: 'bad uploadId' }, 400);
+        const raw = url.searchParams.get('part');
+        const partNumber = Number(raw);
+        if (!raw || !Number.isInteger(partNumber) || partNumber < 1 || partNumber > MAX_PARTS) {
+          return json({ error: 'bad part number' }, 400);
+        }
+        const len = Number(request.headers.get('content-length') || 0);
+        if (len > MAX_PART) return json({ error: 'part larger than 40 MB' }, 413);
+        if (!request.body) return json({ error: 'missing part body' }, 400);
+        try {
+          const mpu = env.MEDIA.resumeMultipartUpload('bg.mp4', uploadId);
+          const part = await mpu.uploadPart(partNumber, request.body);
+          return json({ partNumber: part.partNumber, etag: part.etag });
+        } catch {
+          return json({ error: 'part upload failed' }, 400);
+        }
+      }
+
+      if (path === '/api/media/bg/mpu/complete' && request.method === 'POST') {
+        const body = await request.json().catch(() => null);
+        if (!validUploadId(body?.uploadId)) return json({ error: 'bad uploadId' }, 400);
+        if (!Array.isArray(body.parts) || !body.parts.length) {
+          return json({ error: 'expected {uploadId, parts}' }, 400);
+        }
+        const parts = [];
+        for (const p of body.parts) {
+          const n = p?.partNumber;
+          const etag = p?.etag;
+          if (!Number.isInteger(n) || n < 1 || n > MAX_PARTS || typeof etag !== 'string' || !etag) {
+            return json({ error: 'bad part list' }, 400);
+          }
+          parts.push({ partNumber: n, etag });
+        }
+        parts.sort((a, b) => a.partNumber - b.partNumber);
+        try {
+          const mpu = env.MEDIA.resumeMultipartUpload('bg.mp4', body.uploadId);
+          await mpu.complete(parts);
+          return json({ ok: true });
+        } catch {
+          return json({ error: 'could not complete upload' }, 400);
+        }
+      }
+
+      if (path === '/api/media/bg/mpu/abort' && request.method === 'POST') {
+        const body = await request.json().catch(() => null);
+        if (!validUploadId(body?.uploadId)) return json({ error: 'bad uploadId' }, 400);
+        try {
+          await env.MEDIA.resumeMultipartUpload('bg.mp4', body.uploadId).abort();
+        } catch {
+          // an unknown or already-aborted upload leaves nothing to clean up
+        }
+        return json({ ok: true });
+      }
+
       return json({ error: 'not found' }, 404);
     }
 

@@ -91,3 +91,29 @@ html[data-bg="video"] #ambient {
 
 html[data-bg="video"] #ambient::before,
 html[data-bg="video"] #ambient::after { content: none; }
+
+/* storm mode keeps the theme's ambient art and layers a storm sky on top of it.
+   the first background layer paints highest, so the lit cloud break and the
+   cool blue-grey darkening sit over the theme radials, which still read
+   through at 20-48%. same shape as the video scrim above, one layer deeper. */
+html[data-bg="storm"] #ambient {
+  background:
+    radial-gradient(95% 62% at 68% -6%, rgba(126, 158, 214, 0.32), transparent 62%),
+    linear-gradient(180deg, rgba(12, 20, 38, 0.52), rgba(7, 12, 26, 0.70) 56%, rgba(4, 8, 18, 0.80)),
+    radial-gradient(120% 90% at 75% 10%, var(--ambient-a, transparent), transparent 60%),
+    radial-gradient(100% 80% at 15% 90%, var(--ambient-b, transparent), transparent 55%),
+    var(--bg);
+}
+
+/* assassins is the one light theme (dark ink on #eceae4) — a dark scrim would
+   destroy its contrast, so it gets a pale cool haze instead. alphas are held
+   low enough that the darkest point still clears 4.5:1 for --accent and 12:1
+   for --ink; the rain and lightning above supply the storm. */
+html[data-bg="storm"][data-theme="assassins"] #ambient {
+  background:
+    radial-gradient(95% 62% at 68% -6%, rgba(226, 236, 250, 0.50), transparent 62%),
+    linear-gradient(180deg, rgba(134, 156, 188, 0.16), rgba(134, 156, 188, 0.20) 56%, rgba(134, 156, 188, 0.24)),
+    radial-gradient(120% 90% at 75% 10%, var(--ambient-a, transparent), transparent 60%),
+    radial-gradient(100% 80% at 15% 90%, var(--ambient-b, transparent), transparent 55%),
+    var(--bg);
+}

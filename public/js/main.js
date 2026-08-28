@@ -7,6 +7,7 @@ import { load, save, esc, showToast } from './store.js';
 import { sfx } from './sfx.js';
 import { initAmbient } from './ambient.js';
 import { initStorm } from './storm.js';
+import { makeClip, clipSupported } from './videoclip.js';
 import { ICONS } from './icons.js';
 import { initAchievements, trophyCaseHTML } from './achievements.js';
 import { activityCards } from './activity.js';
@@ -59,22 +60,26 @@ let videoOk = false;
 bgVideo.addEventListener('canplay', () => { videoOk = true; });
 bgVideo.addEventListener('error', () => { videoOk = false; });
 let bgMode = load('ui.bg', 'storm');
+// reduced motion decides the DEFAULT background only. Picking one in the
+// control center is the owner asking for it, so an explicit choice wins —
+// and only an explicit choice is persisted.
+let bgChosen = load('ui.bg', null) !== null;
 
-function applyBg(mode) {
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) mode = 'off';
+function applyBg(mode, explicit = false) {
+  if (explicit) { bgChosen = true; save('ui.bg', mode); }
+  if (!bgChosen && matchMedia('(prefers-reduced-motion: reduce)').matches) mode = 'off';
   if (mode === 'video' && !videoOk) mode = 'storm';
   bgMode = mode;
   document.documentElement.dataset.bg = mode;
-  save('ui.bg', mode);
   bgVideo.hidden = mode !== 'video';
-  if (mode === 'video') bgVideo.play().catch(() => { applyBg('storm'); });
+  if (mode === 'video') bgVideo.play().catch(() => { applyBg('storm', explicit); });
   else bgVideo.pause();
-  if (mode === 'storm') storm.start(); else storm.stop();
+  if (mode === 'storm') storm.start(bgChosen); else storm.stop();
 }
 
 function cycleBg() {
   const order = videoOk ? ['storm', 'video', 'off'] : ['storm', 'off'];
-  applyBg(order[(order.indexOf(bgMode) + 1) % order.length]);
+  applyBg(order[(order.indexOf(bgMode) + 1) % order.length], true);
 }
 
 const BG_LABEL = { storm: 'Bg: Storm', video: 'Bg: Video', off: 'Bg: Off' };
@@ -296,28 +301,160 @@ async function lockApp() {
   location.reload(); // the Worker now serves the login screen
 }
 
-// Upload a personal background video into private R2 storage (streams back
-// only to a signed-in session). Big files: keep the app open while it runs.
-function uploadBgVideo() {
+/* ---------- background video upload ----------
+   Cloudflare rejects a request body over 100 MB at the edge, so anything
+   bigger than SINGLE_MAX is cut into equal parts and pushed through R2's
+   multipart API — one request per part, retried individually, and resumable
+   across reloads (a 375 MB phone upload will not survive in one shot). */
+const MPU_PART = 16 * 1024 * 1024;
+const MPU_SINGLE_MAX = 80 * 1024 * 1024;
+const MB = 1048576;
+
+function uploadPanel(onCancel) {
+  const el = document.createElement('div');
+  el.style.cssText = `position:fixed;left:50%;transform:translateX(-50%);
+    bottom:calc(78px + env(safe-area-inset-bottom));width:min(420px,92vw);z-index:60;
+    background:color-mix(in oklab, var(--surface) 96%, transparent);backdrop-filter:blur(14px);
+    border:1px solid color-mix(in oklab, var(--ink-3) 30%, transparent);border-radius:14px;
+    padding:13px 15px;box-shadow:0 18px 40px -18px rgba(0,0,0,.8);color:var(--ink)`;
+  el.innerHTML = `<div style="display:flex;align-items:center;gap:10px">
+      <span id="up-text" style="flex:1;font-size:13px">Preparing…</span>
+      <button id="up-cancel" style="font-size:12px;color:var(--ink-3);padding:4px 6px">Cancel</button>
+    </div>
+    <div style="height:6px;border-radius:99px;margin-top:9px;overflow:hidden;
+      background:color-mix(in oklab, var(--ink-3) 25%, transparent)">
+      <div id="up-bar" style="height:100%;width:0;background:var(--accent);transition:width 200ms ease"></div>
+    </div>`;
+  document.body.append(el);
+  el.querySelector('#up-cancel').addEventListener('click', onCancel);
+  return {
+    set(pct, text) {
+      el.querySelector('#up-bar').style.width = `${Math.max(0, Math.min(100, pct))}%`;
+      el.querySelector('#up-text').textContent = text;
+    },
+    close() { el.remove(); },
+  };
+}
+
+async function mpuFetch(url, opts, tries = 3) {
+  let lastErr;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const res = await fetch(url, opts);
+      if (res.ok) return res.json();
+      const body = await res.json().catch(() => ({}));
+      // a rejected part is worth retrying; a rejected request shape is not
+      if (res.status < 500 && res.status !== 408) throw new Error(body.error || `HTTP ${res.status}`);
+      lastErr = new Error(body.error || `HTTP ${res.status}`);
+    } catch (err) {
+      if (err.name === 'AbortError') throw err;
+      lastErr = err;
+    }
+    await new Promise(r => setTimeout(r, 1000 * 3 ** i));
+  }
+  throw lastErr;
+}
+
+function loadResume(file, name) {
+  const st = load('ui.bgUpload', null);
+  if (!st || st.name !== name || st.size !== file.size || st.partSize !== MPU_PART) return null;
+  return st;
+}
+
+async function uploadMultipart(file, panel, signal) {
+  const name = file.name || 'clip'; // a trimmed clip is a Blob, with no name
+  let state = loadResume(file, name);
+  if (state) {
+    showToast(`Resuming at part ${state.parts.length + 1}`);
+  } else {
+    const { uploadId } = await mpuFetch('/api/media/bg/mpu/start', { method: 'POST', signal });
+    state = { uploadId, name, size: file.size, partSize: MPU_PART, parts: [] };
+    save('ui.bgUpload', state);
+  }
+
+  const total = Math.ceil(file.size / MPU_PART);
+  for (let n = state.parts.length + 1; n <= total; n++) {
+    const chunk = file.slice((n - 1) * MPU_PART, Math.min(n * MPU_PART, file.size));
+    const done = (n - 1) * MPU_PART;
+    panel.set((done / file.size) * 100,
+      `Uploading part ${n} of ${total} — ${(done / MB).toFixed(0)}/${(file.size / MB).toFixed(0)} MB`);
+    const part = await mpuFetch(
+      `/api/media/bg/mpu/part?uploadId=${encodeURIComponent(state.uploadId)}&part=${n}`,
+      { method: 'PUT', body: chunk, signal },
+    );
+    state.parts.push({ partNumber: part.partNumber, etag: part.etag });
+    save('ui.bgUpload', state); // survives a reload mid-upload
+  }
+
+  panel.set(100, 'Finishing…');
+  await mpuFetch('/api/media/bg/mpu/complete', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ uploadId: state.uploadId, parts: state.parts }),
+    signal,
+  });
+  save('ui.bgUpload', null);
+}
+
+let uploading = false;
+
+// mode 'clip' trims a 30s loop in the browser first (a few MB, one request);
+// mode 'full' pushes the whole file through the multipart path.
+function uploadBgVideo(mode = 'clip') {
+  if (uploading) { showToast('An upload is already running'); return; }
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'video/mp4,video/*';
   input.onchange = async () => {
     const file = input.files[0];
     if (!file) return;
-    if (file.size > 600 * 1024 * 1024) { showToast('Video is over the 600 MB cap'); return; }
-    showToast(`Uploading ${(file.size / 1048576).toFixed(0)} MB — keep this open…`);
+    if (file.size > 600 * MB) { showToast('Video is over the 600 MB cap'); return; }
+
+    uploading = true;
+    const ctrl = new AbortController();
+    const panel = uploadPanel(() => ctrl.abort());
+    panel.set(0, `Starting ${(file.size / MB).toFixed(0)} MB upload…`);
     try {
-      const res = await fetch('/api/media/bg', { method: 'PUT', body: file });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || `upload failed (${res.status})`);
+      let body = file;
+      if (mode === 'clip' && clipSupported()) {
+        panel.set(0, 'Trimming a 30s loop — keep this screen open…');
+        body = await makeClip(file, {
+          seconds: 30,
+          onProgress: p => panel.set(p * 100, `Trimming 30s loop — ${Math.round(p * 30)}s of 30s`),
+        });
+        panel.set(0, `Uploading ${(body.size / MB).toFixed(1)} MB clip…`);
+      } else if (mode === 'clip') {
+        showToast('This browser cannot trim video — sending the full file');
+      }
+
+      if (body.size <= MPU_SINGLE_MAX) {
+        await mpuFetch('/api/media/bg', { method: 'PUT', body, signal: ctrl.signal }, 2);
+      } else {
+        await uploadMultipart(body, panel, ctrl.signal);
+      }
+      panel.close();
       showToast('Background video saved 🎬');
       videoOk = false;
       bgVideo.src = `/media/bg.mp4?v=${Date.now()}`;
       bgVideo.load();
-      bgVideo.addEventListener('canplay', () => applyBg('video'), { once: true });
+      bgVideo.addEventListener('canplay', () => applyBg('video', true), { once: true });
     } catch (err) {
-      showToast(`Upload failed: ${err.message}`);
+      panel.close();
+      if (err.name === 'AbortError') {
+        const st = load('ui.bgUpload', null);
+        if (st) fetch('/api/media/bg/mpu/abort', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ uploadId: st.uploadId }),
+        }).catch(() => { /* best effort */ });
+        save('ui.bgUpload', null);
+        showToast('Upload cancelled');
+      } else {
+        // parts already stored stay in ui.bgUpload — picking the same file resumes
+        showToast(`Upload failed: ${err.message}`);
+      }
+    } finally {
+      uploading = false;
     }
   };
   input.click();
@@ -344,7 +481,8 @@ function buildCC() {
     { ico: sfx.isMuted() ? 'soundOff' : 'sound', label: sfx.isMuted() ? 'Sound off' : 'Sound on', fn: () => { sfx.setMuted(!sfx.isMuted()); if (!sfx.isMuted()) sfx.play('select'); buildCC(); } },
     { ico: 'trophy', label: 'Trophies', fn: toggleTrophies },
     { ico: 'sparkle', label: BG_LABEL[bgMode] || 'Bg', fn: () => { cycleBg(); sfx.play('select'); buildCC(); } },
-    { ico: 'controller', label: 'Bg video ⬆', fn: uploadBgVideo },
+    { ico: 'controller', label: 'Bg clip 30s ⬆', fn: () => uploadBgVideo('clip') },
+    { ico: 'controller', label: 'Bg full video ⬆', fn: () => uploadBgVideo('full') },
     { ico: 'home', label: sync.status(), fn: syncAction },
     { ico: 'soundOff', label: 'Lock', fn: lockApp },
     { ico: 'controller', label: 'Cloudflare', href: 'https://dash.cloudflare.com' },
@@ -501,7 +639,7 @@ initAchievements(() => consoleMode);
 sync.init();
 applyBg(bgMode);
 // if the video file exists it becomes selectable a moment after load
-bgVideo.addEventListener('canplay', () => { if (load('ui.bg', 'storm') === 'video') applyBg('video'); }, { once: true });
+bgVideo.addEventListener('canplay', () => { if (load('ui.bg', 'storm') === 'video') applyBg('video', true); }, { once: true });
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => { /* offline support is best-effort */ });
 }

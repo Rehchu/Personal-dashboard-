@@ -30,6 +30,7 @@ const tx = (db, store, mode, fn) => new Promise((resolve, reject) => {
 
 function msgText(m) {
   if (typeof m.text === 'string' && m.text) return m.text;
+  if (typeof m.content === 'string' && m.content) return m.content;
   if (Array.isArray(m.content)) return m.content.map(c => c?.text || '').filter(Boolean).join('\n');
   return '';
 }
@@ -80,20 +81,187 @@ function loadJSZip() {
   return jszipLoading;
 }
 
-// Returns { convosText, memoriesText } from a claude.ai export zip.
-async function readExportZip(file) {
+// Every text entry a dropped file can contribute, as lazy readers so only one
+// entry's text is held in memory at a time (exports run to hundreds of MB).
+async function listImportEntries(file) {
+  if (!/\.zip$/i.test(file.name) && !/zip/i.test(file.type || '')) {
+    return [{ name: file.name, read: () => file.text() }];
+  }
   const JSZip = await loadJSZip();
   const zip = await JSZip.loadAsync(file);
-  const names = Object.keys(zip.files).filter(n => !zip.files[n].dir);
-  const convoEntry =
-    names.find(n => /conversation/i.test(n) && /\.jsonl?$/i.test(n)) ||
-    names.filter(n => /\.jsonl?$/i.test(n)).sort((a, b) => zip.files[b]._data?.uncompressedSize - zip.files[a]._data?.uncompressedSize)[0];
-  const memEntry = names.find(n => /memor/i.test(n) && /\.(json|md|txt)$/i.test(n));
-  return {
-    convosText: convoEntry ? await zip.files[convoEntry].async('string') : null,
-    memoriesText: memEntry ? await zip.files[memEntry].async('string') : null,
-  };
+  return Object.keys(zip.files)
+    .filter(n => !zip.files[n].dir && !/^__MACOSX\//.test(n) && /\.(jsonl?|md|txt)$/i.test(n))
+    .map(n => ({ name: n, read: () => zip.files[n].async('string') }));
 }
+
+/* ---------- export shapes (filenames vary between exports, so classify by shape) ---------- */
+
+function messageList(o) {
+  const l = o.chat_messages || o.messages;
+  return Array.isArray(l) ? l : null;
+}
+
+const isMessage = m => !!m && typeof m === 'object' && !!(m.sender || m.role) &&
+  (typeof m.text === 'string' || typeof m.content === 'string' || Array.isArray(m.content));
+
+// a chat. light_metadata rows land here too when they carry an empty array —
+// they simply merge as bodiless records.
+const isConvoRecord = o => {
+  const l = messageList(o);
+  return !!l && (!l.length || l.some(isMessage));
+};
+
+const isProjectRecord = o => !messageList(o) && !!(o.uuid || o.id) && !!(o.name || o.title) &&
+  (Array.isArray(o.docs) || typeof o.prompt_template === 'string' || typeof o.description === 'string');
+
+// title + timestamps and nothing else
+const isLightRecord = o => !messageList(o) && !!(o.uuid || o.id) && !!(o.name || o.title || o.summary) &&
+  !!(o.created_at || o.updated_at || o.created || o.updated);
+
+// a rating pointing at some other record: named keys, a thumbs-ish verdict, or
+// a bare pointer at a conversation with no title of its own
+const isFeedbackRecord = o => !messageList(o) && (
+  Object.keys(o).some(k => /feedback|rating|thumb|vote|flag|reaction/i.test(k)) ||
+  /thumbs|upvote|downvote|positive|negative/i.test(String(o.type || o.kind || o.action || '')) ||
+  (!!o.conversation_uuid && !o.name && !o.title));
+
+const sampleRows = list => list.filter(r => r && typeof r === 'object' && !Array.isArray(r)).slice(0, 50);
+
+function classifyRecords(list) {
+  const rows = sampleRows(list);
+  if (!rows.length) return null;
+  const votes = {
+    conversations: rows.filter(isConvoRecord).length,
+    projects: rows.filter(isProjectRecord).length,
+    light: rows.filter(isLightRecord).length,
+    feedback: rows.filter(isFeedbackRecord).length,
+  };
+  // ties resolve in this order: projects outrank light metadata because both are
+  // bodiless but a project carries text worth keeping
+  let best = null;
+  for (const k of ['conversations', 'projects', 'light', 'feedback']) {
+    if (votes[k] && (!best || votes[k] > votes[best])) best = k;
+  }
+  return best && votes[best] >= rows.length * 0.25 ? best : null;
+}
+
+// the list of records inside any wrapper shape
+function recordList(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (!raw || typeof raw !== 'object') return null;
+  if ((raw.uuid || raw.id) && (raw.name || raw.title || messageList(raw))) return [raw];
+  for (const k of ['conversations', 'projects', 'chats', 'items', 'records', 'data']) {
+    if (Array.isArray(raw[k])) return raw[k];
+  }
+  return Object.values(raw).find(v => Array.isArray(v) && v.some(x => x && typeof x === 'object')) || null;
+}
+
+// projects become chat-like rows so categories, topics and search reach them
+function projectRecords(list) {
+  return list.filter(p => p && typeof p === 'object' && (p.uuid || p.id)).map(p => {
+    const msgs = [];
+    const head = [p.description, p.prompt_template].filter(t => typeof t === 'string' && t.trim());
+    if (head.length) msgs.push({ s: 'a', t: head.join('\n\n') });
+    for (const d of (Array.isArray(p.docs) ? p.docs : [])) {
+      const t = [d?.filename || d?.name || '', d?.content || d?.text || ''].filter(Boolean).join('\n').trim();
+      if (t) msgs.push({ s: 'a', t });
+    }
+    return {
+      uuid: p.uuid || p.id,
+      kind: 'project',
+      name: p.name || p.title || '(untitled project)',
+      created: p.created_at || p.created || '',
+      updated: p.updated_at || p.updated || p.created_at || p.created || '',
+      msgs,
+    };
+  });
+}
+
+const MEM_KEY = /^(memor(y|ies)|content|text|summary|body|notes?|value)$/i;
+
+// memories json: any clearly-memory string field, however it is wrapped
+function findMemoryText(data) {
+  if (typeof data === 'string') return data.trim();
+  const out = [];
+  const visit = (v, key, depth) => {
+    if (depth > 5 || out.length > 500) return;
+    if (typeof v === 'string') {
+      if (MEM_KEY.test(key) && v.trim().length >= 8) out.push(v.trim());
+    } else if (Array.isArray(v)) {
+      for (const x of v) visit(x, key, depth + 1);
+    } else if (v && typeof v === 'object') {
+      for (const [k, x] of Object.entries(v)) visit(x, k, depth + 1);
+    }
+  };
+  visit(data, '', 0);
+  return [...new Set(out)].join('\n\n');
+}
+
+function describeShape(data, list) {
+  if (list) return list.length ? 'records were not chats, projects, memories or feedback' : 'the list inside was empty';
+  const keys = data && typeof data === 'object' ? Object.keys(data).slice(0, 4).join(', ') : typeof data;
+  return `no list of records found (top level: ${keys || 'empty object'})`;
+}
+
+const hasBody = r => !!(r && r.msgs && r.msgs.length);
+
+// id-based merge. a bodiless light_metadata row may refresh a stored record's
+// title and date but must never replace one that already holds a transcript.
+function mergeRecord(old, next) {
+  if (!old) return next;
+  if (hasBody(next) && !hasBody(old)) return next;
+  if (!hasBody(next) && hasBody(old)) {
+    if ((next.updated || '') <= (old.updated || '')) return old;
+    const named = next.name && next.name !== '(untitled chat)';
+    return { ...old, name: named ? next.name : old.name, updated: next.updated };
+  }
+  return (next.updated || '') >= (old.updated || '') ? next : old;
+}
+
+// what one text entry holds. never throws on content it does not understand.
+function ingestEntry(name, text) {
+  if (!text || !text.trim()) return { kind: 'skip', note: `${name} is empty` };
+  if (/\.(md|txt)$/i.test(name)) return { kind: 'memories', memory: text.trim() };
+  let data;
+  try {
+    data = parseExportText(text);
+  } catch {
+    return { kind: 'skip', note: `${name} is not valid JSON` };
+  }
+  const list = recordList(data);
+  const kind = list ? classifyRecords(list) : null;
+  if (kind === 'conversations' || kind === 'light') {
+    const convos = normalize(list);
+    if (convos.length) return { kind: 'convos', convos };
+  } else if (kind === 'projects') {
+    const convos = projectRecords(list);
+    if (convos.length) return { kind: 'projects', convos };
+  } else if (kind === 'feedback') {
+    return { kind: 'skip', note: `${name} is feedback` };
+  }
+  const memory = findMemoryText(data);
+  if (memory) return { kind: 'memories', memory };
+  if (/feedback/i.test(name)) return { kind: 'skip', note: `${name} is feedback` };
+  return { kind: 'none', note: `${name}: ${describeShape(data, list)}` };
+}
+
+// one line per dropped file, so a file that landed nothing says why
+function fileLine(o) {
+  if (o.error) return `${o.file} — could not be read (${o.error})`;
+  const many = (n, one, more) => `${n.toLocaleString()} ${n === 1 ? one : more}`;
+  const bits = [];
+  if (o.convos) bits.push(many(o.convos, 'conversation', 'conversations'));
+  if (o.light) bits.push(many(o.light, 'chat title', 'chat titles'));
+  if (o.projects) bits.push(many(o.projects, 'project', 'projects'));
+  if (o.memories) bits.push('memories');
+  if (!bits.length) return `${o.file} — skipped: ${o.notes.join('; ') || 'nothing recognisable inside'}`;
+  return `${o.file} — ${bits.join(', ')}${o.notes.length ? ` (${o.notes.join('; ')})` : ''}`;
+}
+
+const kindTag = c => (c.kind === 'project' ? '📁 Project · ' : '');
+const partsLabel = c => (c.kind === 'project'
+  ? `${c.msgs.length} ${c.msgs.length === 1 ? 'doc' : 'docs'}`
+  : `${c.msgs.length} messages`);
 
 const fmtDate = iso => (iso ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '');
 const monthKey = iso => (iso ? new Date(iso).toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) : 'Undated');
@@ -176,14 +344,15 @@ function topicsOf(c) {
 
 export function mount(root, tools) {
   let db = null;
-  let count = load('archive.count', 0);
+  let count = load('archive.count', 0); // chats only, so the dashboard cards stay honest
   let msgCount = load('archive.msgs', 0);
+  let projCount = load('archive.projects', 0);
   let dead = false;
 
   tools.innerHTML = `
     <span class="muted" id="ar-count"></span>
     <label class="btn small" style="cursor:pointer">⬆ Import
-      <input id="ar-file" type="file" accept=".json,.jsonl,.zip,application/json,application/zip" hidden></label>`;
+      <input id="ar-file" type="file" multiple accept=".json,.jsonl,.zip,application/json,application/zip" hidden></label>`;
 
   root.innerHTML = `
     <style id="archive-style">
@@ -210,12 +379,21 @@ export function mount(root, tools) {
   setCount();
 
   let activeCat = 'all'; // category menu selection
+  let lastReport = null; // per-file outcome of the most recent import
 
   function browseHTML() {
+    const stocked = count || projCount;
     return `
+      ${lastReport ? `
+      <div class="panel" style="margin-bottom:16px"><h3>Last import</h3>
+        <p style="margin-bottom:6px">${esc(lastReport.summary)}</p>
+        <ul class="muted" style="margin:0;padding-left:18px">
+          ${lastReport.lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
+      </div>` : ''}
       <div class="stat-row">
         <div class="stat-tile"><div class="stat-value">${count.toLocaleString()}</div><div class="stat-label">conversations</div></div>
         <div class="stat-tile"><div class="stat-value">${msgCount.toLocaleString()}</div><div class="stat-label">messages</div></div>
+        ${projCount ? `<div class="stat-tile"><div class="stat-value">${projCount.toLocaleString()}</div><div class="stat-label">projects</div></div>` : ''}
         <div class="stat-tile"><div class="stat-value">🔒</div><div class="stat-label">on-device only</div></div>
       </div>
       <div class="panel" style="margin-bottom:16px">
@@ -239,10 +417,10 @@ export function mount(root, tools) {
           <button class="btn small" id="ar-mem-save" style="margin-top:8px">Save memories</button>
         </div>
       </div>
-      ${count ? '<p style="margin-top:16px"><button class="btn small danger" id="ar-del">✕ Delete archive from this device</button></p>' : ''}
-      ${count ? '' : `
+      ${stocked ? '<p style="margin-top:16px"><button class="btn small danger" id="ar-del">✕ Delete archive from this device</button></p>' : ''}
+      ${stocked ? '' : `
       <div class="panel" style="margin-top:16px"><h3>How to fill this</h3>
-        <p class="muted"><strong>claude.ai → Settings → Privacy → Export data</strong> gives you download links (works on your phone too). Download <code>conversations-000.zip</code> and import it here as-is — no unzipping needed. The <code>memories-000.zip</code> imports the same way. Re-import any time — chats merge by ID, nothing duplicates.</p>
+        <p class="muted"><strong>claude.ai → Settings → Privacy → Export data</strong> gives you a link per zip — <code>conversations</code>, <code>design_chats</code>, <code>projects</code>, <code>light_metadata</code>, <code>memories</code>, <code>feedback</code>. Those links are one-time-use, so download them all while they last, then select every zip here at once and import them as-is — no unzipping needed. Everything is read in this browser: the data never leaves this device. Re-import any time — records merge by ID, nothing duplicates.</p>
       </div>`}`;
   }
 
@@ -347,7 +525,7 @@ export function mount(root, tools) {
         } else {
           html += `<button class="ar-row" data-open="${esc(h.c.uuid)}">
             <div class="t">${esc(h.c.name)}</div>
-            <div class="m">${esc(fmtDate(h.c.updated))} · ${h.c.msgs.length} messages</div>
+            <div class="m">${kindTag(h.c)}${esc(fmtDate(h.c.updated))} · ${partsLabel(h.c)}</div>
             ${h.snips.map(s => `<div class="snip">${mark(s, needle)}</div>`).join('')}</button>`;
         }
       }
@@ -368,7 +546,7 @@ export function mount(root, tools) {
     });
     if (dead) return;
     const listEl = main.querySelector('#ar-list');
-    if (!rows.length) { listEl.textContent = count ? 'Nothing in this category yet.' : 'Nothing imported yet.'; return; }
+    if (!rows.length) { listEl.textContent = (count || projCount) ? 'Nothing in this category yet.' : 'Nothing imported yet.'; return; }
     let lastMonth = '';
     listEl.classList.remove('muted');
     listEl.innerHTML = rows.map(c => {
@@ -378,7 +556,7 @@ export function mount(root, tools) {
       const cat = catOf(c);
       return `${head}<button class="ar-row" data-open="${esc(c.uuid)}">
         <div class="t">${esc(c.name)}</div>
-        <div class="m">${cat.emoji} ${esc(cat.name)} · ${esc(fmtDate(c.updated))} · ${c.msgs.length} messages</div></button>`;
+        <div class="m">${kindTag(c)}${cat.emoji} ${esc(cat.name)} · ${esc(fmtDate(c.updated))} · ${partsLabel(c)}</div></button>`;
     }).join('');
   }
 
@@ -423,12 +601,16 @@ export function mount(root, tools) {
     if (!c || dead) return;
     const cat = catOf(c);
     const paint = t => (lastQuery ? mark(t, lastQuery) : esc(t));
+    const link = c.kind === 'project'
+      ? `https://claude.ai/project/${esc(c.uuid)}`
+      : `https://claude.ai/chat/${esc(c.uuid)}`;
     main.innerHTML = `
       <p><button class="btn small" id="ar-back">‹ Archive</button>
-        <a class="btn small" target="_blank" rel="noopener" href="https://claude.ai/chat/${esc(c.uuid)}">↗ open on claude.ai</a></p>
+        <a class="btn small" target="_blank" rel="noopener" href="${link}">↗ open on claude.ai</a></p>
       <h3 style="font-family:var(--font-display);margin:14px 0 4px">${esc(c.name)}</h3>
-      <p class="muted" style="margin-bottom:6px">${cat.emoji} ${esc(cat.name)} · ${esc(fmtDate(c.created))} · ${c.msgs.length} messages</p>
+      <p class="muted" style="margin-bottom:6px">${kindTag(c)}${cat.emoji} ${esc(cat.name)} · ${esc(fmtDate(c.created))} · ${partsLabel(c)}</p>
       <p style="margin-bottom:16px">${topicsOf(c).map(t => `<button class="btn small" data-topicjump="${esc(t)}">${esc(t)}</button>`).join(' ')}</p>
+      ${c.msgs.length ? '' : '<p class="muted">Only this chat\'s title and dates were in the export — open it on claude.ai for the transcript, or import the conversations zip.</p>'}
       ${c.msgs.map(m => `<div class="ar-msg ${m.s}">${paint(m.t)}</div>`).join('')}`;
     main.querySelector('#ar-back').addEventListener('click', renderBrowse);
     main.querySelectorAll('[data-topicjump]').forEach(b => b.addEventListener('click', () => {
@@ -456,8 +638,9 @@ export function mount(root, tools) {
     main.querySelector('#ar-del')?.addEventListener('click', async () => {
       if (!confirm('Delete the whole archive from this device?')) return;
       await tx(db, 'convos', 'readwrite', s => s.clear());
-      count = 0; msgCount = 0;
-      save('archive.count', 0); save('archive.msgs', 0);
+      count = 0; msgCount = 0; projCount = 0;
+      lastReport = null;
+      save('archive.count', 0); save('archive.msgs', 0); save('archive.projects', 0);
       setCount(); renderBrowse();
     });
     main.addEventListener('click', e => {
@@ -475,51 +658,124 @@ export function mount(root, tools) {
   }
 
   tools.querySelector('#ar-file').addEventListener('change', async e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    showToast('Importing… large exports can take a minute');
-    try {
-      let text;
-      if (/\.zip$/i.test(file.name) || file.type.includes('zip')) {
-        const { convosText, memoriesText } = await readExportZip(file);
-        if (memoriesText) {
-          save('memories', memoriesText);
-          const mem = main.querySelector('#ar-mem');
-          if (mem) mem.value = memoriesText;
-          showToast('Memories imported from the zip');
-        }
-        if (!convosText) {
-          if (memoriesText) { e.target.value = ''; return; }
-          throw new Error('no conversations file inside this zip');
-        }
-        text = convosText;
-      } else {
-        text = await file.text();
+    const files = [...e.target.files];
+    if (!files.length) return;
+    showToast(files.length > 1
+      ? `Importing ${files.length} files… large exports can take a minute`
+      : 'Importing… large exports can take a minute');
+
+    // one file failing must never sink the rest, so every step is contained
+    const batch = new Map(); // uuid → record merged across all of these files
+    const memories = [];
+    const outcomes = [];
+    for (const file of files) {
+      const out = { file: file.name, convos: 0, light: 0, projects: 0, memories: 0, notes: [] };
+      outcomes.push(out);
+      let entries;
+      try {
+        entries = await listImportEntries(file);
+      } catch (err) {
+        out.error = err.message;
+        continue;
       }
-      const convos = normalize(parseExportText(text));
-      for (const c of convos) { c.cat = categorize(c); c.topics = topicsOf({ ...c, topics: undefined }); }
-      let fresh = 0;
-      await tx(db, 'convos', 'readwrite', store => {
-        for (const c of convos) {
-          const req = store.get(c.uuid);
-          req.onsuccess = () => {
-            const old = req.result;
-            if (!old) fresh++;
-            if (!old || (c.updated || '') >= (old.updated || '')) store.put(c);
-          };
+      if (!entries.length) { out.notes.push('no json, md or txt entries inside'); continue; }
+      for (const entry of entries) {
+        let res;
+        try {
+          res = ingestEntry(entry.name, await entry.read());
+        } catch (err) {
+          out.notes.push(`${entry.name}: ${err.message}`);
+          continue;
         }
-      });
-      count = await tx(db, 'convos', 'readonly', s => { const o = {}; s.count().onsuccess = e2 => { o.v = e2.target.result; }; return o; }).then(o => o.v);
-      msgCount = convos.reduce((s, c) => s + c.msgs.length, 0);
-      save('archive.count', count); save('archive.msgs', msgCount);
-      setCount();
-      showToast(`Imported ${convos.length.toLocaleString()} conversations (${fresh} new)`);
-      renderBrowse();
-      window.dispatchEvent(new CustomEvent('pd:data-changed'));
-    } catch (err) {
-      showToast(`Import failed: ${err.message}`);
+        if (res.kind === 'convos' || res.kind === 'projects') {
+          for (const c of res.convos) batch.set(c.uuid, mergeRecord(batch.get(c.uuid), c));
+          if (res.kind === 'projects') out.projects += res.convos.length;
+          else {
+            out.convos += res.convos.filter(hasBody).length;
+            out.light += res.convos.filter(c => !hasBody(c)).length;
+          }
+        } else if (res.kind === 'memories') {
+          memories.push(res.memory);
+          out.memories++;
+        } else if (res.note) {
+          out.notes.push(res.note);
+        }
+      }
     }
     e.target.value = '';
+    if (dead) return;
+
+    const records = [...batch.values()];
+    let freshConvos = 0;
+    let saveError = '';
+    if (records.length) {
+      for (const c of records) {
+        c.cat = categorize(c);
+        topicCache.delete(c.uuid); // a full transcript must not inherit a title-only scan
+        c.topics = topicsOf({ ...c, topics: undefined });
+      }
+      try {
+        await tx(db, 'convos', 'readwrite', store => {
+          for (const c of records) {
+            const req = store.get(c.uuid);
+            req.onsuccess = () => {
+              const old = req.result;
+              if (!old && hasBody(c) && c.kind !== 'project') freshConvos++;
+              store.put(mergeRecord(old, c));
+            };
+          }
+        });
+        // totals come from the store, not the batch, so a titles-only import
+        // cannot reset the counters the dashboard cards read
+        const totals = await tx(db, 'convos', 'readonly', store => {
+          const o = { n: 0, m: 0, p: 0 };
+          store.openCursor().onsuccess = e2 => {
+            const cur = e2.target.result;
+            if (!cur) return;
+            if (cur.value.kind === 'project') o.p++;
+            else o.n++;
+            o.m += cur.value.msgs?.length || 0;
+            cur.continue();
+          };
+          return o;
+        });
+        count = totals.n;
+        msgCount = totals.m;
+        projCount = totals.p;
+        save('archive.count', count); save('archive.msgs', msgCount); save('archive.projects', projCount);
+        setCount();
+      } catch (err) {
+        saveError = err.message || 'could not write to this device';
+      }
+    }
+    if (memories.length) save('memories', [...new Set(memories)].join('\n\n'));
+    if (dead) return;
+
+    // summary counts the merged batch, so a chat present in two zips counts once
+    const landed = test => records.filter(test).length;
+    const chats = landed(c => c.kind !== 'project' && hasBody(c));
+    const titles = landed(c => c.kind !== 'project' && !hasBody(c));
+    const projects = landed(c => c.kind === 'project');
+    const skipped = outcomes.filter(o => !o.error && !o.convos && !o.light && !o.projects && !o.memories).length;
+    const failed = outcomes.filter(o => o.error).length;
+    const many = (n, one, more) => `${n.toLocaleString()} ${n === 1 ? one : more}`;
+    const bits = [];
+    if (chats) bits.push(`${many(chats, 'conversation', 'conversations')} (${freshConvos.toLocaleString()} new)`);
+    if (titles) bits.push(many(titles, 'chat title', 'chat titles'));
+    if (projects) bits.push(many(projects, 'project', 'projects'));
+    if (memories.length) bits.push('memories updated');
+    if (skipped) bits.push(`${many(skipped, 'file', 'files')} skipped`);
+    if (failed) bits.push(`${many(failed, 'file', 'files')} unreadable`);
+    const lines = outcomes.map(fileLine);
+    if (saveError) {
+      lines.push(`saving to this device failed — ${saveError}`);
+      bits.length = 0;
+      bits.push(`Import failed while saving: ${saveError}`);
+    }
+    lastReport = { summary: bits.join(', ') || 'Nothing recognisable in these files', lines };
+    showToast(lastReport.summary);
+    renderBrowse();
+    if (!saveError && (records.length || memories.length)) window.dispatchEvent(new CustomEvent('pd:data-changed'));
   });
 
   openDB()
