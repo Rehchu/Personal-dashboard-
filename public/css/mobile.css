@@ -70,20 +70,34 @@
 
   .tile:active { transform: scale(0.96); }
 
-  /* label lives inside every tile on touch, nameplate style */
-  .tile .tile-label,
-  [data-theme="cyberpunk"] .tile .tile-label,
-  [data-theme="minecraft"] .tile .tile-label {
+  /* label lives inside every tile on touch, nameplate style.
+     #rail gives this ID specificity (1-2-0) so it beats every console/theme
+     chain — xbox.css and game/xboxhome.css park labels BELOW the tile
+     ([data-console="xbox"] .tile .tile-label { bottom:-26/-30px }, 0-3-0),
+     which on the phone grid gets overlapped by the next row. */
+  #rail .tile { overflow: hidden; } /* nameplate follows the rounded corners */
+
+  #rail .tile .tile-label {
     position: absolute;
     left: 0; right: 0; bottom: 0; top: auto;
     opacity: 1;
+    text-align: center;
     padding: 16px 8px 7px;
     background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
     color: #fff;
     font-size: 12.5px;
+    font-weight: 600;
     letter-spacing: 0.05em;
     white-space: normal;
+    overflow: visible;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  }
+
+  /* VT323 is illegible under ~16px — keep minecraft's floor, darker scrim */
+  [data-theme="minecraft"] #rail .tile .tile-label {
+    font-size: 16px;
+    font-weight: 400;
+    background: linear-gradient(transparent, rgba(0, 0, 0, 0.72));
   }
 
   /* --- fixed bottom tab bar (all consoles, all themes) --- */
@@ -139,8 +153,9 @@
   #ccenter { z-index: 45; }
 
   /* assassins light theme: keep the nameplate readable on white tiles */
-  [data-theme="assassins"] .tile .tile-label {
+  [data-theme="assassins"] #rail .tile .tile-label {
     background: linear-gradient(transparent, rgba(23, 23, 26, 0.72));
+    color: #fff;
   }
 }
 
