@@ -1,0 +1,40 @@
+name: Deploy to Cloudflare
+
+# Optional deploy path. The primary deploy route is Cloudflare Workers Builds
+# (Git integration), which needs no secrets here. This workflow only acts if
+# CLOUDFLARE_API_TOKEN is configured; otherwise it skips green.
+#   CLOUDFLARE_API_TOKEN  — API token with "Edit Cloudflare Workers" permissions
+#   CLOUDFLARE_ACCOUNT_ID — from the Cloudflare dashboard right sidebar
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      HAS_CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+    steps:
+      - name: Skip (no Cloudflare token configured)
+        if: env.HAS_CF_TOKEN != 'true'
+        run: echo "CLOUDFLARE_API_TOKEN secret not set — skipping. Workers Builds (Git integration) handles deploys."
+
+      - uses: actions/checkout@v4
+        if: env.HAS_CF_TOKEN == 'true'
+
+      - uses: actions/setup-node@v4
+        if: env.HAS_CF_TOKEN == 'true'
+        with:
+          node-version: 20
+
+      - run: npm install
+        if: env.HAS_CF_TOKEN == 'true'
+
+      - name: Deploy
+        if: env.HAS_CF_TOKEN == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

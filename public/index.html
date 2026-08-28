@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="masseffect">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="Bradly's personal dashboard — projects, fitness, book writing, notebook.">
+  <meta name="theme-color" content="#05080f">
+  <title>Dyer HQ — Dashboard</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎮</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Cinzel:wght@500;700&family=Exo+2:wght@400;600;700;800&family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&family=VT323&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/themes.css">
+</head>
+<body>
+  <div id="ambient" aria-hidden="true"></div>
+  <div id="theme-fx" aria-hidden="true"></div>
+
+  <header id="topbar">
+    <div class="topbar-left">
+      <span id="brand-mark" aria-hidden="true"></span>
+      <h1 id="brand">DYER HQ</h1>
+      <span id="brand-sub">personal dashboard</span>
+    </div>
+    <div class="topbar-right">
+      <nav id="theme-switcher" aria-label="Theme">
+        <button class="theme-dot" data-set-theme="assassins"  title="Assassin's Creed theme"><span>AC</span></button>
+        <button class="theme-dot" data-set-theme="cyberpunk"  title="Cyberpunk theme"><span>CP</span></button>
+        <button class="theme-dot" data-set-theme="gtav"       title="GTA V theme"><span>V</span></button>
+        <button class="theme-dot" data-set-theme="minecraft"  title="Minecraft theme"><span>MC</span></button>
+        <button class="theme-dot" data-set-theme="masseffect" title="Mass Effect theme"><span>N7</span></button>
+      </nav>
+      <div id="clock" aria-live="off">
+        <span id="clock-time">--:--</span>
+        <span id="clock-date"></span>
+      </div>
+    </div>
+  </header>
+
+  <main id="home" aria-label="Dashboard">
+    <section id="hero" aria-live="polite">
+      <div id="hero-icon" aria-hidden="true"></div>
+      <div id="hero-text">
+        <h2 id="hero-title">&nbsp;</h2>
+        <p id="hero-desc">&nbsp;</p>
+        <div id="hero-actions"></div>
+      </div>
+    </section>
+
+    <section id="rail-wrap">
+      <div id="rail" role="listbox" aria-label="Apps and projects" tabindex="0"></div>
+    </section>
+
+    <p id="hint" aria-hidden="true">◀ ▶ browse&nbsp;&nbsp;·&nbsp;&nbsp;⏎ open&nbsp;&nbsp;·&nbsp;&nbsp;esc back</p>
+  </main>
+
+  <!-- Full-screen module view (fitness / writing / notebook / projects) -->
+  <div id="appview" hidden>
+    <header id="appview-bar">
+      <button id="appview-back" aria-label="Back to dashboard">‹ Dashboard</button>
+      <h2 id="appview-title"></h2>
+      <div id="appview-tools"></div>
+    </header>
+    <div id="appview-body"></div>
+  </div>
+
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
