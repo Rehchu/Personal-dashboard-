@@ -1,8 +1,10 @@
-// Claude Archive — organized, searchable local archive of exported claude.ai
-// history, plus the memories text. Everything stays on this device (IndexedDB
-// + localStorage); nothing is uploaded anywhere.
+// Claude Archive — organized, searchable archive of exported claude.ai history,
+// plus the memories text. Records live in IndexedDB on each device and sync
+// through /api/archive into the owner's own private Cloudflare storage (the R2
+// bucket this dashboard already uses), reachable only behind the owner's login.
 
 import { load, save, esc, showToast } from './store.js';
+import { isGrokExport, isGrokAccountFile, grokRecords } from './grok.js';
 
 const DB_NAME = 'pd-archive';
 
@@ -219,14 +221,40 @@ function mergeRecord(old, next) {
 }
 
 // what one text entry holds. never throws on content it does not understand.
+// code and config files travel with an export as attachments; keep them
+// searchable under their own name rather than dropping them
+const CODE_FILE_RE = /\.(js|jsx|mjs|cjs|ts|tsx|py|rb|go|rs|java|cs|c|h|cpp|php|swift|kt|css|scss|html|sh|sql|ya?ml|toml|ini|xml|csv)$/i;
+
+function codeRecord(name, text) {
+  return {
+    uuid: `file:${name}`,
+    name,
+    created: '',
+    updated: '',
+    kind: 'file',
+    msgs: [{ s: 'h', t: text.slice(0, 200_000) }],
+  };
+}
+
 function ingestEntry(name, text) {
   if (!text || !text.trim()) return { kind: 'skip', note: `${name} is empty` };
   if (/\.(md|txt)$/i.test(name)) return { kind: 'memories', memory: text.trim() };
+  if (CODE_FILE_RE.test(name)) return { kind: 'files', convos: [codeRecord(name, text)] };
   let data;
   try {
     data = parseExportText(text);
   } catch {
     return { kind: 'skip', note: `${name} is not valid JSON` };
+  }
+  // xAI account dumps carry live session ids, IP addresses and a birth date.
+  // Recognised only so they can be refused - they must never reach storage.
+  if (isGrokAccountFile(data)) {
+    return { kind: 'skip', note: `${name} holds account and session data — not imported` };
+  }
+  if (isGrokExport(data)) {
+    const convos = grokRecords(data);
+    if (convos.length) return { kind: 'convos', convos };
+    return { kind: 'none', note: `${name}: a Grok export with nothing in it` };
   }
   const list = recordList(data);
   const kind = list ? classifyRecords(list) : null;
@@ -253,6 +281,7 @@ function fileLine(o) {
   if (o.convos) bits.push(many(o.convos, 'conversation', 'conversations'));
   if (o.light) bits.push(many(o.light, 'chat title', 'chat titles'));
   if (o.projects) bits.push(many(o.projects, 'project', 'projects'));
+  if (o.files) bits.push(many(o.files, 'file', 'files'));
   if (o.memories) bits.push('memories');
   if (!bits.length) return `${o.file} — skipped: ${o.notes.join('; ') || 'nothing recognisable inside'}`;
   return `${o.file} — ${bits.join(', ')}${o.notes.length ? ` (${o.notes.join('; ')})` : ''}`;
@@ -342,15 +371,287 @@ function topicsOf(c) {
   return topics;
 }
 
+/* ---------- cross-device sync (the owner's own private Cloudflare storage) ---------- */
+
+const CHUNK_SIZE = 400;              // records per stored chunk
+const MAX_CHUNKS = 512;              // the index refuses a longer list
+const MAX_CHUNK_BYTES = 25 * 1024 * 1024; // the chunk endpoint refuses a larger body
+const MAX_MEMORIES = 256 * 1024;     // the index refuses a longer memories text
+const CHUNK_ID = /^[a-z0-9][a-z0-9._-]{0,39}$/;
+const REV_KEY = 'archive.rev';       // the server revision this device last agreed with
+const MEM_AT_KEY = 'archive.memAt';  // when this device's memories text was last set
+const DIRTY_KEY = 'archive.dirty';   // an import changed records here; the count alone
+                                     // cannot see a chat that only gained its transcript
+
+const utf8 = new TextEncoder();
+
+async function api(path, opts = {}) {
+  let res;
+  try {
+    res = await fetch(path, { cache: 'no-store', ...opts });
+  } catch {
+    throw new Error('no connection to the dashboard');
+  }
+  if (res.status === 401 || res.status === 403) throw new Error('signed out — sign in again to sync');
+  return res;
+}
+
+function cleanIndex(body) {
+  const int = v => (Number.isInteger(v) && v >= 0 ? v : 0);
+  const chunks = Array.isArray(body?.chunks)
+    ? body.chunks.filter(id => typeof id === 'string' && CHUNK_ID.test(id)).slice(0, MAX_CHUNKS)
+    : [];
+  return {
+    rev: int(body?.rev),
+    count: int(body?.count),
+    chunks,
+    updatedAt: int(body?.updatedAt),
+    memories: typeof body?.memories === 'string' ? body.memories : '',
+  };
+}
+
+async function getIndex() {
+  const res = await api('/api/archive/index');
+  // a dashboard deployed before sync existed answers any unknown /api/ path with 404
+  if (res.status === 404) throw new Error('this dashboard has no archive sync yet');
+  if (!res.ok) throw new Error(`could not read the sync index (${res.status})`);
+  return cleanIndex(await res.json().catch(() => null));
+}
+
+async function putIndex(payload) {
+  const res = await api('/api/archive/index', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const body = await res.json().catch(() => null);
+  if (res.status === 409) return { conflict: true, index: cleanIndex(body) };
+  if (!res.ok) throw new Error(body?.error || `could not save the sync index (${res.status})`);
+  return { rev: Number.isInteger(body?.rev) ? body.rev : payload.baseRev + 1 };
+}
+
+// gzip when this browser can; the reader decides by content-type, never by guesswork
+async function encodeChunk(records) {
+  const bytes = utf8.encode(JSON.stringify(records));
+  if (typeof CompressionStream !== 'function') return { body: bytes, type: 'application/json' };
+  const packed = new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'));
+  return { body: new Uint8Array(await new Response(packed).arrayBuffer()), type: 'application/gzip' };
+}
+
+async function putChunk(id, packed) {
+  const res = await api(`/api/archive/chunk/${id}`, {
+    method: 'PUT',
+    headers: { 'content-type': packed.type },
+    body: packed.body,
+  });
+  if (res.status === 413) throw new Error('one conversation is too large to store');
+  if (!res.ok) throw new Error(`could not store chunk ${id} (${res.status})`);
+}
+
+// null means that object is gone; every other problem throws, because a
+// half-read set must never be pushed back over the good copy
+async function getChunk(id) {
+  const res = await api(`/api/archive/chunk/${id}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`could not read chunk ${id} (${res.status})`);
+  const type = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+  const gzipped = type === 'application/gzip' || type === 'application/x-gzip';
+  if (gzipped && typeof DecompressionStream !== 'function') {
+    throw new Error('this browser cannot unpack gzip — open the dashboard in a newer one so nothing is lost');
+  }
+  const text = gzipped && res.body
+    ? await new Response(res.body.pipeThrough(new DecompressionStream('gzip'))).text()
+    : await res.text();
+  let rows;
+  try { rows = JSON.parse(text); } catch { throw new Error(`stored chunk ${id} is unreadable`); }
+  if (!Array.isArray(rows)) throw new Error(`stored chunk ${id} is not a list of records`);
+  return rows;
+}
+
+// a downloaded record is trusted no further than its shape
+function incoming(r) {
+  if (!r || typeof r !== 'object' || typeof r.uuid !== 'string' || !r.uuid) return null;
+  return {
+    ...r,
+    name: typeof r.name === 'string' && r.name ? r.name : '(untitled chat)',
+    created: typeof r.created === 'string' ? r.created : '',
+    updated: typeof r.updated === 'string' ? r.updated : '',
+    msgs: Array.isArray(r.msgs)
+      ? r.msgs.filter(m => m && typeof m.t === 'string' && m.t).map(m => ({ s: m.s === 'h' ? 'h' : 'a', t: m.t }))
+      : [],
+  };
+}
+
+// a tie on title, date and length is the same record arriving again, so a pull
+// does not rewrite the whole store every time
+const sameRecord = (a, b) => !!a && a.name === b.name && (a.updated || '') === (b.updated || '')
+  && (a.msgs?.length || 0) === (b.msgs?.length || 0) && a.kind === b.kind;
+
+async function mergeChunk(db, rows) {
+  let changed = 0;
+  await tx(db, 'convos', 'readwrite', store => {
+    for (const raw of rows) {
+      const rec = incoming(raw);
+      if (!rec) continue;
+      const req = store.get(rec.uuid);
+      req.onsuccess = () => {
+        const old = req.result;
+        const merged = mergeRecord(old, rec);
+        if (merged === old || sameRecord(old, merged)) return; // the stored copy already says this
+        topicCache.delete(rec.uuid);
+        store.put(merged);
+        changed++;
+      };
+    }
+  });
+  return changed;
+}
+
+const storeCount = db => tx(db, 'convos', 'readonly', store => {
+  const o = { n: 0 };
+  store.count().onsuccess = e => { o.n = e.target.result; };
+  return o;
+}).then(o => o.n);
+
+// one page per transaction: a fetch cannot run inside a live IndexedDB tx, so
+// the push walks the store in key order rather than holding it all in memory
+function pageRecords(db, after) {
+  return tx(db, 'convos', 'readonly', store => {
+    const rows = [];
+    const range = after === null ? null : IDBKeyRange.lowerBound(after, true);
+    store.openCursor(range).onsuccess = e => {
+      const cur = e.target.result;
+      if (!cur || rows.length >= CHUNK_SIZE) return;
+      rows.push(cur.value);
+      cur.continue();
+    };
+    return rows;
+  });
+}
+
+// a page of very long transcripts can still outgrow the 25 MB body cap, so it
+// splits rather than failing the whole push
+async function pushPage(rows, rev, ids) {
+  if (!rows.length) return;
+  if (ids.length >= MAX_CHUNKS) throw new Error('the archive is larger than sync can hold');
+  const packed = await encodeChunk(rows);
+  if (packed.body.length > MAX_CHUNK_BYTES && rows.length > 1) {
+    const half = Math.ceil(rows.length / 2);
+    await pushPage(rows.slice(0, half), rev, ids);
+    await pushPage(rows.slice(half), rev, ids);
+    return;
+  }
+  const id = `r${rev}-${ids.length}`;
+  await putChunk(id, packed);
+  ids.push(id);
+}
+
+// ids carry the revision being written, so a push never reuses the ids another
+// device is still reading
+async function pushRecords(db, rev) {
+  const ids = [];
+  let after = null;
+  for (;;) {
+    const rows = await pageRecords(db, after);
+    if (!rows.length) break;
+    await pushPage(rows, rev, ids);
+    if (rows.length < CHUNK_SIZE) break;
+    after = rows[rows.length - 1].uuid;
+  }
+  return ids;
+}
+
+// the memories text rides in the index: newer wins, but an empty remote never
+// erases a text this device still holds, and an unstamped side keeps the longer
+function pickMemories(text, at, idx) {
+  const remote = idx.memories;
+  if (!remote) return { text, at };
+  if (!text) return { text: remote, at: idx.updatedAt };
+  if (text === remote) return { text, at: Math.max(at, idx.updatedAt) };
+  if (!at || !idx.updatedAt) {
+    return text.length >= remote.length ? { text, at } : { text: remote, at: idx.updatedAt };
+  }
+  return idx.updatedAt > at ? { text: remote, at: idx.updatedAt } : { text, at };
+}
+
+async function syncOnce(db, idx) {
+  const localRev = load(REV_KEY, 0);
+  let count = await storeCount(db);
+  let pulled = 0;
+  let gap = false;
+
+  // pull when the server moved on, or when the two sides hold different totals
+  if (idx.rev > localRev || idx.count !== count) {
+    for (const id of idx.chunks) {
+      const rows = await getChunk(id);
+      if (!rows) { gap = true; continue; } // a missing object is rebuilt from this device
+      pulled += await mergeChunk(db, rows);
+    }
+    if (pulled) count = await storeCount(db);
+  }
+
+  const localMem = load('memories', '');
+  const mem = pickMemories(localMem, load(MEM_AT_KEY, 0), idx);
+  const memChanged = mem.text !== localMem;
+  if (memChanged) { save('memories', mem.text); save(MEM_AT_KEY, mem.at); }
+
+  let sendMem = mem.text;
+  let note = '';
+  if (utf8.encode(sendMem).length > MAX_MEMORIES) {
+    sendMem = idx.memories; // over the index cap: leave the stored copy untouched
+    note = 'memories text is over 256 KB, so it stays on this device';
+  }
+
+  const recordsDiffer = gap || load(DIRTY_KEY, false) || count !== idx.count;
+  if (!recordsDiffer && sendMem === idx.memories) {
+    save(REV_KEY, idx.rev);
+    return { pulled, memChanged, count, rev: idx.rev, note };
+  }
+
+  const stamp = mem.at || Date.now();
+  // chunks go first and the index last, so another device never reads a half-written set
+  const chunks = recordsDiffer ? await pushRecords(db, idx.rev + 1) : idx.chunks;
+  const res = await putIndex({ baseRev: idx.rev, count, chunks, updatedAt: stamp, memories: sendMem });
+  if (res.conflict) return { conflict: true, index: res.index };
+  save(REV_KEY, res.rev);
+  save(MEM_AT_KEY, stamp);
+  if (recordsDiffer) save(DIRTY_KEY, false);
+  return { pulled, memChanged, pushed: count, count, rev: res.rev, note };
+}
+
+async function syncArchive(db) {
+  let idx = await getIndex();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const out = await syncOnce(db, idx);
+    if (!out.conflict) return out;
+    idx = out.index; // the 409 body carries the server's current state
+  }
+  throw new Error('another device pushed at the same moment — sync again in a minute');
+}
+
+async function deleteRemote() {
+  const res = await api('/api/archive', { method: 'DELETE' });
+  if (!res.ok) throw new Error(`could not delete the synced copy (${res.status})`);
+  save(REV_KEY, 0);
+  save(MEM_AT_KEY, 0);
+  save(DIRTY_KEY, false);
+}
+
 export function mount(root, tools) {
   let db = null;
   let count = load('archive.count', 0); // chats only, so the dashboard cards stay honest
   let msgCount = load('archive.msgs', 0);
   let projCount = load('archive.projects', 0);
   let dead = false;
+  let syncState = 'idle'; // idle | busy | error
+  let syncNote = '';
+  let syncing = false;
+  let queued = false;     // a sync asked for while one was already running
+  let reading = false;    // the reader is open, so a sync must not repaint over it
 
   tools.innerHTML = `
     <span class="muted" id="ar-count"></span>
+    <button class="btn small" id="ar-sync">☁ Sync</button>
     <label class="btn small" style="cursor:pointer">⬆ Import
       <input id="ar-file" type="file" multiple accept=".json,.jsonl,.zip,application/json,application/zip" hidden></label>`;
 
@@ -375,8 +676,90 @@ export function mount(root, tools) {
 
   const main = root.querySelector('#ar-main');
   const countEl = tools.querySelector('#ar-count');
-  const setCount = () => { countEl.textContent = count ? `${count.toLocaleString()} chats` : ''; };
+  const setCount = () => {
+    countEl.textContent = count ? `${count.toLocaleString()} chats` : '';
+    paintSync();
+  };
+
+  function paintSync() {
+    const btn = tools.querySelector('#ar-sync');
+    if (dead || !btn) return;
+    const stored = count + projCount;
+    btn.disabled = syncState === 'busy';
+    btn.textContent = syncState === 'busy' ? '⟳ Syncing…'
+      : syncState === 'error' ? '⚠ Sync failed'
+      : `☁ Sync${stored ? ` · ${stored.toLocaleString()}` : ''}`;
+    btn.title = syncNote || 'Sync with your own private Cloudflare storage';
+  }
+
+  // totals come from the store, not from a batch, so a titles-only import
+  // cannot reset the counters the dashboard cards read
+  async function recount() {
+    const totals = await tx(db, 'convos', 'readonly', store => {
+      const o = { n: 0, m: 0, p: 0 };
+      store.openCursor().onsuccess = e => {
+        const cur = e.target.result;
+        if (!cur) return;
+        if (cur.value.kind === 'project') o.p++;
+        else o.n++;
+        o.m += cur.value.msgs?.length || 0;
+        cur.continue();
+      };
+      return o;
+    });
+    count = totals.n;
+    msgCount = totals.m;
+    projCount = totals.p;
+    save('archive.count', count); save('archive.msgs', msgCount); save('archive.projects', projCount);
+    setCount();
+  }
+
+  // a sync failure must never take the archive down with it
+  async function runSync(manual) {
+    if (!db || dead) return;
+    // an import that lands mid-sync still has to reach the other devices
+    if (syncing) { queued = true; return; }
+    if (!navigator.onLine) {
+      syncNote = 'offline — the archive still works on this device';
+      paintSync();
+      if (manual) showToast(syncNote);
+      return;
+    }
+    syncing = true;
+    syncState = 'busy';
+    syncNote = '';
+    paintSync();
+    try {
+      const res = await syncArchive(db);
+      if (dead) return;
+      syncState = 'idle';
+      if (res.pulled || res.memChanged) await recount();
+      const bits = [];
+      if (res.pulled) bits.push(`${res.pulled.toLocaleString()} pulled`);
+      if (res.pushed !== undefined) bits.push('uploaded');
+      if (res.memChanged) bits.push('memories updated');
+      if (res.note) bits.push(res.note);
+      syncNote = `Synced · ${bits.length ? bits.join(', ') : 'already up to date'}`;
+      if (res.pulled || res.memChanged) {
+        window.dispatchEvent(new CustomEvent('pd:data-changed'));
+        // never repaint over the reader or a half-typed box
+        if (!reading && !main.contains(document.activeElement)) renderBrowse();
+      }
+      if (manual) showToast(syncNote);
+    } catch (err) {
+      if (dead) return;
+      syncState = 'error';
+      syncNote = err.message || 'sync failed';
+      if (manual) showToast(`Sync failed — ${syncNote}`);
+    } finally {
+      syncing = false;
+      paintSync();
+      if (queued && !dead) { queued = false; runSync(false); }
+    }
+  }
+
   setCount();
+  tools.querySelector('#ar-sync').addEventListener('click', () => runSync(true));
 
   let activeCat = 'all'; // category menu selection
   let lastReport = null; // per-file outcome of the most recent import
@@ -394,7 +777,9 @@ export function mount(root, tools) {
         <div class="stat-tile"><div class="stat-value">${count.toLocaleString()}</div><div class="stat-label">conversations</div></div>
         <div class="stat-tile"><div class="stat-value">${msgCount.toLocaleString()}</div><div class="stat-label">messages</div></div>
         ${projCount ? `<div class="stat-tile"><div class="stat-value">${projCount.toLocaleString()}</div><div class="stat-label">projects</div></div>` : ''}
-        <div class="stat-tile"><div class="stat-value">🔒</div><div class="stat-label">on-device only</div></div>
+        <div class="stat-tile">
+          <div class="stat-value">${syncState === 'busy' ? '⟳' : syncState === 'error' ? '⚠️' : '☁️'}</div>
+          <div class="stat-label">${syncState === 'error' ? 'sync error' : 'private cloud sync'}</div></div>
       </div>
       <div class="panel" style="margin-bottom:16px">
         <h3>Categories</h3>
@@ -412,15 +797,15 @@ export function mount(root, tools) {
       <div class="grid-2">
         <div class="panel"><h3>Conversations</h3><div id="ar-list" class="muted">Loading…</div></div>
         <div class="panel"><h3>Memories</h3>
-          <p class="muted" style="margin-bottom:8px">Paste what Claude remembers about you (claude.ai → Settings → Memory). Searched along with your chats.</p>
+          <p class="muted" style="margin-bottom:8px">Paste what Claude remembers about you (claude.ai → Settings → Memory). Searched along with your chats, and synced to your other signed-in devices.</p>
           <textarea id="ar-mem" style="width:100%;min-height:140px">${esc(load('memories', ''))}</textarea>
           <button class="btn small" id="ar-mem-save" style="margin-top:8px">Save memories</button>
         </div>
       </div>
-      ${stocked ? '<p style="margin-top:16px"><button class="btn small danger" id="ar-del">✕ Delete archive from this device</button></p>' : ''}
+      ${stocked ? '<p style="margin-top:16px"><button class="btn small danger" id="ar-del">✕ Delete archive…</button></p>' : ''}
       ${stocked ? '' : `
       <div class="panel" style="margin-top:16px"><h3>How to fill this</h3>
-        <p class="muted"><strong>claude.ai → Settings → Privacy → Export data</strong> gives you a link per zip — <code>conversations</code>, <code>design_chats</code>, <code>projects</code>, <code>light_metadata</code>, <code>memories</code>, <code>feedback</code>. Those links are one-time-use, so download them all while they last, then select every zip here at once and import them as-is — no unzipping needed. Everything is read in this browser: the data never leaves this device. Re-import any time — records merge by ID, nothing duplicates.</p>
+        <p class="muted"><strong>claude.ai → Settings → Privacy → Export data</strong> gives you a link per zip — <code>conversations</code>, <code>design_chats</code>, <code>projects</code>, <code>light_metadata</code>, <code>memories</code>, <code>feedback</code>. Those links are one-time-use, so download them all while they last, then select every zip here at once and import them as-is — no unzipping needed. Everything is read in this browser, then synced to your own private Cloudflare storage so every device you sign in on holds the same archive — nobody without your login can read it. Re-import any time — records merge by ID, nothing duplicates.</p>
       </div>`}`;
   }
 
@@ -599,6 +984,7 @@ export function mount(root, tools) {
       return out;
     }).then(o => o.v);
     if (!c || dead) return;
+    reading = true;
     const cat = catOf(c);
     const paint = t => (lastQuery ? mark(t, lastQuery) : esc(t));
     const link = c.kind === 'project'
@@ -633,15 +1019,28 @@ export function mount(root, tools) {
     });
     main.querySelector('#ar-mem-save').addEventListener('click', () => {
       save('memories', main.querySelector('#ar-mem').value);
-      showToast('Memories saved (on-device)');
+      save(MEM_AT_KEY, Date.now());
+      showToast('Memories saved');
+      runSync(false);
     });
     main.querySelector('#ar-del')?.addEventListener('click', async () => {
       if (!confirm('Delete the whole archive from this device?')) return;
+      const alsoSynced = confirm('Also delete the synced copy in your Cloudflare storage?\n\n'
+        + 'OK removes it for every device. Cancel keeps it — this device will pull it back on the next sync.');
       await tx(db, 'convos', 'readwrite', s => s.clear());
       count = 0; msgCount = 0; projCount = 0;
       lastReport = null;
       save('archive.count', 0); save('archive.msgs', 0); save('archive.projects', 0);
       setCount(); renderBrowse();
+      if (!alsoSynced) return;
+      try {
+        await deleteRemote();
+        if (!dead) { syncState = 'idle'; syncNote = 'Synced copy deleted'; paintSync(); }
+        showToast('Archive deleted here and in your Cloudflare storage');
+      } catch (err) {
+        if (!dead) { syncState = 'error'; syncNote = err.message; paintSync(); }
+        showToast(`Deleted here — the synced copy stayed: ${err.message}`);
+      }
     });
     main.addEventListener('click', e => {
       const btn = e.target.closest('[data-open]');
@@ -650,6 +1049,7 @@ export function mount(root, tools) {
   }
 
   function renderBrowse() {
+    reading = false;
     main.innerHTML = browseHTML();
     wireBrowse();
     renderCats();
@@ -669,7 +1069,7 @@ export function mount(root, tools) {
     const memories = [];
     const outcomes = [];
     for (const file of files) {
-      const out = { file: file.name, convos: 0, light: 0, projects: 0, memories: 0, notes: [] };
+      const out = { file: file.name, convos: 0, light: 0, projects: 0, files: 0, memories: 0, notes: [] };
       outcomes.push(out);
       let entries;
       try {
@@ -690,9 +1090,10 @@ export function mount(root, tools) {
           out.notes.push(`${entry.name}: ${err.message}`);
           continue;
         }
-        if (res.kind === 'convos' || res.kind === 'projects') {
+        if (res.kind === 'convos' || res.kind === 'projects' || res.kind === 'files') {
           for (const c of res.convos) batch.set(c.uuid, mergeRecord(batch.get(c.uuid), c));
           if (res.kind === 'projects') out.projects += res.convos.length;
+          else if (res.kind === 'files') out.files += res.convos.length;
           else {
             out.convos += res.convos.filter(hasBody).length;
             out.light += res.convos.filter(c => !hasBody(c)).length;
@@ -728,30 +1129,16 @@ export function mount(root, tools) {
             };
           }
         });
-        // totals come from the store, not the batch, so a titles-only import
-        // cannot reset the counters the dashboard cards read
-        const totals = await tx(db, 'convos', 'readonly', store => {
-          const o = { n: 0, m: 0, p: 0 };
-          store.openCursor().onsuccess = e2 => {
-            const cur = e2.target.result;
-            if (!cur) return;
-            if (cur.value.kind === 'project') o.p++;
-            else o.n++;
-            o.m += cur.value.msgs?.length || 0;
-            cur.continue();
-          };
-          return o;
-        });
-        count = totals.n;
-        msgCount = totals.m;
-        projCount = totals.p;
-        save('archive.count', count); save('archive.msgs', msgCount); save('archive.projects', projCount);
-        setCount();
+        save(DIRTY_KEY, true); // records changed here even when the total did not
+        await recount();
       } catch (err) {
         saveError = err.message || 'could not write to this device';
       }
     }
-    if (memories.length) save('memories', [...new Set(memories)].join('\n\n'));
+    if (memories.length) {
+      save('memories', [...new Set(memories)].join('\n\n'));
+      save(MEM_AT_KEY, Date.now());
+    }
     if (dead) return;
 
     // summary counts the merged batch, so a chat present in two zips counts once
@@ -778,11 +1165,14 @@ export function mount(root, tools) {
     lastReport = { summary: bits.join(', ') || 'Nothing recognisable in these files', lines };
     showToast(lastReport.summary);
     renderBrowse();
-    if (!saveError && (records.length || memories.length)) window.dispatchEvent(new CustomEvent('pd:data-changed'));
+    if (!saveError && (records.length || memories.length)) {
+      window.dispatchEvent(new CustomEvent('pd:data-changed'));
+      runSync(false);
+    }
   });
 
   openDB()
-    .then(d => { db = d; if (!dead) renderBrowse(); })
+    .then(d => { db = d; if (!dead) { renderBrowse(); runSync(false); } })
     .catch(() => { main.innerHTML = '<p class="muted">This browser blocks IndexedDB (private mode?) — the archive needs it.</p>'; });
 
   return () => { dead = true; db?.close(); };
