@@ -1,0 +1,151 @@
+/* ============================================================
+   Phone-first layer (loads LAST — wins every cascade fight).
+   Under 720px the console paradigm becomes a real mobile app:
+   compact header, activity strip, 2-column launcher grid with
+   one-tap tiles, and a fixed bottom tab bar. Themes still skin
+   colors/fonts/effects; layout is owned here.
+   ============================================================ */
+
+@media (max-width: 720px) {
+  /* --- header: one tight row; themes move into the control center --- */
+  #theme-switcher { display: none !important; }
+  #topbar { flex-wrap: nowrap; align-items: center; gap: 8px; }
+  .topbar-right { width: auto; justify-content: flex-end; gap: 8px; }
+  .topbar-left { min-width: 0; }
+  #brand { font-size: 16px; }
+  #brand-sub { display: none; }
+  #profile-name { display: none; }
+  #clock-time { font-size: 15px; white-space: nowrap; }
+
+  [data-console="xbox"] .topbar-left { display: none; }
+  [data-console="xbox"] .topbar-right { display: flex; }
+  [data-console="xbox"] #profile-chip { margin-right: auto; order: -2; }
+
+  /* --- home: activity strip on top, launcher grid below --- */
+  #home {
+    height: auto;
+    justify-content: flex-start;
+    gap: 12px;
+    padding-bottom: calc(86px + env(safe-area-inset-bottom));
+  }
+
+  #hero { display: none; }            /* one-tap tiles make the hero redundant */
+  #hero-watermark { display: none; }
+  #hint { display: none; }
+
+  #activity { order: -1; padding: 2px 14px 0; margin: 0; }
+  .activity-cards { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .activity-cards::-webkit-scrollbar { display: none; }
+  .act-card { min-width: 128px; flex: 0 0 auto; padding: 12px 16px; }
+  .act-card .act-value { font-size: 21px; }
+
+  #rail-wrap { order: 0; padding: 0 14px; }
+
+  #rail,
+  [data-console="ps"] #rail,
+  [data-console="xbox"] #rail,
+  [data-theme="minecraft"] #rail {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    overflow: visible;
+    padding: 4px 2px 10px;
+    scroll-snap-type: none;
+    height: auto;
+  }
+
+  .tile,
+  [data-console="ps"] .tile,
+  [data-console="xbox"] .tile {
+    width: 100%;
+    aspect-ratio: 1.3;
+    font-size: 40px;
+  }
+
+  /* selection ring only — no scale jumps inside a grid */
+  .tile.focused,
+  [data-console="ps"] .tile.focused,
+  [data-console="xbox"] .tile.focused,
+  [data-theme="minecraft"] #rail .tile.focused { transform: none; }
+
+  .tile:active { transform: scale(0.96); }
+
+  /* label lives inside every tile on touch, nameplate style */
+  .tile .tile-label,
+  [data-theme="cyberpunk"] .tile .tile-label,
+  [data-theme="minecraft"] .tile .tile-label {
+    position: absolute;
+    left: 0; right: 0; bottom: 0; top: auto;
+    opacity: 1;
+    padding: 16px 8px 7px;
+    background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
+    color: #fff;
+    font-size: 12.5px;
+    letter-spacing: 0.05em;
+    white-space: normal;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  }
+
+  /* --- fixed bottom tab bar (all consoles, all themes) --- */
+  #pill-nav,
+  [data-console="ps"] #pill-nav,
+  [data-console="xbox"] #pill-nav,
+  [data-theme="gtav"] #pill-nav,
+  [data-theme="minecraft"] #pill-nav {
+    display: flex;
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 30;
+    margin: 0;
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    background: color-mix(in oklab, var(--surface) 94%, transparent);
+    backdrop-filter: blur(14px);
+    border-top: 1px solid color-mix(in oklab, var(--ink-3) 26%, transparent);
+    justify-content: space-around;
+    gap: 4px;
+    overflow: visible;
+  }
+
+  .pill,
+  [data-console="ps"] .pill,
+  [data-theme="gtav"] .pill,
+  [data-theme="minecraft"] .pill {
+    flex: 1 1 0;
+    text-align: center;
+    background: none;
+    border: none;
+    box-shadow: none;
+    border-radius: 10px;
+    padding: 9px 4px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: none;
+    color: var(--ink-3);
+  }
+
+  .pill.active,
+  [data-console="ps"] .pill.active,
+  [data-theme="gtav"] .pill.active,
+  [data-theme="minecraft"] .pill.active {
+    background: color-mix(in oklab, var(--accent) 22%, transparent);
+    color: var(--ink);
+  }
+
+  /* module views clear the tab bar */
+  #appview-body { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+
+  /* control center sits above the tab bar */
+  #ccenter { z-index: 45; }
+
+  /* assassins light theme: keep the nameplate readable on white tiles */
+  [data-theme="assassins"] .tile .tile-label {
+    background: linear-gradient(transparent, rgba(23, 23, 26, 0.72));
+  }
+}
+
+/* tiny phones */
+@media (max-width: 380px) {
+  .tile, [data-console="ps"] .tile, [data-console="xbox"] .tile { font-size: 34px; }
+  #brand { font-size: 14px; }
+}

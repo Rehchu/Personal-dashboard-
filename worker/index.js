@@ -1,16 +1,21 @@
-// Sync API for the dashboard. Static assets are served by the assets binding;
-// this Worker only handles /api/*. Single-user model: the first device to
-// claim sets the passphrase (stored as a SHA-256 hash in D1); every sync call
-// must present the same passphrase in X-Sync-Key. Same-origin only (no CORS
-// headers on purpose — the app is served from this very Worker).
+// Private dashboard Worker: cookie-gated app shell + static assets, sync API
+// (passphrase header), and personal background-video storage streamed from R2.
+// Single-user model: ONE passphrase (claimed on first login or first sync
+// setup) unlocks both the login screen and sync. Sessions are HttpOnly
+// cookies signed with a server-side secret kept in D1.
 
 const COL_RE = /^[a-zA-Z0-9._-]{1,40}$/;
-const MAX_BODY = 6 * 1024 * 1024; // 6 MB per collection is plenty for JSON
+const MAX_BODY = 6 * 1024 * 1024;        // sync payload cap
+const MAX_VIDEO = 600 * 1024 * 1024;     // background video cap
+const SESSION_MS = 30 * 24 * 3600 * 1000;
 
-const json = (data, status = 200) =>
+// Paths that must work without a session (login itself, PWA niceties).
+const PUBLIC_PATHS = [/^\/api\/health$/, /^\/api\/auth\//, /^\/manifest\.webmanifest$/, /^\/icons\//];
+
+const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), {
     status,
-    headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+    headers: { 'content-type': 'application/json', 'cache-control': 'no-store', ...headers },
   });
 
 async function sha256hex(text) {
@@ -18,7 +23,6 @@ async function sha256hex(text) {
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Constant-time-ish compare of two equal-length hex strings.
 function safeEqual(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
   let diff = 0;
@@ -26,64 +30,193 @@ function safeEqual(a, b) {
   return diff === 0;
 }
 
+/* ---------- passphrase (shared by login + sync) ---------- */
+
 async function getAuthHash(env) {
   const row = await env.DB.prepare('SELECT key_hash FROM auth WHERE id = 1').first();
   return row?.key_hash || null;
 }
 
-async function requireAuth(request, env) {
+// Returns 'claimed' | 'ok' | 'bad'
+async function claimOrVerify(env, key) {
+  const hash = await sha256hex(key);
+  const stored = await getAuthHash(env);
+  if (!stored) {
+    await env.DB.prepare('INSERT INTO auth (id, key_hash, created_at) VALUES (1, ?, ?)')
+      .bind(hash, Date.now()).run();
+    return 'claimed';
+  }
+  return safeEqual(hash, stored) ? 'ok' : 'bad';
+}
+
+async function requireSyncKey(request, env) {
   const key = request.headers.get('X-Sync-Key') || '';
   if (!key) return json({ error: 'missing key' }, 401);
   const stored = await getAuthHash(env);
   if (!stored) return json({ error: 'unclaimed', hint: 'POST /api/sync/claim first' }, 403);
   if (!safeEqual(await sha256hex(key), stored)) return json({ error: 'bad key' }, 403);
-  return null; // authorized
+  return null;
 }
 
-async function readBody(request) {
-  const len = Number(request.headers.get('content-length') || 0);
-  if (len > MAX_BODY) return null;
-  const text = await request.text();
-  if (text.length > MAX_BODY) return null;
-  try { return JSON.parse(text); } catch { return undefined; }
+/* ---------- sessions ---------- */
+
+async function getSecret(env) {
+  let row = await env.DB.prepare('SELECT v FROM secrets WHERE k = ?').bind('session').first();
+  if (!row) {
+    const v = [...crypto.getRandomValues(new Uint8Array(32))]
+      .map(b => b.toString(16).padStart(2, '0')).join('');
+    await env.DB.prepare('INSERT OR IGNORE INTO secrets (k, v) VALUES (?, ?)').bind('session', v).run();
+    row = await env.DB.prepare('SELECT v FROM secrets WHERE k = ?').bind('session').first();
+  }
+  return row.v;
 }
+
+async function hmacHex(secret, msg) {
+  const key = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(msg));
+  return [...new Uint8Array(sig)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function sessionCookie(env) {
+  const exp = Date.now() + SESSION_MS;
+  const sig = await hmacHex(await getSecret(env), String(exp));
+  return `pd_session=${exp}.${sig}; Max-Age=${Math.floor(SESSION_MS / 1000)}; Path=/; HttpOnly; Secure; SameSite=Lax`;
+}
+
+async function hasSession(request, env) {
+  const cookie = request.headers.get('Cookie') || '';
+  const m = cookie.match(/(?:^|;\s*)pd_session=(\d+)\.([a-f0-9]{64})/);
+  if (!m) return false;
+  const [, exp, sig] = m;
+  if (Number(exp) < Date.now()) return false;
+  return safeEqual(sig, await hmacHex(await getSecret(env), exp));
+}
+
+/* ---------- login screen (self-contained; no assets needed) ---------- */
+
+const LOGIN_HTML = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Dyer HQ — Sign in</title><style>
+  * { margin:0; box-sizing:border-box; }
+  body { min-height:100vh; display:grid; place-items:center; font-family:system-ui,sans-serif;
+    background: radial-gradient(120% 90% at 75% 10%, rgba(69,184,242,.14), transparent 60%),
+      radial-gradient(100% 80% at 15% 90%, rgba(227,69,59,.08), transparent 55%), #05080f; color:#eef4fa; }
+  form { width:min(360px, 92vw); text-align:center; }
+  .mark { width:16px; height:16px; border-radius:4px; background:#45b8f2; box-shadow:0 0 18px #45b8f2; margin:0 auto 18px; }
+  h1 { font-size:24px; letter-spacing:.3em; padding-left:.3em; margin-bottom:6px; }
+  p { color:#74869a; font-size:14px; margin-bottom:26px; }
+  input { width:100%; padding:14px 16px; font-size:17px; color:#eef4fa; background:#0c1420;
+    border:1.5px solid #2a3a4e; border-radius:12px; text-align:center; }
+  input:focus { outline:none; border-color:#45b8f2; box-shadow:0 0 0 3px rgba(69,184,242,.25); }
+  button { width:100%; margin-top:14px; padding:13px; font-size:15px; font-weight:700; letter-spacing:.08em;
+    text-transform:uppercase; color:#041019; background:#45b8f2; border:none; border-radius:999px; cursor:pointer; }
+  #err { color:#ff8a92; font-size:14px; min-height:20px; margin-top:12px; }
+</style></head><body>
+<form id="f"><div class="mark"></div><h1>DYER HQ</h1>
+<p>Private console — enter your passphrase.<br>First sign-in sets it.</p>
+<input id="k" type="password" autocomplete="current-password" placeholder="Passphrase" autofocus minlength="6" required>
+<button>Enter</button><div id="err"></div></form>
+<script>
+document.getElementById('f').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const err = document.getElementById('err');
+  err.textContent = '';
+  try {
+    const res = await fetch('/api/auth/login', { method:'POST',
+      headers:{'content-type':'application/json'},
+      body: JSON.stringify({ key: document.getElementById('k').value }) });
+    const body = await res.json();
+    if (res.ok) location.replace('/');
+    else err.textContent = body.error || 'Sign-in failed';
+  } catch { err.textContent = 'Network error — try again'; }
+});
+</script></body></html>`;
+
+const loginPage = () => new Response(LOGIN_HTML, {
+  headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
+});
+
+/* ---------- background video (private, streamed from R2) ---------- */
+
+function parseRange(request, size) {
+  const h = request.headers.get('Range');
+  const m = h && h.match(/^bytes=(\d*)-(\d*)$/);
+  if (!m) return null;
+  const start = m[1] === '' ? Math.max(0, size - Number(m[2])) : Number(m[1]);
+  const end = m[2] === '' || m[1] === '' ? size - 1 : Math.min(Number(m[2]), size - 1);
+  if (start > end || start >= size) return null;
+  return { offset: start, length: end - start + 1, start, end };
+}
+
+async function serveVideo(request, env) {
+  const head = await env.MEDIA.head('bg.mp4');
+  if (!head) return env.ASSETS.fetch(request); // fall back to a committed static file
+  const size = head.size;
+  const range = parseRange(request, size);
+  const obj = await env.MEDIA.get('bg.mp4', range ? { range: { offset: range.offset, length: range.length } } : undefined);
+  if (!obj) return new Response('gone', { status: 404 });
+  const headers = {
+    'content-type': 'video/mp4',
+    'accept-ranges': 'bytes',
+    'cache-control': 'private, max-age=3600',
+    etag: head.httpEtag,
+  };
+  if (range) {
+    headers['content-range'] = `bytes ${range.start}-${range.end}/${size}`;
+    headers['content-length'] = String(range.length);
+    return new Response(obj.body, { status: 206, headers });
+  }
+  headers['content-length'] = String(size);
+  return new Response(obj.body, { status: 200, headers });
+}
+
+/* ---------- main ---------- */
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    if (!path.startsWith('/api/')) {
-      // run_worker_first only routes /api/* here, but be safe
-      return env.ASSETS.fetch(request);
-    }
-
+    /* --- public endpoints --- */
     if (path === '/api/health') return json({ ok: true });
 
+    if (path === '/api/auth/login' && request.method === 'POST') {
+      const body = await request.json().catch(() => null);
+      const key = body?.key;
+      if (typeof key !== 'string' || key.length < 6 || key.length > 200) {
+        return json({ error: 'passphrase must be 6–200 characters' }, 400);
+      }
+      const result = await claimOrVerify(env, key);
+      if (result === 'bad') return json({ error: 'wrong passphrase' }, 403);
+      return json({ ok: true, claimed: result === 'claimed' },
+        200, { 'set-cookie': await sessionCookie(env) });
+    }
+
+    if (path === '/api/auth/logout' && request.method === 'POST') {
+      return json({ ok: true }, 200, {
+        'set-cookie': 'pd_session=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax',
+      });
+    }
+
+    if (PUBLIC_PATHS.some(re => re.test(path))) return env.ASSETS.fetch(request);
+
+    /* --- sync API keeps its own passphrase-header auth (works headless) --- */
     if (path === '/api/sync/claim' && request.method === 'POST') {
-      const body = await readBody(request);
+      const body = await request.json().catch(() => null);
       const key = body?.key;
       if (typeof key !== 'string' || key.length < 6 || key.length > 200) {
         return json({ error: 'key must be 6–200 characters' }, 400);
       }
-      const hash = await sha256hex(key);
-      const stored = await getAuthHash(env);
-      if (!stored) {
-        await env.DB.prepare(
-          'INSERT INTO auth (id, key_hash, created_at) VALUES (1, ?, ?)',
-        ).bind(hash, Date.now()).run();
-        return json({ claimed: true });
-      }
-      if (safeEqual(hash, stored)) return json({ claimed: false, ok: true });
-      return json({ error: 'a different passphrase is already set' }, 403);
+      const result = await claimOrVerify(env, key);
+      if (result === 'bad') return json({ error: 'a different passphrase is already set' }, 403);
+      return json(result === 'claimed' ? { claimed: true } : { claimed: false, ok: true });
     }
 
     if (path === '/api/sync/state' && request.method === 'GET') {
-      const denied = await requireAuth(request, env);
+      const denied = await requireSyncKey(request, env);
       if (denied) return denied;
-      const { results } = await env.DB.prepare(
-        'SELECT col, rev, updated_at FROM kv_sync',
-      ).all();
+      const { results } = await env.DB.prepare('SELECT col, rev, updated_at FROM kv_sync').all();
       const cols = {};
       for (const r of results) cols[r.col] = { rev: r.rev, updated_at: r.updated_at };
       return json({ cols });
@@ -93,29 +226,27 @@ export default {
     if (colMatch) {
       const col = decodeURIComponent(colMatch[1]);
       if (!COL_RE.test(col)) return json({ error: 'bad collection name' }, 400);
-      const denied = await requireAuth(request, env);
+      const denied = await requireSyncKey(request, env);
       if (denied) return denied;
 
       if (request.method === 'GET') {
-        const row = await env.DB.prepare(
-          'SELECT data, rev FROM kv_sync WHERE col = ?',
-        ).bind(col).first();
+        const row = await env.DB.prepare('SELECT data, rev FROM kv_sync WHERE col = ?').bind(col).first();
         if (!row) return json({ rev: 0, data: null });
         return json({ rev: row.rev, data: JSON.parse(row.data) });
       }
-
       if (request.method === 'PUT') {
-        const body = await readBody(request);
-        if (body === null) return json({ error: 'body too large' }, 413);
+        const len = Number(request.headers.get('content-length') || 0);
+        if (len > MAX_BODY) return json({ error: 'body too large' }, 413);
+        const text = await request.text();
+        if (text.length > MAX_BODY) return json({ error: 'body too large' }, 413);
+        let body;
+        try { body = JSON.parse(text); } catch { body = undefined; }
         if (body === undefined || typeof body.baseRev !== 'number' || !('data' in body)) {
           return json({ error: 'expected {baseRev, data}' }, 400);
         }
-        const row = await env.DB.prepare(
-          'SELECT data, rev FROM kv_sync WHERE col = ?',
-        ).bind(col).first();
+        const row = await env.DB.prepare('SELECT data, rev FROM kv_sync WHERE col = ?').bind(col).first();
         const currentRev = row?.rev || 0;
         if (body.baseRev < currentRev) {
-          // client is behind — hand back the newer server copy to merge
           return json({ conflict: true, rev: currentRev, data: row ? JSON.parse(row.data) : null }, 409);
         }
         const nextRev = currentRev + 1;
@@ -125,10 +256,44 @@ export default {
         ).bind(col, JSON.stringify(body.data), nextRev, Date.now()).run();
         return json({ rev: nextRev });
       }
-
       return json({ error: 'method not allowed' }, 405);
     }
 
-    return json({ error: 'not found' }, 404);
+    /* --- everything below needs a session cookie --- */
+    const authed = await hasSession(request, env);
+
+    if (path.startsWith('/api/media/')) {
+      if (!authed) return json({ error: 'sign in first' }, 401);
+      if (path === '/api/media/bg' && request.method === 'PUT') {
+        const len = Number(request.headers.get('content-length') || 0);
+        if (!len) return json({ error: 'missing content-length' }, 411);
+        if (len > MAX_VIDEO) return json({ error: 'video larger than 600 MB' }, 413);
+        await env.MEDIA.put('bg.mp4', request.body, {
+          httpMetadata: { contentType: 'video/mp4' },
+        });
+        return json({ ok: true, bytes: len });
+      }
+      if (path === '/api/media/bg' && request.method === 'DELETE') {
+        await env.MEDIA.delete('bg.mp4');
+        return json({ ok: true });
+      }
+      return json({ error: 'not found' }, 404);
+    }
+
+    if (path.startsWith('/api/')) return json({ error: 'not found' }, 404);
+
+    if (!authed) {
+      // navigations get the login screen; subresource requests get a plain 401
+      const wantsHTML = (request.headers.get('Accept') || '').includes('text/html');
+      return wantsHTML ? loginPage() : new Response('sign in first', { status: 401, headers: { 'cache-control': 'no-store' } });
+    }
+
+    if (path === '/media/bg.mp4') return serveVideo(request, env);
+
+    // authed static assets, tagged so the service worker knows they're cacheable
+    const res = await env.ASSETS.fetch(request);
+    const tagged = new Response(res.body, res);
+    tagged.headers.set('X-App-Shell', '1');
+    return tagged;
   },
 };

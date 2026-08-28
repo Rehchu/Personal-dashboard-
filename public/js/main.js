@@ -176,8 +176,14 @@ function renderRail() {
       ${t.badge ? `<span class="badge">${esc(t.badge)}</span>` : ''}
       <span class="tile-label">${esc(t.title)}</span>`;
     tile.addEventListener('click', () => {
-      if (i === focusIndex) activate(t);
-      else setFocus(i);
+      // touch devices: one tap opens (the focus-then-open dance is for
+      // pointer/keyboard consoles, not phones)
+      if (i === focusIndex || matchMedia('(hover: none)').matches) {
+        setFocus(i, false);
+        activate(t);
+      } else {
+        setFocus(i);
+      }
     });
     tile.addEventListener('pointerenter', e => {
       if (e.pointerType === 'mouse') setFocus(i, false);
@@ -285,6 +291,38 @@ const ccenter = $('#ccenter');
 const ccActions = $('#cc-actions');
 const ccExtra = $('#cc-extra');
 
+async function lockApp() {
+  try { await fetch('/api/auth/logout', { method: 'POST' }); } catch { /* offline */ }
+  location.reload(); // the Worker now serves the login screen
+}
+
+// Upload a personal background video into private R2 storage (streams back
+// only to a signed-in session). Big files: keep the app open while it runs.
+function uploadBgVideo() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'video/mp4,video/*';
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    if (file.size > 600 * 1024 * 1024) { showToast('Video is over the 600 MB cap'); return; }
+    showToast(`Uploading ${(file.size / 1048576).toFixed(0)} MB — keep this open…`);
+    try {
+      const res = await fetch('/api/media/bg', { method: 'PUT', body: file });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `upload failed (${res.status})`);
+      showToast('Background video saved 🎬');
+      videoOk = false;
+      bgVideo.src = `/media/bg.mp4?v=${Date.now()}`;
+      bgVideo.load();
+      bgVideo.addEventListener('canplay', () => applyBg('video'), { once: true });
+    } catch (err) {
+      showToast(`Upload failed: ${err.message}`);
+    }
+  };
+  input.click();
+}
+
 function syncAction() {
   if (!sync.enabled()) {
     const pass = prompt('Set (or enter) your sync passphrase — the same one on every device:');
@@ -306,7 +344,9 @@ function buildCC() {
     { ico: sfx.isMuted() ? 'soundOff' : 'sound', label: sfx.isMuted() ? 'Sound off' : 'Sound on', fn: () => { sfx.setMuted(!sfx.isMuted()); if (!sfx.isMuted()) sfx.play('select'); buildCC(); } },
     { ico: 'trophy', label: 'Trophies', fn: toggleTrophies },
     { ico: 'sparkle', label: BG_LABEL[bgMode] || 'Bg', fn: () => { cycleBg(); sfx.play('select'); buildCC(); } },
+    { ico: 'controller', label: 'Bg video ⬆', fn: uploadBgVideo },
     { ico: 'home', label: sync.status(), fn: syncAction },
+    { ico: 'soundOff', label: 'Lock', fn: lockApp },
     { ico: 'controller', label: 'Cloudflare', href: 'https://dash.cloudflare.com' },
   ];
   ccActions.innerHTML = '';
