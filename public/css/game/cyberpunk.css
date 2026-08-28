@@ -195,3 +195,87 @@
     transform: none;
   }
 }
+
+/* ============================================================
+   Structural pass: the cyberware-screen language, not just yellow.
+   Hard-clipped panels, bracket marks, index numbers, and selection
+   that snaps rather than eases.
+   ============================================================ */
+
+/* corner brackets: the frame is drawn, never a rounded box */
+[data-theme="cyberpunk"] #rail .tile::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border: 1px solid transparent;
+  border-top-color: color-mix(in oklab, var(--accent) 55%, transparent);
+  border-left-color: color-mix(in oklab, var(--accent) 55%, transparent);
+  clip-path: polygon(0 0, 34% 0, 34% 1.5px, 1.5px 1.5px, 1.5px 34%, 0 34%);
+  pointer-events: none;
+}
+
+[data-theme="cyberpunk"] #rail .tile.focused::before {
+  border-top-color: var(--accent);
+  border-left-color: var(--accent);
+  inset: 3px;
+}
+
+/* selection snaps: no spring, no soft glow */
+[data-theme="cyberpunk"] #rail .tile {
+  transition: transform 90ms linear, box-shadow 90ms linear;
+}
+
+/* a slim yellow authority bar down the left of the focused tile */
+[data-theme="cyberpunk"] #rail .tile.focused .tile-label {
+  border-left: 3px solid var(--accent);
+  padding-left: 9px;
+  background: linear-gradient(90deg,
+    color-mix(in oklab, var(--accent) 22%, transparent), rgba(0, 0, 0, 0.72) 45%);
+}
+
+/* technical chrome: caps, wide tracking, hairline rules */
+[data-theme="cyberpunk"] #pill-nav .pill {
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 11px;
+  border-radius: 0;
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+}
+
+[data-theme="cyberpunk"] #pill-nav .pill.active {
+  background: var(--accent);
+  color: #0a0a06;
+  font-weight: 800;
+}
+
+[data-theme="cyberpunk"] #hero-title {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* index marks beside the hero, like a numbered cyberware slot list */
+[data-theme="cyberpunk"] #hero::before {
+  content: "// 001";
+  position: absolute;
+  top: 6px;
+  left: 2px;
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  letter-spacing: 0.24em;
+  color: color-mix(in oklab, var(--accent) 80%, transparent);
+}
+
+/* scanline + grain wash over the backdrop */
+[data-theme="cyberpunk"] #theme-fx {
+  background-image:
+    repeating-linear-gradient(0deg,
+      rgba(0, 0, 0, 0.22) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg,
+      color-mix(in oklab, var(--accent) 4%, transparent) 0 1px, transparent 1px 220px);
+  mix-blend-mode: overlay;
+  opacity: 0.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="cyberpunk"] #theme-fx { animation: none; }
+}

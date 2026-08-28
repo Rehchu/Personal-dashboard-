@@ -282,3 +282,81 @@
 @media (prefers-reduced-motion: reduce) {
   [data-theme="gtav"] .pill { transition: none; }
 }
+
+/* ============================================================
+   Structural pass: the pause-menu language. Flat, squared,
+   desaturated, and driven by inverted highlight rather than glow.
+   ============================================================ */
+
+/* the signature move: active tab is a solid light block, text knocked out */
+[data-theme="gtav"] #pill-nav .pill {
+  border-radius: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+  font-size: 12px;
+  background: none;
+  color: color-mix(in oklab, var(--ink) 55%, transparent);
+}
+
+[data-theme="gtav"] #pill-nav .pill.active {
+  background: #f2f2ee;
+  color: #14140f;
+  font-weight: 800;
+}
+
+/* squared everything, no gloss anywhere */
+[data-theme="gtav"] #rail .tile {
+  border-radius: 0;
+  border-width: 1px;
+  box-shadow: none;
+  background-image: none;
+  background-color: color-mix(in oklab, var(--tile-accent, var(--surface-2)) 42%, #14140f);
+  transition: transform 110ms linear, background-color 110ms linear;
+}
+
+/* selection is flat colour inversion, exactly like a highlighted row */
+[data-theme="gtav"] #rail .tile.focused {
+  background-color: #f2f2ee;
+  border-color: #f2f2ee;
+  box-shadow: none;
+}
+
+[data-theme="gtav"] #rail .tile.focused .tile-glyph { filter: grayscale(1) contrast(1.35); }
+
+[data-theme="gtav"] #rail .tile.focused .tile-label {
+  background: none;
+  color: #14140f;
+  text-shadow: none;
+  font-weight: 800;
+}
+
+/* hairline separators and right-aligned metadata, print-like */
+[data-theme="gtav"] .act-card {
+  border-radius: 0;
+  border: none;
+  border-top: 1px solid color-mix(in oklab, var(--ink) 22%, transparent);
+  background: none;
+}
+
+[data-theme="gtav"] #hero-title {
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-weight: 800;
+}
+
+[data-theme="gtav"] .btn,
+[data-theme="gtav"] .hero-btn {
+  border-radius: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+}
+
+/* flat backdrop: no bloom, just a graded wash and a hairline horizon */
+[data-theme="gtav"] #theme-fx {
+  background-image: linear-gradient(180deg,
+    transparent 0 62%,
+    color-mix(in oklab, var(--ink) 12%, transparent) 62% calc(62% + 1px),
+    transparent calc(62% + 1px));
+}
