@@ -344,3 +344,78 @@
     transform: scale(1.08);
   }
 }
+
+/* ============================================================
+   Structural pass: the Bedrock Play-screen language. Blocky
+   bevels, hard borders, zero radius, nothing anti-aliased.
+   ============================================================ */
+
+/* every tile is a slab: light top-left edge, dark bottom-right */
+[data-theme="minecraft"] #rail .tile {
+  border-radius: 0;
+  border: 3px solid #1d1d1d;
+  box-shadow:
+    inset 2px 2px 0 rgba(255, 255, 255, 0.28),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.45);
+  transition: none;
+  image-rendering: pixelated;
+}
+
+/* focus inverts the bevel, as if the block were pressed in */
+[data-theme="minecraft"] #rail .tile.focused {
+  border-color: #ffffff;
+  box-shadow:
+    inset -2px -2px 0 rgba(255, 255, 255, 0.28),
+    inset 2px 2px 0 rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="minecraft"] .tile .badge {
+  border-radius: 0;
+  border: 2px solid #1d1d1d;
+  font-size: 13px;
+}
+
+/* buttons are wide stone slabs with the same bevel */
+[data-theme="minecraft"] .btn,
+[data-theme="minecraft"] .hero-btn,
+[data-theme="minecraft"] #pill-nav .pill {
+  border-radius: 0;
+  border: 3px solid #1d1d1d;
+  background-color: #8b8b8b;
+  color: #ffffff;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.55);
+  box-shadow:
+    inset 2px 2px 0 rgba(255, 255, 255, 0.3),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.4);
+  transition: none;
+}
+
+[data-theme="minecraft"] .btn:hover,
+[data-theme="minecraft"] .hero-btn:hover,
+[data-theme="minecraft"] #pill-nav .pill:hover { background-color: #a3a3a3; }
+
+[data-theme="minecraft"] #pill-nav .pill.active {
+  /* #6a9b46 put white text at 3.29:1; this darker grass holds 5.9:1 */
+  background-color: #3f6b28;
+  box-shadow:
+    inset -2px -2px 0 rgba(255, 255, 255, 0.28),
+    inset 2px 2px 0 rgba(0, 0, 0, 0.45);
+}
+
+/* blocky ground-and-sky wash, built from gradients rather than art */
+[data-theme="minecraft"] #theme-fx {
+  background-image:
+    repeating-linear-gradient(90deg,
+      rgba(0, 0, 0, 0.05) 0 16px, transparent 16px 32px),
+    repeating-linear-gradient(0deg,
+      rgba(0, 0, 0, 0.05) 0 16px, transparent 16px 32px);
+  opacity: 0.55;
+}
+
+[data-theme="minecraft"] .act-card {
+  border-radius: 0;
+  border: 3px solid #1d1d1d;
+  box-shadow:
+    inset 2px 2px 0 rgba(255, 255, 255, 0.22),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.4);
+}

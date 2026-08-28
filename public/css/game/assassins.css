@@ -289,3 +289,86 @@
     transform: none;
   }
 }
+
+/* ============================================================
+   Structural pass: the Animus language. A bright field with
+   precise hairline construction lines - an interface that is
+   drawn rather than painted.
+   ============================================================ */
+
+/* schematic linework behind the content: crosshair grid + corner marks */
+[data-theme="assassins"] #theme-fx {
+  background-image:
+    repeating-linear-gradient(0deg,
+      rgba(23, 23, 26, 0.045) 0 1px, transparent 1px 68px),
+    repeating-linear-gradient(90deg,
+      rgba(23, 23, 26, 0.045) 0 1px, transparent 1px 68px);
+}
+
+/* selection is a crimson keyline with an angular marker, never a fill */
+[data-theme="assassins"] #rail .tile {
+  border-radius: 2px;
+  border: 1px solid rgba(23, 23, 26, 0.18);
+  box-shadow: none;
+  transition: border-color 160ms ease, transform 160ms ease;
+}
+
+[data-theme="assassins"] #rail .tile.focused {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* the angular marker: a small crimson corner bracket on the focused tile */
+[data-theme="assassins"] #rail .tile.focused::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 14px;
+  height: 14px;
+  border-top: 2px solid var(--accent);
+  border-right: 2px solid var(--accent);
+  pointer-events: none;
+}
+
+/* headings are wide-tracked caps; body stays in the sans stack for legibility */
+[data-theme="assassins"] #hero-title,
+[data-theme="assassins"] #pill-nav .pill {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+[data-theme="assassins"] #pill-nav .pill {
+  border-radius: 0;
+  font-size: 11.5px;
+  border-bottom: 2px solid transparent;
+  color: #4a4a45;
+}
+
+[data-theme="assassins"] #pill-nav .pill.active {
+  background: none;
+  color: #17171a;
+  border-bottom-color: var(--accent);
+  font-weight: 700;
+}
+
+/* panels read as drawn plates: hairline rule, no fill, no shadow */
+[data-theme="assassins"] .act-card {
+  border-radius: 2px;
+  border: 1px solid rgba(23, 23, 26, 0.16);
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: none;
+}
+
+[data-theme="assassins"] .btn,
+[data-theme="assassins"] .hero-btn {
+  border-radius: 2px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="assassins"] #rail .tile { transition: none; }
+}

@@ -620,7 +620,7 @@ export function mount(root, tools) {
       const t = findText(box.dataset.id);
       if (!t) return;
       e.preventDefault();
-      grip.setPointerCapture(e.pointerId);
+      try { grip.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
       drag = { id: e.pointerId, t, box, cx: e.clientX, cy: e.clientY, x0: t.x, y0: t.y };
       return;
     }
@@ -630,7 +630,7 @@ export function mount(root, tools) {
     if (tool) {
       e.preventDefault();
       if (layer.contains(document.activeElement)) document.activeElement.blur();
-      stage.setPointerCapture(e.pointerId);
+      try { stage.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
       livePointerId = e.pointerId;
       live = { tool, color, size, pressure: usePressure, pts: [logical(e)] };
       ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
@@ -1037,6 +1037,9 @@ export function mount(root, tools) {
   syncUI();
   renderSide();
   resize();
+  // write the migrated shape straight away, so the old flat array is carried
+  // forward (and pushed to the other devices) even if nothing is edited today
+  persistNow();
 
   return () => { // unmount cleanup: never lose the last 400ms of ink or typing
     ro.disconnect();
