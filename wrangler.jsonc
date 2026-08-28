@@ -4,7 +4,9 @@
   // (first time: npx wrangler login)
   // Local dev: npx wrangler dev
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "personal-dashboard",
+  // Deploys OVER the existing "lifehq" Worker — this dashboard replaces the
+  // old LifeHQ app at https://lifehq.dyer-hq.workers.dev
+  "name": "lifehq",
   "compatibility_date": "2026-08-01",
   "assets": {
     "directory": "./public",

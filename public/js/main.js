@@ -1,7 +1,7 @@
 // Dashboard shell — PS5-style tile rail, hero panel, theming, module host.
 
 import { TILES } from './data.js';
-import { load, save, esc } from './store.js';
+import { load, save, esc, showToast } from './store.js';
 import * as github from './github.js';
 import * as fitness from './fitness.js';
 import * as writing from './writing.js';
@@ -18,18 +18,6 @@ const MODULES = {
 
 const $ = sel => document.querySelector(sel);
 
-/* ---------- toast ---------- */
-const toast = document.createElement('div');
-toast.id = 'toast';
-document.body.append(toast);
-let toastTimer;
-export function showToast(msg) {
-  toast.textContent = msg;
-  toast.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
-}
-
 /* ---------- theme ---------- */
 const THEMES = ['assassins', 'cyberpunk', 'gtav', 'minecraft', 'masseffect'];
 const THEME_NAMES = {
@@ -44,8 +32,11 @@ function applyTheme(name, announce = false) {
   if (!THEMES.includes(name)) name = 'masseffect';
   document.documentElement.dataset.theme = name;
   save('theme', name);
-  document.querySelectorAll('.theme-dot').forEach(b =>
-    b.classList.toggle('active', b.dataset.setTheme === name));
+  document.querySelectorAll('.theme-dot').forEach(b => {
+    const active = b.dataset.setTheme === name;
+    b.classList.toggle('active', active);
+    b.setAttribute('aria-pressed', String(active));
+  });
   requestAnimationFrame(() => {
     const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', bg);
@@ -99,7 +90,10 @@ function renderRail() {
 function setFocus(i, scroll = true) {
   focusIndex = Math.max(0, Math.min(TILES.length - 1, i));
   save('ui.tile', focusIndex);
-  tileEls.forEach((el, j) => el.classList.toggle('focused', j === focusIndex));
+  tileEls.forEach((el, j) => {
+    el.classList.toggle('focused', j === focusIndex);
+    el.setAttribute('aria-selected', String(j === focusIndex));
+  });
   const t = TILES[focusIndex];
   if (scroll) tileEls[focusIndex].scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
 
@@ -171,17 +165,34 @@ $('#appview-back').addEventListener('click', closeModule);
 
 /* ---------- keyboard (console feel) ---------- */
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closeModule(); return; }
-  if (!appview.hidden) return; // typing inside a module
   const tag = document.activeElement?.tagName;
+  if (e.key === 'Escape') {
+    if (e.isComposing) return; // don't cancel IME composition into a close
+    // First Escape in a module form field just leaves the field.
+    if (!appview.hidden && (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT')) {
+      document.activeElement.blur();
+      return;
+    }
+    closeModule();
+    return;
+  }
+  if (!appview.hidden) return; // typing inside a module
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  // A Tab-focused link/button (hero actions, theme dots, tiles — tiles are
+  // buttons) must keep its native Enter/Space activation; the rail shortcuts
+  // below are for when focus is on the rail/body, not an interactive element.
+  const onInteractive = tag === 'A' || tag === 'BUTTON';
   switch (e.key) {
     case 'ArrowRight': setFocus(focusIndex + 1); e.preventDefault(); break;
     case 'ArrowLeft': setFocus(focusIndex - 1); e.preventDefault(); break;
     case 'Home': setFocus(0); e.preventDefault(); break;
     case 'End': setFocus(TILES.length - 1); e.preventDefault(); break;
     case 'Enter':
-    case ' ': activate(TILES[focusIndex]); e.preventDefault(); break;
+    case ' ':
+      if (onInteractive) return;
+      activate(TILES[focusIndex]);
+      e.preventDefault();
+      break;
     case 't': {
       const next = THEMES[(THEMES.indexOf(document.documentElement.dataset.theme) + 1) % THEMES.length];
       applyTheme(next, true);

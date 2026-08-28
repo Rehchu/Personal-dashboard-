@@ -54,7 +54,7 @@ export const TILES = [
     glyph: '⚡',
     accent: '#9a5b16',
     kind: 'module',
-    badge: '6 LIVE',
+    badge: 'LIVE',
     desc: 'Everything running on my Cloudflare account — Workers, deploys, and where each one lives.',
     actions: [
       { label: 'Open', action: 'open' },
@@ -136,17 +136,6 @@ export const TILES = [
     actions: [{ label: 'Launch', href: 'https://itportal.myfaithtech.com' }],
   },
   {
-    id: 'lifehq',
-    title: 'LifeHQ',
-    glyph: '🧭',
-    accent: '#3d6b6b',
-    kind: 'link',
-    badge: '⚡ CF',
-    url: 'https://lifehq.dyer-hq.workers.dev',
-    desc: 'LifeHQ Worker on Cloudflare — live at lifehq.dyer-hq.workers.dev.',
-    actions: [{ label: 'Launch', href: 'https://lifehq.dyer-hq.workers.dev' }],
-  },
-  {
     id: 'models',
     title: '3D Models',
     glyph: '🦅',
@@ -167,9 +156,8 @@ export const CF_FLEET = {
     { name: 'arisehub', label: 'Arise Hub', platform: 'Worker', url: 'https://arisehub.myfaithtech.com', alt: 'arisehub.dyer-hq.workers.dev', repo: 'https://github.com/Rehchu/AriseHub', lastDeploy: '2026-08-13', desc: 'Church management PWA — Next.js on Workers via OpenNext.' },
     { name: 'ctrl-alt-pc-repair', label: 'Ctrl+Alt PC Repair', platform: 'Worker', url: 'https://ctrl-alt-pc-repair.dyer-hq.workers.dev', repo: 'https://github.com/Rehchu/ctrl-alt-pc-repair', lastDeploy: '2026-08-20', desc: 'Storefront + back office — Hono, D1, R2, Stripe/PayPal.' },
     { name: 'arise-it', label: 'Arise IT Portal', platform: 'Worker', url: 'https://itportal.myfaithtech.com', alt: 'arise-it.dyer-hq.workers.dev', repo: 'https://github.com/Rehchu/AriseHub', lastDeploy: '2026-08-09', desc: 'IT tickets & ops — Hono + D1.' },
-    { name: 'lifehq', label: 'LifeHQ', platform: 'Worker', url: 'https://lifehq.dyer-hq.workers.dev', lastDeploy: '2026-07-11', desc: 'LifeHQ Worker.' },
     { name: 'apextraining', label: 'ApexCoach', platform: 'Pages', url: 'https://apextraining.dev', repo: 'https://github.com/Rehchu/ApexTraining', lastDeploy: '', statusNote: 'live', desc: 'Fitness coaching platform — Pages Functions, D1, R2, Workers AI.' },
-    { name: 'personal-dashboard', label: 'This dashboard', platform: 'Worker', url: 'https://personal-dashboard.dyer-hq.workers.dev', repo: 'https://github.com/Rehchu/Personal-dashboard-', lastDeploy: '', statusNote: 'pending first deploy', desc: 'You are here (once deployed).' },
+    { name: 'lifehq', label: 'Dyer HQ Dashboard', platform: 'Worker', url: 'https://lifehq.dyer-hq.workers.dev', repo: 'https://github.com/Rehchu/Personal-dashboard-', lastDeploy: '', statusNote: 'this dashboard', desc: 'You are here — replaced the old LifeHQ Worker.' },
   ],
   infra: [
     { name: 'arisehub-cron', label: 'arisehub-cron', platform: 'Worker', desc: 'Scheduled jobs for Arise Hub.', lastDeploy: '2026-08-07' },

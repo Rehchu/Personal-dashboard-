@@ -2,9 +2,10 @@
 // (any pointer works). Strokes are stored as vectors in logical page units,
 // so pages re-render crisply at any window size / DPR and survive reloads.
 
-import { load, save, uid, debounce } from './store.js';
+import { load, save, uid, debounce, showToast } from './store.js';
 
-const LOGICAL_W = 1000; // logical page width; uniform scale preserves proportions
+const LOGICAL_W = 1000;  // logical page width; uniform scale preserves proportions
+const LOGICAL_H = 1414;  // fixed A-series page: bounds identical on every screen
 
 const COLORS = ['#f2f5f9', '#ffd23f', '#ff5964', '#5bd97a', '#45b8f2', '#c085ff', '#ff9950', '#8b8fa3'];
 
@@ -18,10 +19,18 @@ export function mount(root, tools) {
   let color = load('nb.color', COLORS[0]);
   let size = load('nb.size', 4);
   let usePressure = load('nb.pressure', true);
-  let pencilOnly = load('nb.pencilOnly', false);
+  // Default ON: Apple Pencil + mouse draw, fingers scroll the page.
+  let pencilOnly = load('nb.pencilOnly', true);
   const redoStack = [];
 
-  const persist = debounce(() => { save('nb.pages', pages); save('nb.page', pageIndex); }, 400);
+  let warnedStorage = false;
+  const persist = debounce(() => {
+    const ok = save('nb.pages', pages) && save('nb.page', pageIndex);
+    if (!ok && !warnedStorage) {
+      warnedStorage = true;
+      showToast('⚠ Storage full — recent ink may not be saved');
+    }
+  }, 400);
 
   tools.innerHTML = `
     <button class="btn small" id="nb-prev" title="Previous page">‹</button>
@@ -112,7 +121,32 @@ export function mount(root, tools) {
   }
 
   function drawStroke(s) {
-    for (let i = 0; i < s.pts.length; i++) drawSegment(s, i);
+    const pts = s.pts;
+    if (!pts.length) return;
+    if (s.tool === 'highlighter') {
+      // One path at constant width: per-segment strokes double the alpha at
+      // every joint and render as chains of darker blobs.
+      applyToolStyle(s);
+      ctx.lineWidth = s.size * 2.6;
+      if (pts.length === 1) {
+        ctx.beginPath();
+        ctx.arc(pts[0][0], pts[0][1], ctx.lineWidth / 2, 0, Math.PI * 2);
+        ctx.fillStyle = s.color;
+        ctx.fill();
+        return;
+      }
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) {
+        const [x0, y0] = pts[i - 1];
+        const [x1, y1] = pts[i];
+        ctx.quadraticCurveTo(x0, y0, (x0 + x1) / 2, (y0 + y1) / 2);
+      }
+      ctx.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+      ctx.stroke();
+      return;
+    }
+    for (let i = 0; i < pts.length; i++) drawSegment(s, i);
   }
 
   function redraw() {
@@ -120,12 +154,14 @@ export function mount(root, tools) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
     for (const s of page().strokes) drawStroke(s);
+    if (live) drawStroke(live); // a mid-stroke redraw must not erase live ink
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
   }
 
   function resize() {
-    const rect = stage.getBoundingClientRect();
+    // Measure the canvas itself (stage border-box is 2px larger → blur/offset).
+    const rect = canvas.getBoundingClientRect();
     if (!rect.width) return;
     dpr = window.devicePixelRatio || 1;
     scale = rect.width / LOGICAL_W;
@@ -162,7 +198,8 @@ export function mount(root, tools) {
     livePointerId = e.pointerId;
     live = { tool, color, size, pressure: usePressure, pts: [logical(e)] };
     ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
-    drawSegment(live, 0);
+    if (tool === 'highlighter') redraw();
+    else drawSegment(live, 0);
   });
 
   canvas.addEventListener('pointermove', e => {
@@ -171,13 +208,17 @@ export function mount(root, tools) {
     // iPad Safari versions report buttons=0 for in-contact Pencil moves.
     if (!live || e.pointerId !== livePointerId) return;
     const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+    let added = false;
     for (const ev of events) {
       const pt = logical(ev);
       const last = live.pts[live.pts.length - 1];
       if (Math.abs(pt[0] - last[0]) < 0.4 && Math.abs(pt[1] - last[1]) < 0.4) continue;
       live.pts.push(pt);
-      drawSegment(live, live.pts.length - 1);
+      added = true;
+      if (live.tool !== 'highlighter') drawSegment(live, live.pts.length - 1);
     }
+    // Highlighter re-renders as one translucent path so joints don't stack.
+    if (added && live.tool === 'highlighter') redraw();
   });
 
   function finish(e) {
@@ -212,7 +253,15 @@ export function mount(root, tools) {
     b.addEventListener('click', () => { color = b.dataset.color; save('nb.color', color); tool = tool === 'eraser' ? 'pen' : tool; syncToolbar(); }));
   root.querySelector('#nb-size').addEventListener('input', e => { size = Number(e.target.value); save('nb.size', size); });
   root.querySelector('#nb-pressure').addEventListener('change', e => { usePressure = e.target.checked; save('nb.pressure', usePressure); });
-  root.querySelector('#nb-pencil').addEventListener('change', e => { pencilOnly = e.target.checked; save('nb.pencilOnly', pencilOnly); });
+  // With pencil-only on, fingers should scroll the page (native-app feel);
+  // pen and mouse pointers are unaffected by touch-action.
+  const applyTouchAction = () => { canvas.style.touchAction = pencilOnly ? 'pan-x pan-y' : 'none'; };
+  root.querySelector('#nb-pencil').addEventListener('change', e => {
+    pencilOnly = e.target.checked;
+    save('nb.pencilOnly', pencilOnly);
+    applyTouchAction();
+  });
+  applyTouchAction();
 
   root.querySelector('#nb-undo').addEventListener('click', () => {
     const s = page().strokes.pop();

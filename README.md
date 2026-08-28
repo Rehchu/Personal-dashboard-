@@ -53,15 +53,24 @@ No build step — plain HTML/CSS/ES modules in `public/`.
 
 ## Deploy to Cloudflare
 
+The Worker is named **`lifehq`** — deploys replace the old LifeHQ Worker, so the
+dashboard lives at **https://lifehq.dyer-hq.workers.dev**.
+
+**Recommended (no tokens): Workers Builds Git integration.** In the Cloudflare
+dashboard → **Workers & Pages** → select the **lifehq** Worker → **Settings →
+Builds → Connect**, pick this repository and branch `main` (build command:
+none, deploy command: `npx wrangler deploy`). Every push to `main` then builds
+and deploys automatically.
+
 Manual (first time run `npx wrangler login`):
 
 ```sh
-npm run deploy     # → https://personal-dashboard.<your-subdomain>.workers.dev
+npm run deploy     # → https://lifehq.dyer-hq.workers.dev
 ```
 
-Automatic — every push to `main` deploys via GitHub Actions
-(`.github/workflows/deploy.yml`). Add two repository secrets under
-**Settings → Secrets and variables → Actions**:
+Alternative — GitHub Actions (`.github/workflows/deploy.yml`) deploys on push
+to `main` **only if** these repository secrets are set (it skips green
+otherwise, so it won't fight Workers Builds):
 
 - `CLOUDFLARE_API_TOKEN` — create at dash.cloudflare.com → My Profile → API Tokens
   with the **Edit Cloudflare Workers** template

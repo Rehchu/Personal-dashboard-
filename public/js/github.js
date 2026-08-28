@@ -18,12 +18,18 @@ async function fetchRepos(force = false) {
   const cached = load(CACHE_KEY, null);
   if (!force && cached && Date.now() - cached.at < CACHE_TTL) return cached.repos;
 
-  const res = await fetch(
-    `https://api.github.com/users/${GITHUB_USER}/repos?per_page=100&sort=pushed`,
-    { headers: { Accept: 'application/vnd.github+json' } },
-  );
+  let res;
+  try {
+    res = await fetch(
+      `https://api.github.com/users/${GITHUB_USER}/repos?per_page=100&sort=pushed`,
+      { headers: { Accept: 'application/vnd.github+json' } },
+    );
+  } catch (err) {
+    if (cached) return cached.repos; // offline: stale beats nothing
+    throw err;
+  }
   if (!res.ok) {
-    if (cached) return cached.repos; // stale beats nothing
+    if (cached) return cached.repos; // rate-limited / 5xx: stale beats nothing
     throw new Error(`GitHub API ${res.status}`);
   }
   const data = await res.json();

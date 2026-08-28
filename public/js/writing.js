@@ -91,11 +91,13 @@ export function mount(root, tools) {
       </button>`).join('');
 
     root.querySelectorAll('[data-book]').forEach(btn => btn.addEventListener('click', () => {
+      commitNow();
       book = books.find(b => b.id === btn.dataset.book);
       chapter = book.chapters[0] || null;
       remember(); renderAll();
     }));
     root.querySelectorAll('[data-ch]').forEach(btn => btn.addEventListener('click', () => {
+      commitNow();
       chapter = book.chapters.find(c => c.id === btn.dataset.ch);
       remember(); renderEditor(); renderLists();
     }));
@@ -123,22 +125,29 @@ export function mount(root, tools) {
 
   function renderAll() { renderLists(); renderEditor(); }
 
-  const commit = debounce(() => {
-    if (!chapter) return;
-    chapter.text = editor.value;
-    chapter.title = titleInput.value.trim() || chapter.title;
-    chapter.updated = Date.now();
+  // Immediate commit + debounced wrapper. commitNow() MUST run before any
+  // handler reassigns `book`/`chapter`, or the last <600ms of typing is lost.
+  function commitNow() {
     book.target = Number(targetInput.value) || book.target;
-    persist();
-    savedNote.textContent = `Saved ${new Date().toLocaleTimeString()}`;
+    if (chapter) {
+      chapter.text = editor.value;
+      chapter.title = titleInput.value.trim() || chapter.title;
+      chapter.updated = Date.now();
+    }
+    const ok = persist();
+    savedNote.textContent = ok
+      ? `Saved ${new Date().toLocaleTimeString()}`
+      : '⚠ Storage full — recent changes are NOT saved';
     renderLists();
-  }, 600);
+  }
+  const commit = debounce(commitNow, 600);
 
   editor.addEventListener('input', () => { updateCounts(); commit(); });
   titleInput.addEventListener('input', commit);
   targetInput.addEventListener('input', () => { updateCounts(); commit(); });
 
   root.querySelector('#wr-add-book').addEventListener('click', () => {
+    commitNow();
     const title = prompt('Book title?', 'New book');
     if (!title) return;
     const b = { id: uid(), title: title.trim(), target: 80000, chapters: [{ id: uid(), title: 'Chapter 1', text: '', updated: Date.now() }] };
@@ -147,6 +156,7 @@ export function mount(root, tools) {
   });
 
   root.querySelector('#wr-add-ch').addEventListener('click', () => {
+    commitNow();
     const c = { id: uid(), title: `Chapter ${book.chapters.length + 1}`, text: '', updated: Date.now() };
     book.chapters.push(c); chapter = c;
     persist(); remember(); renderAll();
@@ -155,6 +165,7 @@ export function mount(root, tools) {
 
   root.querySelector('#wr-del-ch').addEventListener('click', () => {
     if (!chapter) return;
+    commitNow();
     if (!confirm(`Delete "${chapter.title}"? This can't be undone.`)) return;
     book.chapters = book.chapters.filter(c => c.id !== chapter.id);
     chapter = book.chapters[0] || null;
@@ -162,6 +173,7 @@ export function mount(root, tools) {
   });
 
   tools.querySelector('#wr-export').addEventListener('click', () => {
+    commitNow();
     const md = [`# ${book.title}`, '', ...book.chapters.flatMap(c => [`## ${c.title}`, '', c.text, ''])].join('\n');
     const blob = new Blob([md], { type: 'text/markdown' });
     const a = document.createElement('a');

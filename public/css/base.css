@@ -222,10 +222,18 @@ a { color: var(--accent); }
   display: flex;
   gap: clamp(12px, 1.6vw, 22px);
   overflow-x: auto;
-  padding: 26px 4px 52px; /* room for the focused tile's label below */
+  /* side padding: the scaled focused tile's ring must not clip at the edges;
+     bottom padding: room for the focused tile's label */
+  padding: 26px 18px 52px;
   scroll-snap-type: x proximity;
   scrollbar-width: none;
   outline: none;
+}
+
+#rail:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--accent) 55%, transparent);
+  border-radius: 12px;
 }
 
 #rail::-webkit-scrollbar { display: none; }
@@ -550,15 +558,18 @@ table.data td:first-child { color: var(--ink); }
   transition: width 300ms ease;
 }
 
-/* notebook */
+/* notebook — fixed A-series page (1000×1414 logical units), so stroke
+   coordinates map identically on every screen; tall pages scroll in the body */
 #nb-stage {
   position: relative;
   border-radius: var(--panel-radius);
   border: 1px solid color-mix(in oklab, var(--ink-3) 30%, transparent);
   background: var(--nb-paper, #10151d);
   overflow: hidden;
-  height: calc(100vh - 210px);
-  min-height: 320px;
+  aspect-ratio: 1000 / 1414;
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
 }
 
 #nb-canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }

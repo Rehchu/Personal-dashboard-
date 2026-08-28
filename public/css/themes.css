@@ -33,6 +33,13 @@
 
 [data-theme="assassins"] #brand { letter-spacing: 0.22em; }
 
+/* white on #e0362c is 4.44:1 — a deeper Creed red gets buttons past 4.5:1 */
+[data-theme="assassins"] .hero-btn.primary,
+[data-theme="assassins"] .btn.primary {
+  background: #c62a21;
+  border-color: #c62a21;
+}
+
 [data-theme="assassins"] #brand-mark {
   border-radius: 0;
   clip-path: polygon(50% 0, 100% 100%, 50% 78%, 0 100%);  /* the insignia chevron */
@@ -75,11 +82,21 @@
   text-shadow: 2px 0 rgba(255, 0, 60, 0.55), -2px 0 rgba(0, 240, 255, 0.55);
 }
 
+/* clip-path clips children outside the shape too, so the focused label sits
+   inside the tile's bottom edge, HUD-style */
+[data-theme="cyberpunk"] .tile .tile-label {
+  bottom: 8px;
+  color: var(--ink);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+/* clip-path clips box-shadows, so the focused glow must be drop-shadow
+   (applied post-clip) and the ring an inset shadow inside the clip */
 [data-theme="cyberpunk"] .tile.focused {
-  box-shadow:
-    0 0 0 2px var(--accent),
-    6px 6px 0 -1px rgba(255, 0, 60, 0.55),
-    -6px -6px 0 -1px rgba(0, 240, 255, 0.45);
+  box-shadow: inset 0 0 0 2.5px var(--accent);
+  filter:
+    drop-shadow(4px 4px 0 rgba(255, 0, 60, 0.55))
+    drop-shadow(-4px -4px 0 rgba(0, 240, 255, 0.45));
 }
 
 /* ---------------- GTA V ----------------
@@ -174,6 +191,17 @@
 [data-theme="minecraft"] .hero-btn { border-radius: 0; }
 
 [data-theme="minecraft"] #brand, [data-theme="minecraft"] #hero-title { letter-spacing: 0.06em; }
+
+/* VT323 is illegible below ~15px — bump the smallest UI text */
+[data-theme="minecraft"] .tile-label,
+[data-theme="minecraft"] table.data th { font-size: 16px; }
+[data-theme="minecraft"] .tile .badge,
+[data-theme="minecraft"] #hint { font-size: 15px; }
+[data-theme="minecraft"] #clock-date,
+[data-theme="minecraft"] .field > label,
+[data-theme="minecraft"] .stat-tile .stat-label,
+[data-theme="minecraft"] .card-meta,
+[data-theme="minecraft"] .muted { font-size: 16px; }
 
 /* ---------------- Mass Effect ----------------
    Normandy holo-blue on deep space, N7 stripe. */
