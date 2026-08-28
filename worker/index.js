@@ -5,10 +5,15 @@
 // cookies signed with a server-side secret kept in D1.
 
 const COL_RE = /^[a-zA-Z0-9._-]{1,40}$/;
+const ARCHIVE_ID_RE = /^[a-z0-9][a-z0-9._-]{0,39}$/;
 const MAX_BODY = 6 * 1024 * 1024;        // sync payload cap
 const MAX_VIDEO = 600 * 1024 * 1024;     // background video cap
 const MAX_PART = 40 * 1024 * 1024;       // one multipart part; the edge caps a request body at 100 MB
 const MAX_PARTS = 10000;                 // R2 multipart part-number ceiling
+const MAX_CHUNK = 25 * 1024 * 1024;      // one archive chunk body
+const MAX_CHUNKS = 512;                  // ids allowed in one archive index
+const MAX_MEMORIES = 256 * 1024;         // memories text, in stored bytes
+const MAX_INDEX_BODY = 512 * 1024;       // memories plus the id list
 const SESSION_MS = 30 * 24 * 3600 * 1000;
 
 // Paths that must work without a session (login itself, PWA niceties).
@@ -182,6 +187,142 @@ async function serveVideo(request, env) {
   }
   headers['content-length'] = String(size);
   return new Response(obj.body, { status: 200, headers });
+}
+
+/* ---------- chat archive (private, chunked in R2) ---------- */
+
+const ARCHIVE_INDEX_KEY = 'archive/index.json';
+const CHUNK_PREFIX = 'archive/chunk/';
+
+// R2 pages a listing at 1000 keys, so follow the cursor or a big archive is only half swept
+async function listChunkKeys(env) {
+  const keys = [];
+  let cursor;
+  for (;;) {
+    const page = await env.MEDIA.list({ prefix: CHUNK_PREFIX, cursor });
+    for (const o of page.objects) keys.push(o.key);
+    if (!page.truncated) return keys;
+    cursor = page.cursor;
+  }
+}
+
+// R2 takes at most 1000 keys per delete call
+async function deleteKeys(env, keys) {
+  for (let i = 0; i < keys.length; i += 1000) await env.MEDIA.delete(keys.slice(i, i + 1000));
+}
+
+async function readArchiveIndex(env) {
+  const obj = await env.MEDIA.get(ARCHIVE_INDEX_KEY);
+  if (!obj) return { rev: 0, count: 0, chunks: [], updatedAt: 0, memories: '' };
+  let stored = null;
+  // an unreadable index reads as empty so the next push (baseRev 0) heals it
+  try { stored = JSON.parse(await obj.text()); } catch { stored = null; }
+  return {
+    rev: Number.isInteger(stored?.rev) && stored.rev >= 0 ? stored.rev : 0,
+    count: Number.isInteger(stored?.count) && stored.count >= 0 ? stored.count : 0,
+    chunks: Array.isArray(stored?.chunks)
+      ? stored.chunks.filter(id => typeof id === 'string' && ARCHIVE_ID_RE.test(id)).slice(0, MAX_CHUNKS)
+      : [],
+    updatedAt: Number.isInteger(stored?.updatedAt) && stored.updatedAt >= 0 ? stored.updatedAt : 0,
+    memories: typeof stored?.memories === 'string' ? stored.memories : '',
+  };
+}
+
+// chunks the new index no longer names are leftovers from a bigger push
+async function sweepChunks(env, keep) {
+  const stale = (await listChunkKeys(env)).filter(k => !keep.has(k.slice(CHUNK_PREFIX.length)));
+  await deleteKeys(env, stale);
+}
+
+function chunkType(request) {
+  const ct = (request.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+  return ct === 'application/gzip' || ct === 'application/json' ? ct : 'application/octet-stream';
+}
+
+async function handleArchive(request, env, path) {
+  if (path === '/api/archive') {
+    if (request.method !== 'DELETE') return json({ error: 'method not allowed' }, 405);
+    const keys = await listChunkKeys(env);
+    const index = await env.MEDIA.head(ARCHIVE_INDEX_KEY);
+    await deleteKeys(env, keys);
+    if (index) await env.MEDIA.delete(ARCHIVE_INDEX_KEY);
+    return json({ ok: true, deleted: keys.length + (index ? 1 : 0) });
+  }
+
+  if (path === '/api/archive/index') {
+    if (request.method === 'GET') return json(await readArchiveIndex(env));
+    if (request.method === 'PUT') {
+      const len = Number(request.headers.get('content-length') || 0);
+      if (len > MAX_INDEX_BODY) return json({ error: 'body too large' }, 413);
+      const body = await request.json().catch(() => null);
+      if (!body || !Number.isInteger(body.baseRev) || body.baseRev < 0) {
+        return json({ error: 'expected {baseRev, count, chunks, updatedAt, memories}' }, 400);
+      }
+      if (!Number.isInteger(body.count) || body.count < 0) return json({ error: 'bad count' }, 400);
+      const chunks = body.chunks;
+      if (!Array.isArray(chunks) || chunks.length > MAX_CHUNKS ||
+          !chunks.every(id => typeof id === 'string' && ARCHIVE_ID_RE.test(id))) {
+        return json({ error: 'bad chunk list' }, 400);
+      }
+      if (body.memories !== undefined && typeof body.memories !== 'string') {
+        return json({ error: 'bad memories' }, 400);
+      }
+      const memories = body.memories || '';
+      // the char length short-circuits so an oversized string is never encoded
+      if (memories.length > MAX_MEMORIES ||
+          new TextEncoder().encode(memories).length > MAX_MEMORIES) {
+        return json({ error: 'memories too large' }, 400);
+      }
+      const updatedAt = Number.isInteger(body.updatedAt) && body.updatedAt >= 0
+        ? body.updatedAt : Date.now();
+
+      const current = await readArchiveIndex(env);
+      if (body.baseRev !== current.rev) return json({ conflict: true, ...current }, 409);
+
+      const next = { rev: current.rev + 1, count: body.count, chunks, updatedAt, memories };
+      await env.MEDIA.put(ARCHIVE_INDEX_KEY, JSON.stringify(next), {
+        httpMetadata: { contentType: 'application/json' },
+      });
+      try {
+        await sweepChunks(env, new Set(chunks));
+      } catch {
+        // the index is already written; a failed sweep only leaves garbage behind
+      }
+      return json({ rev: next.rev });
+    }
+    return json({ error: 'method not allowed' }, 405);
+  }
+
+  const m = path.match(/^\/api\/archive\/chunk\/([^/]+)$/);
+  if (m) {
+    // the id charset never needs percent-encoding, so the raw segment is matched as-is
+    const id = m[1];
+    if (!ARCHIVE_ID_RE.test(id)) return json({ error: 'bad chunk id' }, 400);
+    const key = CHUNK_PREFIX + id;
+
+    if (request.method === 'GET') {
+      const obj = await env.MEDIA.get(key);
+      if (!obj) return json({ error: 'no chunk' }, 404);
+      return new Response(obj.body, {
+        headers: {
+          'content-type': obj.httpMetadata?.contentType || 'application/octet-stream',
+          'cache-control': 'no-store',
+        },
+      });
+    }
+    if (request.method === 'PUT') {
+      const len = Number(request.headers.get('content-length') || 0);
+      if (len > MAX_CHUNK) return json({ error: 'chunk larger than 25 MB' }, 413);
+      // buffered so the cap holds even when the request declares no length
+      const bytes = await request.arrayBuffer();
+      if (bytes.byteLength > MAX_CHUNK) return json({ error: 'chunk larger than 25 MB' }, 413);
+      await env.MEDIA.put(key, bytes, { httpMetadata: { contentType: chunkType(request) } });
+      return json({ ok: true, bytes: bytes.byteLength });
+    }
+    return json({ error: 'method not allowed' }, 405);
+  }
+
+  return json({ error: 'not found' }, 404);
 }
 
 /* ---------- main ---------- */
@@ -370,6 +511,15 @@ export default {
       }
 
       return json({ error: 'not found' }, 404);
+    }
+
+    if (path === '/api/archive' || path.startsWith('/api/archive/')) {
+      if (!authed) return json({ error: 'sign in first' }, 401);
+      try {
+        return await handleArchive(request, env, path);
+      } catch {
+        return json({ error: 'archive storage unavailable' }, 500);
+      }
     }
 
     if (path.startsWith('/api/')) return json({ error: 'not found' }, 404);
