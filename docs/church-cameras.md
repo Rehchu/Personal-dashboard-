@@ -22,10 +22,19 @@ why the dashboard only ever needs the **private** address of each camera.
 
 ## Prerequisite
 
-A domain in your Cloudflare account. The tunnel needs a hostname to publish, and
-`*.workers.dev` cannot carry one — DNS records only exist for real zones. Any
-domain works; it does not have to be the church's public site, and a subdomain
-nobody advertises is fine.
+A domain in your Cloudflare account: `myfaithtech.com`. The tunnel needs a
+hostname to publish, and `*.workers.dev` cannot carry one — DNS records only
+exist for real zones.
+
+**Give each camera its own subdomain** — `cam1.myfaithtech.com`,
+`cam2.myfaithtech.com` — rather than putting them on paths under a single
+hostname. `cloudflared` can match an ingress rule on a path, but it forwards the
+original path unchanged; the camera would receive `/cam1/cgi-bin/ptzctrl.cgi`
+and answer 404, because nothing strips the prefix. Subdomains need no rewriting.
+
+(The Worker does keep a path prefix if the camera address has one, so a
+prefix-stripping reverse proxy at the church would also work. Subdomains are
+less to go wrong.)
 
 ## What you need on site
 
@@ -46,8 +55,8 @@ On the always-on machine at the church:
     cloudflared tunnel create church-cams
 
     # 4. point hostnames at it, one per camera
-    cloudflared tunnel route dns church-cams cam1.example.com
-    cloudflared tunnel route dns church-cams cam2.example.com
+    cloudflared tunnel route dns church-cams cam1.myfaithtech.com
+    cloudflared tunnel route dns church-cams cam2.myfaithtech.com
 
 Then write `config.yml` next to the credentials file:
 
@@ -56,9 +65,9 @@ tunnel: church-cams
 credentials-file: /path/to/<tunnel-uuid>.json
 
 ingress:
-  - hostname: cam1.example.com
-    service: http://192.168.1.40      # camera 1, static LAN IP
-  - hostname: cam2.example.com
+  - hostname: cam1.myfaithtech.com
+    service: http://192.168.1.40      # camera 1, its static LAN IP
+  - hostname: cam2.myfaithtech.com
     service: http://192.168.1.41      # camera 2
   # every ingress list must end with a catch-all
   - service: http_status:404
@@ -74,7 +83,7 @@ Run it, then install it so it survives a reboot:
 The tunnel makes the cameras reachable, which means reachable by anyone who
 learns the hostname. Put **Cloudflare Access** in front of each hostname — a
 policy allowing only your email turns an open door into a login. Zero Trust →
-Access → Applications → add the hostname → policy: emails = your address.
+Access → Applications → add each camera hostname → policy: emails = your address.
 
 Without this, the hostname is as exposed as a port forward would have been. It
 is the step that makes the tunnel safer, not the tunnel itself.
@@ -84,7 +93,7 @@ is the step that makes the tunnel safer, not the tunnel itself.
 Church Cameras → **＋ Camera**:
 
 - **Name** — whatever you call it in the room ("Stage", "Balcony")
-- **Address** — `https://cam1.example.com`, the *tunnel hostname*, never the LAN IP
+- **Address** — `https://cam1.myfaithtech.com`, the *tunnel hostname*, never the LAN IP
 - **Username / password** — the camera's own credentials
 
 The camera's LAN IP lives only in `config.yml`. The dashboard never sees it, so
@@ -103,3 +112,28 @@ The path is overwritten with `/cgi-bin/ptzctrl.cgi` no matter what the configure
 address contains, redirects are not followed, and speeds and preset numbers are
 clamped to the ranges the cameras document. A caller cannot use it to reach an
 arbitrary URL.
+
+## Seeing the picture
+
+Aiming a camera you cannot see is guesswork, so the module has a live view.
+
+It is not the RTSP stream. No browser plays RTSP, and converting it needs a
+transcoder running somewhere. Instead the preview polls the camera's own still
+image about once a second, which is enough to frame a shot and is what remote
+control actually needs. Press **▸ Live view**.
+
+Models disagree about where that image lives, so the Worker tries the known
+paths in turn (`/snapshot.jpg`, `/cgi-bin/snapshot.cgi`, `/tmpfs/auto.jpg`,
+`/tmpfs/snap.jpg`) and remembers whichever answered, so later frames go straight
+there. A hidden tab stops asking for frames, and four consecutive failures pause
+the view rather than hammering a camera that is not there.
+
+### If you want true live video
+
+Run [go2rtc](https://github.com/AlexxIT/go2rtc) or
+[MediaMTX](https://github.com/bluenviron/mediamtx) on the same machine as
+`cloudflared`. Either takes the camera's RTSP stream and republishes it as
+WebRTC (sub-second) or HLS (a few seconds behind). Point a tunnel hostname at
+that server instead of at the camera, and embed it in a browser. That is a
+bigger install and a second thing to keep running — worth it if you want to
+watch the service remotely, unnecessary if you only want to aim the cameras.

@@ -47,6 +47,12 @@ export function mount(root, tools) {
         border: 1px solid color-mix(in oklab, var(--ink-3) 34%, transparent);
         background: color-mix(in oklab, var(--surface-2) 75%, transparent); color: var(--ink); }
       #ptz-pad button:active { background: var(--accent); color: #04121b; }
+      #ptz-view { position: relative; aspect-ratio: 16/9; border-radius: 10px; overflow: hidden;
+        background: #05080d; border: 1px solid color-mix(in oklab, var(--ink-3) 30%, transparent);
+        display: grid; place-items: center; }
+      #ptz-img { width: 100%; height: 100%; object-fit: contain; display: none; }
+      #ptz-img.on { display: block; }
+      #ptz-view-msg { position: absolute; padding: 0 16px; text-align: center; font-size: 13px; }
       .ptz-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: center; }
       .ptz-preset { min-width: 44px; min-height: 44px; }
       .ptz-preset.arm { border-color: var(--accent); color: var(--accent); }
@@ -66,6 +72,14 @@ export function mount(root, tools) {
         <div class="ptz-row" style="justify-content:space-between;margin-bottom:14px">
           <strong id="ptz-name">No camera</strong>
           <span class="muted" id="ptz-status">&nbsp;</span>
+        </div>
+        <div id="ptz-view">
+          <img id="ptz-img" alt="Camera preview">
+          <div id="ptz-view-msg" class="muted">No camera selected</div>
+        </div>
+        <div class="ptz-row" style="margin:10px 0 16px">
+          <button class="btn small" id="ptz-live">▸ Live view</button>
+          <span class="muted" id="ptz-fps"></span>
         </div>
         <div id="ptz-pad"></div>
         <div class="ptz-row" style="margin-top:16px">
@@ -127,6 +141,8 @@ export function mount(root, tools) {
       current = cams.find(c => c.id === btn.dataset.cam);
       save('ptz.sel', current.id);
       renderList();
+      // the preview must follow the selection, not keep showing the old camera
+      if (live) { misses = 0; clearTimeout(timer); tick(); }
     }));
     host.querySelectorAll('[data-del]').forEach(btn => btn.addEventListener('click', () => {
       const cam = cams.find(c => c.id === btn.dataset.del);
@@ -227,11 +243,95 @@ export function mount(root, tools) {
     }
   });
 
+  /* ---------- live view ----------
+     The cameras stream RTSP, which no browser plays, so the preview polls the
+     camera's still image instead. It is about a frame a second — enough to aim
+     and frame a shot, which is what remote control actually needs. */
+  const img = root.querySelector('#ptz-img');
+  const viewMsg = root.querySelector('#ptz-view-msg');
+  const liveBtn = root.querySelector('#ptz-live');
+  const fpsNote = root.querySelector('#ptz-fps');
+  let live = false;
+  let timer = 0;
+  let objectUrl = '';
+  let misses = 0;
+
+  function showMsg(text) {
+    viewMsg.textContent = text;
+    viewMsg.style.display = text ? '' : 'none';
+  }
+
+  function stopLive(reason) {
+    live = false;
+    clearTimeout(timer);
+    timer = 0;
+    liveBtn.textContent = '▸ Live view';
+    fpsNote.textContent = '';
+    if (reason) showMsg(reason);
+  }
+
+  async function tick() {
+    if (!live || !current) return;
+    // a hidden tab should not keep asking the camera for frames
+    if (document.hidden) { timer = setTimeout(tick, 1000); return; }
+    try {
+      const res = await fetch('/api/ptz/snapshot', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          base: current.base,
+          path: current.snapPath,
+          auth: current.user ? { user: current.user, pass: current.pass } : undefined,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `snapshot failed (${res.status})`);
+      }
+      // remember which path answered so later frames skip the search
+      const found = res.headers.get('x-snapshot-path');
+      if (found && found !== current.snapPath) {
+        current.snapPath = found;
+        save(CAMS_KEY, cams);
+      }
+      const blob = await res.blob();
+      if (objectUrl) URL.revokeObjectURL(objectUrl); // or every frame leaks
+      objectUrl = URL.createObjectURL(blob);
+      img.src = objectUrl;
+      img.classList.add('on');
+      showMsg('');
+      misses = 0;
+      fpsNote.textContent = `${(blob.size / 1024).toFixed(0)} KB · ~1 fps`;
+    } catch (err) {
+      misses += 1;
+      if (misses >= 4) { stopLive(`${err.message} — stopped after 4 tries`); return; }
+      showMsg(err.message);
+    }
+    if (live) timer = setTimeout(tick, misses ? 3000 : 1000);
+  }
+
+  function startLive() {
+    if (!current) { showMsg('Add a camera first'); return; }
+    live = true;
+    misses = 0;
+    liveBtn.textContent = '⏸ Pause';
+    showMsg('Connecting…');
+    tick();
+  }
+
+  liveBtn.addEventListener('click', () => (live ? stopLive('Paused') : startLive()));
+  const onVisible = () => { if (live && !document.hidden) { clearTimeout(timer); tick(); } };
+  document.addEventListener('visibilitychange', onVisible);
+
   renderList();
   renderPresets();
+  if (current) showMsg('Press Live view to see the camera');
 
   return () => {
     // never leave a camera panning because the module was closed mid-press
     stoppers.forEach(stop => stop());
+    stopLive();
+    document.removeEventListener('visibilitychange', onVisible);
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
   };
 }
