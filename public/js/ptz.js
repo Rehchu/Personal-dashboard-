@@ -24,7 +24,11 @@ export async function send(cam, cmd, args = {}) {
   const res = await fetch('/api/ptz', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ base: cam.base, cmd, args, auth: cam.user ? { user: cam.user, pass: cam.pass } : undefined }),
+    body: JSON.stringify({
+      base: cam.base, cmd, args,
+      auth: cam.user ? { user: cam.user, pass: cam.pass } : undefined,
+      access: cam.accessId ? { id: cam.accessId, secret: cam.accessSecret } : undefined,
+    }),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || `camera said ${res.status}`);
@@ -213,8 +217,9 @@ export function mount(root, tools) {
   const savemodeBtn = root.querySelector('#ptz-savemode');
   function renderPresets() {
     const host = root.querySelector('#ptz-presets');
-    host.innerHTML = Array.from({ length: 9 }, (_, i) =>
-      `<button class="btn small ptz-preset${saveMode ? ' arm' : ''}" data-preset="${i + 1}">${i + 1}</button>`).join('');
+    // the house controller stores 0-9, so 0 has to be reachable here too
+    host.innerHTML = Array.from({ length: 10 }, (_, i) =>
+      `<button class="btn small ptz-preset${saveMode ? ' arm' : ''}" data-preset="${i}">${i}</button>`).join('');
     host.querySelectorAll('[data-preset]').forEach(btn => btn.addEventListener('click', () => {
       const n = Number(btn.dataset.preset);
       if (saveMode) {
@@ -241,9 +246,14 @@ export function mount(root, tools) {
     const user = prompt('Username (blank if none)', 'admin') || '';
     const pass = user ? (prompt('Password', '') || '') : '';
     const viewOnly = !confirm('Does this camera pan, tilt and zoom?\n\nOK = yes (PTZ)\nCancel = view only');
+    // Access protects the tunnel hostname from people; the dashboard gets past
+    // it with a service token, which is the only way through for a machine
+    const accessId = prompt('Cloudflare Access Client ID (blank if Access is not on this hostname)', '') || '';
+    const accessSecret = accessId ? (prompt('Access Client Secret', '') || '') : '';
     const cam = {
       id: uid(), name: name.trim(), base: base.trim().replace(/\/+$/, ''),
       user: user.trim(), pass, viewOnly,
+      accessId: accessId.trim(), accessSecret: accessSecret.trim(),
     };
     cams.push(cam);
     current = cam;
@@ -302,6 +312,7 @@ export function mount(root, tools) {
           base: current.base,
           path: current.snapPath,
           auth: current.user ? { user: current.user, pass: current.pass } : undefined,
+          access: current.accessId ? { id: current.accessId, secret: current.accessSecret } : undefined,
         }),
       });
       if (!res.ok) {
