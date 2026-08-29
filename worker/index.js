@@ -4,6 +4,8 @@
 // setup) unlocks both the login screen and sync. Sessions are HttpOnly
 // cookies signed with a server-side secret kept in D1.
 
+import { parseDigestChallenge, digestAuthHeader } from './digest.js';
+
 const COL_RE = /^[a-zA-Z0-9._-]{1,40}$/;
 const ARCHIVE_ID_RE = /^[a-z0-9][a-z0-9._-]{0,39}$/;
 const MAX_BODY = 6 * 1024 * 1024;        // sync payload cap
@@ -363,17 +365,12 @@ function parseCameraBase(base) {
 const SNAPSHOT_PATHS = ['/snapshot.jpg', '/cgi-bin/snapshot.cgi', '/tmpfs/auto.jpg', '/tmpfs/snap.jpg'];
 const MAX_SNAPSHOT = 8 * 1024 * 1024;
 
-// Credentials for one camera request: the camera's own Basic auth, plus an
-// Access service token when Cloudflare Access guards the tunnel hostname.
-// Without the token the Worker would receive the Access login page, not a
-// camera — a machine cannot satisfy an interactive login.
-function ptzHeaders(body) {
+// The Access service token, when Cloudflare Access guards the tunnel hostname.
+// Without it the Worker would receive the Access login page, not a camera — a
+// machine cannot satisfy an interactive login. It rides on every attempt,
+// including the retry, or the retry never reaches the camera at all.
+function accessHeaders(body) {
   const headers = {};
-  const user = body?.auth?.user;
-  if (typeof user === 'string' && user) {
-    const pass = typeof body.auth.pass === 'string' ? body.auth.pass : '';
-    headers.authorization = `Basic ${btoa(`${user}:${pass}`)}`;
-  }
   const id = body?.access?.id;
   const secret = body?.access?.secret;
   if (typeof id === 'string' && id && typeof secret === 'string' && secret) {
@@ -381,6 +378,72 @@ function ptzHeaders(body) {
     headers['CF-Access-Client-Secret'] = secret;
   }
   return headers;
+}
+
+function cameraCreds(body) {
+  const user = typeof body?.auth?.user === 'string' ? body.auth.user : '';
+  const pass = typeof body?.auth?.pass === 'string' ? body.auth.pass : '';
+  return user ? { user, pass } : null;
+}
+
+// btoa only takes Latin-1, so a password with an accent or an emoji in it would
+// throw instead of failing to authenticate. Encode to UTF-8 bytes first.
+function basicAuth(user, pass) {
+  const bytes = new TextEncoder().encode(`${user}:${pass}`);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return `Basic ${btoa(bin)}`;
+}
+
+// PTZOptics firmware refuses Basic and asks for Digest, so every first request
+// to a camera costs two round trips. Remembering the challenge makes every
+// request after that one trip — live view polls a frame a second, and a doubled
+// round trip through the tunnel is felt. The nonce count has to keep climbing
+// for a given nonce, so it is kept alongside.
+const digestState = new Map();
+const DIGEST_CACHE_MAX = 16;
+
+function rememberChallenge(key, challenge) {
+  if (!digestState.has(key) && digestState.size >= DIGEST_CACHE_MAX) {
+    digestState.delete(digestState.keys().next().value); // oldest out
+  }
+  digestState.set(key, { challenge, nc: 1 });
+}
+
+// One request to a camera, authenticating however that camera asks: Basic
+// first (cheap, and some models speak only that), then Digest if the 401 says
+// so. Cameras are read with GET only; nothing here writes a body.
+async function cameraFetch(url, { creds, extra, cacheKey }) {
+  const target = url.toString();
+  const uri = url.pathname + (url.search || '');
+  const attempt = auth => fetch(target, {
+    headers: auth ? { ...extra, authorization: auth } : { ...extra },
+    signal: AbortSignal.timeout(6000),
+    redirect: 'manual', // a redirect would take us off the vetted path
+  });
+  const drain = async res => { try { await res.body?.cancel(); } catch { /* noop */ } };
+
+  const cached = creds ? digestState.get(cacheKey) : null;
+  let res;
+  if (cached) {
+    cached.nc += 1;
+    res = await attempt(await digestAuthHeader({
+      ...creds, method: 'GET', uri, challenge: cached.challenge, nc: cached.nc,
+    }));
+    if (res.status !== 401) return res;
+    digestState.delete(cacheKey); // stale nonce, or the password is simply wrong
+  } else {
+    res = await attempt(creds ? basicAuth(creds.user, creds.pass) : null);
+    if (res.status !== 401 || !creds) return res;
+  }
+
+  const challenge = parseDigestChallenge(res.headers.get('www-authenticate'));
+  if (!challenge) return res; // Basic-only, or an algorithm we do not implement
+  const auth = await digestAuthHeader({ ...creds, method: 'GET', uri, challenge, nc: 1 });
+  if (!auth) return res;
+  await drain(res);
+  rememberChallenge(cacheKey, challenge);
+  return attempt(auth);
 }
 
 async function handlePtzSnapshot(request) {
@@ -396,7 +459,9 @@ async function handlePtzSnapshot(request) {
   }
   const candidates = asked ? [asked, ...SNAPSHOT_PATHS.filter(p => p !== asked)] : SNAPSHOT_PATHS;
 
-  const headers = ptzHeaders(body);
+  const extra = accessHeaders(body);
+  const creds = cameraCreds(body);
+  const cacheKey = `${target.origin}${prefix}|${creds?.user || ''}`;
 
   let lastStatus = 0;
   for (const candidate of candidates) {
@@ -404,7 +469,7 @@ async function handlePtzSnapshot(request) {
     target.search = '';
     let res;
     try {
-      res = await fetch(target.toString(), { headers, signal: AbortSignal.timeout(6000), redirect: 'manual' });
+      res = await cameraFetch(target, { creds, extra, cacheKey });
     } catch (err) {
       const timedOut = err?.name === 'TimeoutError' || err?.name === 'AbortError';
       return json({ error: timedOut ? 'camera did not answer (is the tunnel up?)' : 'could not reach the camera' }, 504);
@@ -441,15 +506,20 @@ async function handlePtz(request) {
   target.pathname = `${prefix}/cgi-bin/ptzctrl.cgi`;
   target.search = query;
 
-  const headers = ptzHeaders(body);
+  const creds = cameraCreds(body);
 
   try {
-    const res = await fetch(target.toString(), {
-      headers,
-      signal: AbortSignal.timeout(6000),
-      redirect: 'manual', // a redirect would take us off the vetted path
+    const res = await cameraFetch(target, {
+      creds,
+      extra: accessHeaders(body),
+      cacheKey: `${target.origin}${prefix}|${creds?.user || ''}`,
     });
-    if (!res.ok) return json({ error: `camera returned ${res.status}` }, 502);
+    if (!res.ok) {
+      const hint = res.status === 401
+        ? 'camera rejected the username or password'
+        : `camera returned ${res.status}`;
+      return json({ error: hint }, 502);
+    }
     return json({ ok: true, cmd });
   } catch (err) {
     const timedOut = err?.name === 'TimeoutError' || err?.name === 'AbortError';

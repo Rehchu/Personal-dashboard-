@@ -10,6 +10,18 @@ import { load, save, uid, esc, showToast } from './store.js';
 
 const SPEED_KEY = 'ptz.speed';
 const CAMS_KEY = 'ptz.cams';
+const ACCESS_KEY = 'ptz.access';
+const LOGIN_KEY = 'ptz.login';
+const SEEDED_KEY = 'ptz.seeded';
+
+// The church's three PTZ cameras, each behind its own tunnel hostname. They are
+// wired in so nobody has to type them on a phone in a dark booth. Seeding runs
+// once: a camera removed on purpose stays removed.
+const CHURCH_CAMS = [
+  { name: 'Camera 1', base: 'https://cam1.myfaithtech.com' },
+  { name: 'Camera 2', base: 'https://cam2.myfaithtech.com' },
+  { name: 'Camera 3', base: 'https://cam3.myfaithtech.com' },
+];
 
 const DIRS = [
   ['leftup', '↖'], ['up', '↑'], ['rightup', '↗'],
@@ -17,7 +29,50 @@ const DIRS = [
   ['leftdown', '↙'], ['down', '↓'], ['rightdown', '↘'],
 ];
 
-const getCams = () => load(CAMS_KEY, []);
+function getCams() {
+  let cams = load(CAMS_KEY, []);
+  if (load(SEEDED_KEY, false)) return cams;
+  const have = new Set(cams.map(c => c.base));
+  const missing = CHURCH_CAMS.filter(c => !have.has(c.base))
+    .map(c => ({ id: uid(), name: c.name, base: c.base, user: '', pass: '', viewOnly: false }));
+  if (missing.length) { cams = [...cams, ...missing]; save(CAMS_KEY, cams); }
+  save(SEEDED_KEY, true);
+  return cams;
+}
+
+// The cameras share one login and sit behind one Access-guarded tunnel, so both
+// are asked for once and kept here rather than repeated on every camera.
+// Anything typed against a single camera still wins for that camera.
+export const getAccess = () => load(ACCESS_KEY, null);
+export const getLogin = () => load(LOGIN_KEY, null);
+
+function accessFor(cam) {
+  if (cam?.accessId) return { id: cam.accessId, secret: cam.accessSecret };
+  const shared = getAccess();
+  return shared?.id ? { id: shared.id, secret: shared.secret } : undefined;
+}
+
+// People paste what is in the address bar, which lands on a page — the camera's
+// own web UI at /index.html — not at the root the CGI endpoint hangs off.
+export function normalizeBase(raw) {
+  const s = String(raw || '').trim();
+  let u;
+  try {
+    u = new URL(/^https?:\/\//i.test(s) ? s : `http://${s}`);
+  } catch {
+    return s.replace(/\/+$/, '');
+  }
+  u.pathname = u.pathname.replace(/\/+$/, '').replace(/\/[^/]*\.[a-z0-9]{2,5}$/i, '');
+  u.search = '';
+  u.hash = '';
+  return u.toString().replace(/\/+$/, '');
+}
+
+function authFor(cam) {
+  if (cam?.user) return { user: cam.user, pass: cam.pass };
+  const shared = getLogin();
+  return shared?.user ? { user: shared.user, pass: shared.pass } : undefined;
+}
 
 // exported so the service planner can recall presets without duplicating this
 export async function send(cam, cmd, args = {}) {
@@ -26,8 +81,8 @@ export async function send(cam, cmd, args = {}) {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       base: cam.base, cmd, args,
-      auth: cam.user ? { user: cam.user, pass: cam.pass } : undefined,
-      access: cam.accessId ? { id: cam.accessId, secret: cam.accessSecret } : undefined,
+      auth: authFor(cam),
+      access: accessFor(cam),
     }),
   });
   const body = await res.json().catch(() => ({}));
@@ -42,6 +97,7 @@ export function mount(root, tools) {
   let saveMode = false;
 
   tools.innerHTML = `<button class="btn small" id="ptz-add">＋ Camera</button>
+    <button class="btn small" id="ptz-token">🔑 Sign-in</button>
     <button class="btn small" id="ptz-test">⇋ Test</button>`;
 
   root.innerHTML = `
@@ -61,11 +117,27 @@ export function mount(root, tools) {
       .ptz-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: center; }
       .ptz-preset { min-width: 44px; min-height: 44px; }
       .ptz-preset.arm { border-color: var(--accent); color: var(--accent); }
+      .ptz-f { display: block; font-size: 12px; color: var(--ink-2); margin-bottom: 8px; }
+      .ptz-f input { display: block; width: 100%; margin-top: 3px; padding: 7px 9px;
+        font-size: 15px; /* under 16px iOS zooms the page on focus */ }
     </style>
     <div style="display:grid;grid-template-columns:minmax(240px,320px) 1fr;gap:18px;align-items:start" id="ptz-grid">
       <div class="panel">
         <h3>Cameras</h3>
         <div id="ptz-list"></div>
+        <details id="ptz-creds" style="margin-top:12px">
+          <summary style="cursor:pointer;font-size:13px"><strong>Sign-in</strong> <span class="muted" id="ptz-creds-state"></span></summary>
+          <p class="muted" style="font-size:12px;margin:8px 0 10px">
+            Typed once and used for every camera. Stored in this dashboard only,
+            behind your login.
+          </p>
+          <label class="ptz-f">Camera username<input id="pc-user" autocomplete="off" spellcheck="false"></label>
+          <label class="ptz-f">Camera password<input id="pc-pass" type="password" autocomplete="off"></label>
+          <label class="ptz-f">Access Client ID <span class="muted">(blank if Access is off)</span>
+            <input id="pc-aid" autocomplete="off" spellcheck="false"></label>
+          <label class="ptz-f">Access Client Secret<input id="pc-asec" type="password" autocomplete="off"></label>
+          <button class="btn small" id="pc-save" style="margin-top:10px">Save for all cameras</button>
+        </details>
         <p class="muted" style="margin-top:12px;font-size:12.5px">
           Cameras are only reachable from outside the building through a tunnel.
           Run <code>cloudflared</code> on a machine at the church and point the
@@ -134,6 +206,7 @@ export function mount(root, tools) {
   }
 
   function renderList() {
+    renderAccess();
     const host = root.querySelector('#ptz-list');
     if (!cams.length) {
       host.innerHTML = '<p class="muted">No cameras yet. Add one with its address.</p>';
@@ -243,23 +316,67 @@ export function mount(root, tools) {
     if (!name) return;
     const base = prompt('Camera address (e.g. https://cam1.yourtunnel.example or http://192.168.1.40)');
     if (!base) return;
-    const user = prompt('Username (blank if none)', 'admin') || '';
+    const user = prompt('Username — leave blank to use the shared sign-in', '') || '';
     const pass = user ? (prompt('Password', '') || '') : '';
     const viewOnly = !confirm('Does this camera pan, tilt and zoom?\n\nOK = yes (PTZ)\nCancel = view only');
-    // Access protects the tunnel hostname from people; the dashboard gets past
-    // it with a service token, which is the only way through for a machine
-    const accessId = prompt('Cloudflare Access Client ID (blank if Access is not on this hostname)', '') || '';
-    const accessSecret = accessId ? (prompt('Access Client Secret', '') || '') : '';
+    // no login or Access prompt here by default: both are set once, for all cameras
     const cam = {
-      id: uid(), name: name.trim(), base: base.trim().replace(/\/+$/, ''),
+      id: uid(), name: name.trim(), base: normalizeBase(base),
       user: user.trim(), pass, viewOnly,
-      accessId: accessId.trim(), accessSecret: accessSecret.trim(),
     };
     cams.push(cam);
     current = cam;
     save(CAMS_KEY, cams);
     save('ptz.sel', cam.id);
     renderList();
+  });
+
+  // One login and one token, for every camera. Secrets go back into the fields
+  // so they can be corrected, but never into text the page renders — the status
+  // line names what is set, not what it is.
+  const credsBox = root.querySelector('#ptz-creds');
+  function renderAccess() {
+    const login = getLogin();
+    const access = getAccess();
+    const bits = [];
+    bits.push(login?.user ? `signed in as ${esc(login.user)}` : 'no camera login yet');
+    if (access?.id) bits.push('Access token set');
+    const perCam = cams.filter(c => c.user || c.accessId).length;
+    if (perCam) bits.push(`${perCam} camera${perCam > 1 ? 's' : ''} using their own`);
+    root.querySelector('#ptz-creds-state').textContent = `· ${bits.join(' · ')}`;
+    // nothing saved yet: open the form rather than hide it behind a twisty
+    if (!login?.user) credsBox.open = true;
+  }
+
+  const fill = () => {
+    const login = getLogin() || {};
+    const access = getAccess() || {};
+    root.querySelector('#pc-user').value = login.user || '';
+    root.querySelector('#pc-pass').value = login.pass || '';
+    root.querySelector('#pc-aid').value = access.id || '';
+    root.querySelector('#pc-asec').value = access.secret || '';
+  };
+
+  root.querySelector('#pc-save').addEventListener('click', () => {
+    const user = root.querySelector('#pc-user').value.trim();
+    const pass = root.querySelector('#pc-pass').value;
+    const id = root.querySelector('#pc-aid').value.trim();
+    const secret = root.querySelector('#pc-asec').value.trim();
+    save(LOGIN_KEY, user ? { user, pass } : null);
+    save(ACCESS_KEY, id ? { id, secret } : null);
+    // a camera carrying its own copy would shadow the shared one, so retire those
+    let freed = 0;
+    cams.forEach(c => {
+      if (c.user || c.accessId) {
+        c.user = ''; c.pass = '';
+        delete c.accessId; delete c.accessSecret;
+        freed += 1;
+      }
+    });
+    if (freed) save(CAMS_KEY, cams);
+    renderAccess();
+    credsBox.open = false;
+    showToast(user ? 'Saved for all cameras' : 'Sign-in cleared');
   });
 
   tools.querySelector('#ptz-test').addEventListener('click', async () => {
@@ -311,8 +428,8 @@ export function mount(root, tools) {
         body: JSON.stringify({
           base: current.base,
           path: current.snapPath,
-          auth: current.user ? { user: current.user, pass: current.pass } : undefined,
-          access: current.accessId ? { id: current.accessId, secret: current.accessSecret } : undefined,
+          auth: authFor(current),
+          access: accessFor(current),
         }),
       });
       if (!res.ok) {
@@ -354,6 +471,13 @@ export function mount(root, tools) {
   const onVisible = () => { if (live && !document.hidden) { clearTimeout(timer); tick(); } };
   document.addEventListener('visibilitychange', onVisible);
 
+  tools.querySelector('#ptz-token').addEventListener('click', () => {
+    credsBox.open = true;
+    credsBox.scrollIntoView({ block: 'nearest' });
+    root.querySelector('#pc-user').focus();
+  });
+
+  fill();
   renderList();
   renderPresets();
   if (current) showMsg('Press Live view to see the camera');
