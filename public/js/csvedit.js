@@ -24,6 +24,18 @@ export function sniffDialect(text) {
   };
 }
 
+// The browser strips a UTF-8 BOM when it decodes, so the flag has to come from
+// the raw bytes; passing it in keeps parseCsv usable on a plain string too.
+export async function parseCsvFile(file) {
+  const buf = await file.arrayBuffer();
+  const b = new Uint8Array(buf);
+  const bom = b[0] === 0xef && b[1] === 0xbb && b[2] === 0xbf;
+  const text = new TextDecoder('utf-8').decode(buf);
+  const parsed = parseCsv(text);
+  parsed.dialect.bom = bom; // authoritative: taken from the file itself
+  return parsed;
+}
+
 export function parseCsv(text) {
   const dialect = sniffDialect(text);
   const s = dialect.bom ? text.slice(1) : text;
@@ -211,11 +223,11 @@ export function mount(root, tools) {
     }));
   }
 
-  $('#cs-file').addEventListener('change', async e => {
+  // the file input lives in the toolbar, not the panel body
+  tools.querySelector('#cs-file').addEventListener('change', async e => {
     const file = e.target.files[0];
     if (!file) return;
-    const text = await file.text();
-    const { rows, dialect } = parseCsv(text);
+    const { rows, dialect } = await parseCsvFile(file);
     if (!rows.length) { showToast('That file has no rows'); return; }
     const entry = { id: uid(), name: file.name, rows, dialect, edited: false };
     files = [entry, ...files.filter(f => f.name !== file.name)];
