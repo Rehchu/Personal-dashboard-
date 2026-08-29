@@ -241,12 +241,15 @@ function codeRecord(name, text) {
 function ingestEntry(name, text) {
   if (!text || !text.trim()) return { kind: 'skip', note: `${name} is empty` };
   if (/\.(md|txt)$/i.test(name)) return { kind: 'memories', memory: text.trim() };
-  if (CODE_FILE_RE.test(name)) return { kind: 'files', convos: [codeRecord(name, text)] };
+  // Content wins over extension: Takeout ships activity as .html, and
+  // CODE_FILE_RE matches html, so testing the name first would file a whole
+  // Gemini or Search history as one source-code record.
   if (isTakeoutHtml(text)) {
     const convos = takeoutHtmlRecords(text);
     if (convos.length) return { kind: 'convos', convos };
     return { kind: 'skip', note: `${name}: no Gemini prompts or searches in it` };
   }
+  if (CODE_FILE_RE.test(name)) return { kind: 'files', convos: [codeRecord(name, text)] };
   let data;
   try {
     data = parseExportText(text);
