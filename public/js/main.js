@@ -385,19 +385,21 @@ function loadResume(file, name) {
   return st;
 }
 
-async function uploadMultipart(file, panel, signal) {
+async function uploadMultipart(file, panel, signal, label) {
   const name = file.name || 'clip'; // a trimmed clip is a Blob, with no name
   let state = loadResume(file, name);
   if (state) {
     showToast(`Resuming at part ${state.parts.length + 1}`);
   } else {
-    const { uploadId } = await mpuFetch('/api/media/bg/mpu/start', {
+    // the id names the object this upload is filling, so two devices uploading
+    // at the same time write to two objects instead of over each other
+    const { uploadId, id } = await mpuFetch('/api/media/bg/mpu/start', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ type: file.type || 'video/mp4' }),
       signal,
     });
-    state = { uploadId, name, size: file.size, partSize: MPU_PART, parts: [] };
+    state = { uploadId, id, name, size: file.size, partSize: MPU_PART, parts: [] };
     save('ui.bgUpload', state);
   }
 
@@ -408,7 +410,7 @@ async function uploadMultipart(file, panel, signal) {
     panel.set((done / file.size) * 100,
       `Uploading part ${n} of ${total} — ${(done / MB).toFixed(0)}/${(file.size / MB).toFixed(0)} MB`);
     const part = await mpuFetch(
-      `/api/media/bg/mpu/part?uploadId=${encodeURIComponent(state.uploadId)}&part=${n}`,
+      `/api/media/bg/mpu/part?id=${encodeURIComponent(state.id)}&uploadId=${encodeURIComponent(state.uploadId)}&part=${n}`,
       { method: 'PUT', body: chunk, signal },
     );
     state.parts.push({ partNumber: part.partNumber, etag: part.etag });
@@ -416,13 +418,99 @@ async function uploadMultipart(file, panel, signal) {
   }
 
   panel.set(100, 'Finishing…');
-  await mpuFetch('/api/media/bg/mpu/complete', {
+  const done = await mpuFetch('/api/media/bg/mpu/complete', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ uploadId: state.uploadId, parts: state.parts }),
+    body: JSON.stringify({ id: state.id, uploadId: state.uploadId, parts: state.parts, name: label }),
     signal,
   });
   save('ui.bgUpload', null);
+  return done;
+}
+
+/* ---------- the background gallery ----------
+   An upload used to overwrite the one before it. Each is now kept, and the
+   list — plus which one is showing — lives in R2 rather than in any one
+   browser, so it is the same library on the phone and on the desk. */
+
+let gallery = { selected: null, items: [] };
+
+async function refreshGallery() {
+  try {
+    const res = await fetch('/api/media/bg');
+    if (!res.ok) return gallery;
+    const body = await res.json();
+    gallery = { selected: body.selected ?? null, items: Array.isArray(body.items) ? body.items : [] };
+  } catch {
+    // offline: keep whatever the last load found rather than emptying the shelf
+  }
+  return gallery;
+}
+
+// Point the player at whichever background is selected. A cache-buster is
+// needed because the URL does not change when the selection does.
+function playSelectedBg(explicit = false) {
+  if (!gallery.selected) { videoOk = false; if (explicit) applyBg('storm', true); return; }
+  videoOk = false;
+  bgVideo.src = `/media/bg/${gallery.selected}?v=${Date.now()}`;
+  bgVideo.load();
+  bgVideo.addEventListener('canplay', () => applyBg('video', true), { once: true });
+}
+
+async function selectBg(id) {
+  const res = await fetch('/api/media/bg/select', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
+  if (!res.ok) { showToast('Could not switch background'); return; }
+  gallery = await res.json();
+  playSelectedBg(true);
+  buildGallery();
+}
+
+async function deleteBg(id, name) {
+  if (!confirm(`Delete "${name}"? This removes it from every device.`)) return;
+  const res = await fetch(`/api/media/bg/${id}`, { method: 'DELETE' });
+  if (!res.ok) { showToast('Could not delete that background'); return; }
+  const body = await res.json();
+  gallery = body.index || await refreshGallery();
+  showToast('Deleted');
+  if (!gallery.selected) applyBg('storm', true); else playSelectedBg();
+  buildGallery();
+}
+
+const galleryHost = () => document.getElementById('bg-gallery');
+
+function buildGallery() {
+  const host = galleryHost();
+  if (!host) return;
+  if (!gallery.items.length) {
+    host.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">'
+      + 'No backgrounds saved yet. Upload one and it stays here — the next upload adds to the shelf '
+      + 'instead of replacing it.</p>';
+    return;
+  }
+  host.innerHTML = gallery.items.map(it => {
+    const on = it.id === gallery.selected;
+    // a 30s trimmed clip can be under a megabyte; "0.0 MB" reads as broken
+    const mb = it.bytes
+      ? (it.bytes >= MB ? `${(it.bytes / MB).toFixed(1)} MB` : `${Math.max(1, Math.round(it.bytes / 1024))} KB`)
+      : '';
+    return `<div class="bg-card${on ? ' on' : ''}">
+      <button class="bg-pick" data-use="${esc(it.id)}" title="Show this background">
+        <span class="bg-name">${esc(it.name || 'Background')}</span>
+        <span class="muted bg-meta">${esc(mb)}${on ? ' · showing' : ''}</span>
+      </button>
+      <button class="btn small danger" data-drop="${esc(it.id)}" title="Delete">✕</button>
+    </div>`;
+  }).join('');
+  host.querySelectorAll('[data-use]').forEach(b =>
+    b.addEventListener('click', () => selectBg(b.dataset.use)));
+  host.querySelectorAll('[data-drop]').forEach(b => {
+    const it = gallery.items.find(i => i.id === b.dataset.drop);
+    b.addEventListener('click', () => deleteBg(b.dataset.drop, it?.name || 'this background'));
+  });
 }
 
 let uploading = false;
@@ -456,17 +544,17 @@ function uploadBgVideo(mode = 'clip') {
         showToast('This browser cannot trim video — sending the full file');
       }
 
+      const label = (file.name || 'Background').replace(/\.[a-z0-9]{2,5}$/i, '');
       if (body.size <= MPU_SINGLE_MAX) {
-        await mpuFetch('/api/media/bg', { method: 'PUT', body, signal: ctrl.signal }, 2);
+        await mpuFetch(`/api/media/bg?name=${encodeURIComponent(label)}`,
+          { method: 'PUT', body, signal: ctrl.signal }, 2);
       } else {
-        await uploadMultipart(body, panel, ctrl.signal);
+        await uploadMultipart(body, panel, ctrl.signal, label);
       }
       panel.close();
-      showToast('Background video saved 🎬');
-      videoOk = false;
-      bgVideo.src = `/media/bg.mp4?v=${Date.now()}`;
-      bgVideo.load();
-      bgVideo.addEventListener('canplay', () => applyBg('video', true), { once: true });
+      showToast('Background saved to the gallery 🎬');
+      await refreshGallery();
+      playSelectedBg();
     } catch (err) {
       panel.close();
       if (err.name === 'AbortError') {
@@ -474,7 +562,7 @@ function uploadBgVideo(mode = 'clip') {
         if (st) fetch('/api/media/bg/mpu/abort', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ uploadId: st.uploadId }),
+          body: JSON.stringify({ id: st.id, uploadId: st.uploadId }),
         }).catch(() => { /* best effort */ });
         save('ui.bgUpload', null);
         showToast('Upload cancelled');
@@ -502,7 +590,23 @@ function syncAction() {
   }
 }
 
+const GALLERY_CSS = `
+  #bg-gallery .bg-card { display: flex; gap: 8px; align-items: center; }
+  #bg-gallery .bg-pick { flex: 1; min-width: 0; text-align: left; padding: 8px 10px; border-radius: 9px;
+    border: 1px solid color-mix(in oklab, var(--ink-3) 32%, transparent);
+    background: color-mix(in oklab, var(--surface-2) 70%, transparent); color: var(--ink); cursor: pointer; }
+  #bg-gallery .bg-card.on .bg-pick { border-color: var(--accent); }
+  #bg-gallery .bg-name { display: block; font-size: 13px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  #bg-gallery .bg-meta { display: block; font-size: 11px; margin-top: 1px; }`;
+
 function buildCC() {
+  if (!document.getElementById('bg-gallery-css')) {
+    const style = document.createElement('style');
+    style.id = 'bg-gallery-css';
+    style.textContent = GALLERY_CSS;
+    document.head.append(style);
+  }
   const other = consoleMode === 'ps' ? 'xbox' : 'ps';
   const items = [
     { ico: 'home', label: 'Home', fn: () => { closeModule(); hideCC(); } },
@@ -512,6 +616,7 @@ function buildCC() {
     { ico: 'sparkle', label: BG_LABEL[bgMode] || 'Bg', fn: () => { cycleBg(); sfx.play('select'); buildCC(); } },
     { ico: 'controller', label: 'Bg clip 30s ⬆', fn: () => uploadBgVideo('clip') },
     { ico: 'controller', label: 'Bg full video ⬆', fn: () => uploadBgVideo('full') },
+    { ico: 'sparkle', label: `Gallery (${gallery.items.length})`, fn: () => { const h = galleryHost(); if (h) { h.hidden = !h.hidden; if (!h.hidden) h.scrollIntoView({ block: 'nearest' }); } } },
     { ico: 'home', label: sync.status(), fn: syncAction },
     { ico: 'soundOff', label: 'Lock', fn: lockApp },
     { ico: 'controller', label: 'Cloudflare', href: 'https://dash.cloudflare.com' },
@@ -539,6 +644,19 @@ function buildCC() {
     b.addEventListener('click', () => { applyTheme(name, { announce: true, fx: true }); buildCC(); });
     themeRow.append(b);
   });
+  // the saved backgrounds, folded away until asked for — the control centre is
+  // a quick strip of actions, not a file browser
+  const shelf = document.createElement('div');
+  shelf.id = 'bg-gallery';
+  shelf.hidden = true;
+  // the control centre lays its actions out in a grid, so the shelf has to be
+  // told to span it or it lands in one narrow cell
+  shelf.style.cssText = 'grid-column:1/-1;width:100%;margin-top:14px;'
+    + 'border-top:1px solid color-mix(in oklab, var(--ink-3) 25%, transparent);'
+    + 'padding-top:14px;display:grid;gap:8px;text-align:left';
+  ccActions.append(shelf);
+  buildGallery();
+
   ccActions.append(themeRow);
 }
 
@@ -667,8 +785,11 @@ boot();
 initAchievements(() => consoleMode);
 sync.init();
 applyBg(bgMode);
-// if the video file exists it becomes selectable a moment after load
+// if a background exists it becomes selectable a moment after load. The
+// element ships pointing at /media/bg.mp4 (whichever is selected), so the
+// picture is up before the gallery listing comes back.
 bgVideo.addEventListener('canplay', () => { if (load('ui.bg', 'storm') === 'video') applyBg('video', true); }, { once: true });
+refreshGallery().then(() => { if (!gallery.items.length) videoOk = false; });
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => { /* offline support is best-effort */ });
 }
