@@ -10,6 +10,7 @@ import { load, save, uid, esc, showToast } from './store.js';
 
 const SPEED_KEY = 'ptz.speed';
 const CAMS_KEY = 'ptz.cams';
+const ACCESS_KEY = 'ptz.access';
 
 const DIRS = [
   ['leftup', '↖'], ['up', '↑'], ['rightup', '↗'],
@@ -19,6 +20,17 @@ const DIRS = [
 
 const getCams = () => load(CAMS_KEY, []);
 
+// One Access service token covers the whole tunnel, so it is asked for once and
+// kept here rather than repeated on every camera. A token typed against a
+// camera before this change still works — that one wins for that camera.
+export const getAccess = () => load(ACCESS_KEY, null);
+
+function accessFor(cam) {
+  if (cam?.accessId) return { id: cam.accessId, secret: cam.accessSecret };
+  const global = getAccess();
+  return global?.id ? { id: global.id, secret: global.secret } : undefined;
+}
+
 // exported so the service planner can recall presets without duplicating this
 export async function send(cam, cmd, args = {}) {
   const res = await fetch('/api/ptz', {
@@ -27,7 +39,7 @@ export async function send(cam, cmd, args = {}) {
     body: JSON.stringify({
       base: cam.base, cmd, args,
       auth: cam.user ? { user: cam.user, pass: cam.pass } : undefined,
-      access: cam.accessId ? { id: cam.accessId, secret: cam.accessSecret } : undefined,
+      access: accessFor(cam),
     }),
   });
   const body = await res.json().catch(() => ({}));
@@ -42,6 +54,7 @@ export function mount(root, tools) {
   let saveMode = false;
 
   tools.innerHTML = `<button class="btn small" id="ptz-add">＋ Camera</button>
+    <button class="btn small" id="ptz-token">🔑 Access token</button>
     <button class="btn small" id="ptz-test">⇋ Test</button>`;
 
   root.innerHTML = `
@@ -66,6 +79,7 @@ export function mount(root, tools) {
       <div class="panel">
         <h3>Cameras</h3>
         <div id="ptz-list"></div>
+        <p class="muted" id="ptz-access-state" style="margin-top:12px;font-size:12.5px"></p>
         <p class="muted" style="margin-top:12px;font-size:12.5px">
           Cameras are only reachable from outside the building through a tunnel.
           Run <code>cloudflared</code> on a machine at the church and point the
@@ -134,6 +148,7 @@ export function mount(root, tools) {
   }
 
   function renderList() {
+    renderAccess();
     const host = root.querySelector('#ptz-list');
     if (!cams.length) {
       host.innerHTML = '<p class="muted">No cameras yet. Add one with its address.</p>';
@@ -246,20 +261,54 @@ export function mount(root, tools) {
     const user = prompt('Username (blank if none)', 'admin') || '';
     const pass = user ? (prompt('Password', '') || '') : '';
     const viewOnly = !confirm('Does this camera pan, tilt and zoom?\n\nOK = yes (PTZ)\nCancel = view only');
-    // Access protects the tunnel hostname from people; the dashboard gets past
-    // it with a service token, which is the only way through for a machine
-    const accessId = prompt('Cloudflare Access Client ID (blank if Access is not on this hostname)', '') || '';
-    const accessSecret = accessId ? (prompt('Access Client Secret', '') || '') : '';
+    // no Access prompt here: the token is set once for every camera at once
     const cam = {
       id: uid(), name: name.trim(), base: base.trim().replace(/\/+$/, ''),
       user: user.trim(), pass, viewOnly,
-      accessId: accessId.trim(), accessSecret: accessSecret.trim(),
     };
     cams.push(cam);
     current = cam;
     save(CAMS_KEY, cams);
     save('ptz.sel', cam.id);
     renderList();
+  });
+
+  // One token, all cameras. Only the id is ever shown back — a secret that
+  // prints itself into the page is a secret waiting to be read over a shoulder.
+  function renderAccess() {
+    const el = root.querySelector('#ptz-access-state');
+    const a = getAccess();
+    const perCam = cams.filter(c => c.accessId).length;
+    el.innerHTML = a?.id
+      ? `Access token set · <code style="font-size:11.5px">${esc(a.id.slice(0, 12))}…</code>`
+        + (perCam ? ` · ${perCam} camera${perCam > 1 ? 's' : ''} still using their own` : '')
+      : 'No Access token yet. If the tunnel hostname is behind Cloudflare Access, set one with 🔑 Access token.';
+  }
+
+  tools.querySelector('#ptz-token').addEventListener('click', () => {
+    const existing = getAccess();
+    const id = prompt(
+      'Cloudflare Access Client ID for the tunnel hostname.\n\nLeave blank to clear it.',
+      existing?.id || '',
+    );
+    if (id === null) return; // cancelled
+    if (!id.trim()) {
+      save(ACCESS_KEY, null);
+      renderAccess();
+      showToast('Access token cleared');
+      return;
+    }
+    const secret = prompt('Access Client Secret', '');
+    if (secret === null) return;
+    save(ACCESS_KEY, { id: id.trim(), secret: secret.trim() });
+    // a camera carrying its own copy would shadow the new one, so retire those
+    let freed = 0;
+    cams.forEach(c => {
+      if (c.accessId) { delete c.accessId; delete c.accessSecret; freed += 1; }
+    });
+    if (freed) save(CAMS_KEY, cams);
+    renderAccess();
+    showToast(freed ? `Saved for all cameras (${freed} switched over)` : 'Saved for all cameras');
   });
 
   tools.querySelector('#ptz-test').addEventListener('click', async () => {
@@ -312,7 +361,7 @@ export function mount(root, tools) {
           base: current.base,
           path: current.snapPath,
           auth: current.user ? { user: current.user, pass: current.pass } : undefined,
-          access: current.accessId ? { id: current.accessId, secret: current.accessSecret } : undefined,
+          access: accessFor(current),
         }),
       });
       if (!res.ok) {
@@ -356,6 +405,7 @@ export function mount(root, tools) {
 
   renderList();
   renderPresets();
+  renderAccess();
   if (current) showMsg('Press Live view to see the camera');
 
   return () => {
