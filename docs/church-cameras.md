@@ -36,6 +36,19 @@ and answer 404, because nothing strips the prefix. Subdomains need no rewriting.
 prefix-stripping reverse proxy at the church would also work. Subdomains are
 less to go wrong.)
 
+## The cameras
+
+Three PTZOptics cameras on static LAN IPs, and a fourth coming: a wireless
+ground camera an operator carries.
+
+That fourth one has no motor, so add it in the dashboard as **view only** —
+answer Cancel when asked whether it pans, tilts and zooms. It then shows its
+picture with no pad, no zoom and no presets, because a control that cannot move
+a camera is worse than no control at all. If it exposes a snapshot or MJPEG
+image over HTTP, give it a tunnel hostname like the others and the live view
+works the same way. If it only speaks RTSP or HDMI into the switcher, it belongs
+behind go2rtc (see below) rather than here.
+
 ## What you need on site
 
 - The static LAN IP of each camera (already set)
@@ -57,6 +70,7 @@ On the always-on machine at the church:
     # 4. point hostnames at it, one per camera
     cloudflared tunnel route dns church-cams cam1.myfaithtech.com
     cloudflared tunnel route dns church-cams cam2.myfaithtech.com
+    cloudflared tunnel route dns church-cams cam3.myfaithtech.com
 
 Then write `config.yml` next to the credentials file:
 
@@ -69,6 +83,8 @@ ingress:
     service: http://192.168.1.40      # camera 1, its static LAN IP
   - hostname: cam2.myfaithtech.com
     service: http://192.168.1.41      # camera 2
+  - hostname: cam3.myfaithtech.com
+    service: http://192.168.1.42      # camera 3
   # every ingress list must end with a catch-all
   - service: http_status:404
 ```

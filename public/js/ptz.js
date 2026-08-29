@@ -81,6 +81,7 @@ export function mount(root, tools) {
           <button class="btn small" id="ptz-live">▸ Live view</button>
           <span class="muted" id="ptz-fps"></span>
         </div>
+        <div id="ptz-controls">
         <div id="ptz-pad"></div>
         <div class="ptz-row" style="margin-top:16px">
           <button class="btn" id="ptz-zin">＋ Zoom</button>
@@ -98,6 +99,10 @@ export function mount(root, tools) {
           </div>
           <div class="ptz-row" id="ptz-presets" style="margin-top:10px"></div>
         </div>
+        </div>
+        <p class="muted" id="ptz-viewonly" hidden style="text-align:center;margin-top:14px">
+          View only — this camera has no motor. An operator points it by hand.
+        </p>
       </div>
     </div>`;
 
@@ -133,7 +138,7 @@ export function mount(root, tools) {
     host.innerHTML = cams.map(c => `
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
         <button class="btn small" data-cam="${c.id}" style="flex:1;text-align:left;${c.id === current?.id ? 'border-color:var(--accent);' : ''}">
-          ${esc(c.name)}<br><span class="muted" style="font-size:11.5px">${esc(c.base)}</span>
+          ${esc(c.name)}${c.viewOnly ? ' <span class="muted">· view only</span>' : ''}<br><span class="muted" style="font-size:11.5px">${esc(c.base)}</span>
         </button>
         <button class="btn small danger" data-del="${c.id}" title="Remove">✕</button>
       </div>`).join('');
@@ -153,6 +158,16 @@ export function mount(root, tools) {
       renderList();
     }));
     nameEl.textContent = current ? current.name : 'No camera';
+    applyCapability();
+  }
+
+  // the wireless ground camera has no motor: show its picture, not a dead pad
+  function applyCapability() {
+    const controls = root.querySelector('#ptz-controls');
+    const note = root.querySelector('#ptz-viewonly');
+    const viewOnly = !!current?.viewOnly;
+    controls.hidden = viewOnly;
+    note.hidden = !viewOnly;
   }
 
   // press and hold to move, release to stop — the camera keeps moving until
@@ -224,7 +239,11 @@ export function mount(root, tools) {
     if (!base) return;
     const user = prompt('Username (blank if none)', 'admin') || '';
     const pass = user ? (prompt('Password', '') || '') : '';
-    const cam = { id: uid(), name: name.trim(), base: base.trim().replace(/\/+$/, ''), user: user.trim(), pass };
+    const viewOnly = !confirm('Does this camera pan, tilt and zoom?\n\nOK = yes (PTZ)\nCancel = view only');
+    const cam = {
+      id: uid(), name: name.trim(), base: base.trim().replace(/\/+$/, ''),
+      user: user.trim(), pass, viewOnly,
+    };
     cams.push(cam);
     current = cam;
     save(CAMS_KEY, cams);
