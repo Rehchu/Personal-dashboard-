@@ -168,13 +168,87 @@ function videoType(request) {
   return /^video\/[a-z0-9.+-]{1,30}$/.test(ct) ? ct : 'video/mp4';
 }
 
-async function serveVideo(request, env) {
-  const head = await env.MEDIA.head('bg.mp4');
+/* ---------- the background gallery ----------
+   Uploading a background used to overwrite the one before it. Each now gets
+   its own object, listed in an index that lives in R2 rather than in any one
+   browser — so the library, and which one is showing, are the same on every
+   device signed in to this dashboard. */
+
+const BG_INDEX_KEY = 'bg/index.json';
+const BG_LEGACY_KEY = 'bg.mp4';         // the single background this replaced
+const MAX_BACKGROUNDS = 24;
+const BG_ID_RE = /^[a-z0-9]{8,32}$/;
+const EMPTY_BG_INDEX = { v: 1, selected: null, items: [] };
+
+const newBgId = () => [...crypto.getRandomValues(new Uint8Array(8))]
+  .map(b => b.toString(16).padStart(2, '0')).join('');
+
+const bgKey = id => `bg/${id}.bin`;
+
+function cleanBgName(name, fallback = 'Background') {
+  const s = typeof name === 'string' ? name.replace(/[\x00-\x1f]/g, '').trim() : '';
+  return (s || fallback).slice(0, 80);
+}
+
+async function readBgIndex(env) {
+  const obj = await env.MEDIA.get(BG_INDEX_KEY);
+  if (!obj) {
+    // first run after the single-background days: adopt what is already there
+    // rather than dropping a background the owner uploaded and still wants
+    const legacy = await env.MEDIA.head(BG_LEGACY_KEY);
+    if (!legacy) return { index: { ...EMPTY_BG_INDEX, items: [] }, etag: null };
+    const item = {
+      id: 'legacy00', key: BG_LEGACY_KEY, name: 'Background',
+      type: legacy.httpMetadata?.contentType || 'video/mp4',
+      bytes: legacy.size, added: legacy.uploaded?.getTime?.() || 0,
+    };
+    return { index: { v: 1, selected: item.id, items: [item] }, etag: null };
+  }
+  // read outside the guard: an IO failure is not an empty gallery
+  const text = await obj.text();
+  let stored;
+  try {
+    stored = JSON.parse(text);
+  } catch {
+    throw new Error('stored background index is unreadable');
+  }
+  const items = Array.isArray(stored?.items) ? stored.items.filter(it => BG_ID_RE.test(it?.id) || it?.id === 'legacy00') : [];
+  const selected = items.some(it => it.id === stored?.selected) ? stored.selected : (items[0]?.id ?? null);
+  return { index: { v: 1, selected, items }, etag: obj.etag };
+}
+
+// Compare-and-set, so two devices uploading at once cannot lose each other's
+// background: the loser re-reads and retries rather than overwriting.
+async function writeBgIndex(env, mutate) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const { index, etag } = await readBgIndex(env);
+    const next = mutate(structuredClone(index));
+    if (!next) return index; // nothing to change
+    const written = await env.MEDIA.put(BG_INDEX_KEY, JSON.stringify(next), {
+      httpMetadata: { contentType: 'application/json' },
+      onlyIf: etag ? { etagMatches: etag } : { etagDoesNotMatch: '*' },
+    });
+    if (written) return next;
+  }
+  throw new Error('background index is busy — try again');
+}
+
+async function serveVideo(request, env, id) {
+  let key = BG_LEGACY_KEY;
+  if (id) {
+    if (!BG_ID_RE.test(id) && id !== 'legacy00') return json({ error: 'no video' }, 404);
+    key = id === 'legacy00' ? BG_LEGACY_KEY : bgKey(id);
+  } else {
+    const { index } = await readBgIndex(env);
+    if (!index.selected) return json({ error: 'no video' }, 404);
+    key = index.selected === 'legacy00' ? BG_LEGACY_KEY : bgKey(index.selected);
+  }
+  const head = await env.MEDIA.head(key);
   // no asset fallback: SPA not_found_handling would answer a video request with index.html at 200
   if (!head) return json({ error: 'no video' }, 404);
   const size = head.size;
   const range = parseRange(request, size);
-  const obj = await env.MEDIA.get('bg.mp4', range ? { range: { offset: range.offset, length: range.length } } : undefined);
+  const obj = await env.MEDIA.get(key, range ? { range: { offset: range.offset, length: range.length } } : undefined);
   if (!obj) return new Response('gone', { status: 404 });
   const headers = {
     'content-type': head.httpMetadata?.contentType || 'video/mp4',
@@ -189,6 +263,172 @@ async function serveVideo(request, env) {
   }
   headers['content-length'] = String(size);
   return new Response(obj.body, { status: 200, headers });
+}
+
+// The id names which object a part or a completion belongs to, so two devices
+// uploading at once cannot write into each other's upload.
+const bgTarget = id => (BG_ID_RE.test(id) ? bgKey(id) : null);
+
+async function handleBgMedia(request, env, url, path) {
+  const method = request.method;
+
+  // the gallery itself, and which background is showing on every device
+  if (path === '/api/media/bg' && method === 'GET') {
+    return json((await readBgIndex(env)).index);
+  }
+
+  if (path === '/api/media/bg/select' && method === 'POST') {
+    const body = await request.json().catch(() => null);
+    const id = body?.id;
+    if (id !== null && !BG_ID_RE.test(id) && id !== 'legacy00') {
+      return json({ error: 'bad background id' }, 400);
+    }
+    let missing = false;
+    const next = await writeBgIndex(env, index => {
+      if (id !== null && !index.items.some(it => it.id === id)) { missing = true; return null; }
+      index.selected = id;
+      return index;
+    });
+    if (missing) return json({ error: 'no such background' }, 404);
+    return json(next);
+  }
+
+  // one shot, for anything under the edge's request-body limit
+  if (path === '/api/media/bg' && method === 'PUT') {
+    const len = Number(request.headers.get('content-length') || 0);
+    if (!len) return json({ error: 'missing content-length' }, 411);
+    if (len > MAX_VIDEO) return json({ error: 'video larger than 600 MB' }, 413);
+    const { index } = await readBgIndex(env);
+    if (index.items.length >= MAX_BACKGROUNDS) {
+      return json({ error: `the gallery holds ${MAX_BACKGROUNDS} backgrounds — delete one first` }, 409);
+    }
+    const id = newBgId();
+    const type = videoType(request);
+    await env.MEDIA.put(bgKey(id), request.body, { httpMetadata: { contentType: type } });
+    const name = cleanBgName(url.searchParams.get('name'));
+    const next = await writeBgIndex(env, i => {
+      i.items.unshift({ id, key: bgKey(id), name, type, bytes: len, added: Date.now() });
+      i.selected = id; // a background you just uploaded is the one you want to see
+      return i;
+    });
+    return json({ ok: true, id, bytes: len, index: next });
+  }
+
+  // DELETE /api/media/bg/<id> — the object AND its place in the gallery
+  const del = path.match(/^\/api\/media\/bg\/([a-z0-9]{8,32})$/);
+  if (del && method === 'DELETE') {
+    const id = del[1];
+    let found = null;
+    const next = await writeBgIndex(env, index => {
+      found = index.items.find(it => it.id === id) || null;
+      if (!found) return null;
+      index.items = index.items.filter(it => it.id !== id);
+      if (index.selected === id) index.selected = index.items[0]?.id ?? null;
+      return index;
+    });
+    if (!found) return json({ error: 'no such background' }, 404);
+    // the index is the record; a stray object is waste, a stray entry is a break,
+    // so the object goes only after the entry is gone
+    await env.MEDIA.delete(found.key || bgKey(id));
+    return json({ ok: true, index: next });
+  }
+
+  // multipart upload: the only way past the 100 MB edge limit on a request body
+  if (path === '/api/media/bg/mpu/start' && method === 'POST') {
+    const { index } = await readBgIndex(env);
+    if (index.items.length >= MAX_BACKGROUNDS) {
+      return json({ error: `the gallery holds ${MAX_BACKGROUNDS} backgrounds — delete one first` }, 409);
+    }
+    // contentType can only be set when the upload is created, not at complete(),
+    // so a browser-trimmed webm has to declare its container up front
+    const started = await request.json().catch(() => null);
+    const declared = (started?.type || '').split(';')[0].trim().toLowerCase();
+    const contentType = /^video\/[a-z0-9.+-]{1,30}$/.test(declared) ? declared : 'video/mp4';
+    const id = newBgId();
+    try {
+      const mpu = await env.MEDIA.createMultipartUpload(bgKey(id), { httpMetadata: { contentType } });
+      return json({ uploadId: mpu.uploadId, id });
+    } catch {
+      return json({ error: 'could not start upload' }, 500);
+    }
+  }
+
+  if (path === '/api/media/bg/mpu/part' && method === 'PUT') {
+    const uploadId = url.searchParams.get('uploadId');
+    if (!validUploadId(uploadId)) return json({ error: 'bad uploadId' }, 400);
+    const key = bgTarget(url.searchParams.get('id'));
+    if (!key) return json({ error: 'bad background id' }, 400);
+    const raw = url.searchParams.get('part');
+    const partNumber = Number(raw);
+    if (!raw || !Number.isInteger(partNumber) || partNumber < 1 || partNumber > MAX_PARTS) {
+      return json({ error: 'bad part number' }, 400);
+    }
+    const len = Number(request.headers.get('content-length') || 0);
+    if (len > MAX_PART) return json({ error: 'part larger than 40 MB' }, 413);
+    if (!request.body) return json({ error: 'missing part body' }, 400);
+    try {
+      const mpu = env.MEDIA.resumeMultipartUpload(key, uploadId);
+      const part = await mpu.uploadPart(partNumber, request.body);
+      return json({ partNumber: part.partNumber, etag: part.etag });
+    } catch {
+      return json({ error: 'part upload failed' }, 400);
+    }
+  }
+
+  if (path === '/api/media/bg/mpu/complete' && method === 'POST') {
+    const body = await request.json().catch(() => null);
+    if (!validUploadId(body?.uploadId)) return json({ error: 'bad uploadId' }, 400);
+    const id = body?.id;
+    const key = bgTarget(id);
+    if (!key) return json({ error: 'bad background id' }, 400);
+    if (!Array.isArray(body.parts) || !body.parts.length) {
+      return json({ error: 'expected {id, uploadId, parts}' }, 400);
+    }
+    const parts = [];
+    for (const p of body.parts) {
+      const n = p?.partNumber;
+      const etag = p?.etag;
+      if (!Number.isInteger(n) || n < 1 || n > MAX_PARTS || typeof etag !== 'string' || !etag) {
+        return json({ error: 'bad part list' }, 400);
+      }
+      parts.push({ partNumber: n, etag });
+    }
+    parts.sort((a, b) => a.partNumber - b.partNumber);
+    let obj;
+    try {
+      obj = await env.MEDIA.resumeMultipartUpload(key, body.uploadId).complete(parts);
+    } catch {
+      return json({ error: 'could not complete upload' }, 400);
+    }
+    // the cap can only be checked once the parts are assembled
+    if (obj?.size > MAX_VIDEO) {
+      await env.MEDIA.delete(key);
+      return json({ error: 'video larger than 600 MB' }, 413);
+    }
+    const type = obj?.httpMetadata?.contentType || 'video/mp4';
+    const next = await writeBgIndex(env, i => {
+      if (i.items.some(it => it.id === id)) return null; // a retried complete is not a second entry
+      i.items.unshift({ id, key, name: cleanBgName(body.name), type, bytes: obj?.size ?? 0, added: Date.now() });
+      i.selected = id;
+      return i;
+    });
+    return json({ ok: true, id, bytes: obj?.size ?? 0, index: next });
+  }
+
+  if (path === '/api/media/bg/mpu/abort' && method === 'POST') {
+    const body = await request.json().catch(() => null);
+    if (!validUploadId(body?.uploadId)) return json({ error: 'bad uploadId' }, 400);
+    const key = bgTarget(body?.id);
+    if (!key) return json({ error: 'bad background id' }, 400);
+    try {
+      await env.MEDIA.resumeMultipartUpload(key, body.uploadId).abort();
+    } catch {
+      // an unknown or already-aborted upload leaves nothing to clean up
+    }
+    return json({ ok: true });
+  }
+
+  return json({ error: 'not found' }, 404);
 }
 
 /* ---------- service marks for the app tiles ---------- */
@@ -725,99 +965,11 @@ export default {
 
     if (path.startsWith('/api/media/')) {
       if (!authed) return json({ error: 'sign in first' }, 401);
-      if (path === '/api/media/bg' && request.method === 'PUT') {
-        const len = Number(request.headers.get('content-length') || 0);
-        if (!len) return json({ error: 'missing content-length' }, 411);
-        if (len > MAX_VIDEO) return json({ error: 'video larger than 600 MB' }, 413);
-        await env.MEDIA.put('bg.mp4', request.body, {
-          httpMetadata: { contentType: videoType(request) },
-        });
-        return json({ ok: true, bytes: len });
+      try {
+        return await handleBgMedia(request, env, url, path);
+      } catch (err) {
+        return json({ error: err?.message || 'background storage unavailable' }, 500);
       }
-      if (path === '/api/media/bg' && request.method === 'DELETE') {
-        await env.MEDIA.delete('bg.mp4');
-        return json({ ok: true });
-      }
-
-      // multipart upload: the only way past the 100 MB edge limit on a request body
-      if (path === '/api/media/bg/mpu/start' && request.method === 'POST') {
-        // contentType can only be set when the upload is created, not at complete(),
-        // so a browser-trimmed webm has to declare its container up front
-        const started = await request.json().catch(() => null);
-        const declared = (started?.type || '').split(';')[0].trim().toLowerCase();
-        const contentType = /^video\/[a-z0-9.+-]{1,30}$/.test(declared) ? declared : 'video/mp4';
-        try {
-          const mpu = await env.MEDIA.createMultipartUpload('bg.mp4', {
-            httpMetadata: { contentType },
-          });
-          return json({ uploadId: mpu.uploadId });
-        } catch {
-          return json({ error: 'could not start upload' }, 500);
-        }
-      }
-
-      if (path === '/api/media/bg/mpu/part' && request.method === 'PUT') {
-        const uploadId = url.searchParams.get('uploadId');
-        if (!validUploadId(uploadId)) return json({ error: 'bad uploadId' }, 400);
-        const raw = url.searchParams.get('part');
-        const partNumber = Number(raw);
-        if (!raw || !Number.isInteger(partNumber) || partNumber < 1 || partNumber > MAX_PARTS) {
-          return json({ error: 'bad part number' }, 400);
-        }
-        const len = Number(request.headers.get('content-length') || 0);
-        if (len > MAX_PART) return json({ error: 'part larger than 40 MB' }, 413);
-        if (!request.body) return json({ error: 'missing part body' }, 400);
-        try {
-          const mpu = env.MEDIA.resumeMultipartUpload('bg.mp4', uploadId);
-          const part = await mpu.uploadPart(partNumber, request.body);
-          return json({ partNumber: part.partNumber, etag: part.etag });
-        } catch {
-          return json({ error: 'part upload failed' }, 400);
-        }
-      }
-
-      if (path === '/api/media/bg/mpu/complete' && request.method === 'POST') {
-        const body = await request.json().catch(() => null);
-        if (!validUploadId(body?.uploadId)) return json({ error: 'bad uploadId' }, 400);
-        if (!Array.isArray(body.parts) || !body.parts.length) {
-          return json({ error: 'expected {uploadId, parts}' }, 400);
-        }
-        const parts = [];
-        for (const p of body.parts) {
-          const n = p?.partNumber;
-          const etag = p?.etag;
-          if (!Number.isInteger(n) || n < 1 || n > MAX_PARTS || typeof etag !== 'string' || !etag) {
-            return json({ error: 'bad part list' }, 400);
-          }
-          parts.push({ partNumber: n, etag });
-        }
-        parts.sort((a, b) => a.partNumber - b.partNumber);
-        try {
-          const mpu = env.MEDIA.resumeMultipartUpload('bg.mp4', body.uploadId);
-          const obj = await mpu.complete(parts);
-          // the cap can only be checked once the parts are assembled
-          if (obj?.size > MAX_VIDEO) {
-            await env.MEDIA.delete('bg.mp4');
-            return json({ error: 'video larger than 600 MB' }, 413);
-          }
-          return json({ ok: true, bytes: obj?.size ?? 0 });
-        } catch {
-          return json({ error: 'could not complete upload' }, 400);
-        }
-      }
-
-      if (path === '/api/media/bg/mpu/abort' && request.method === 'POST') {
-        const body = await request.json().catch(() => null);
-        if (!validUploadId(body?.uploadId)) return json({ error: 'bad uploadId' }, 400);
-        try {
-          await env.MEDIA.resumeMultipartUpload('bg.mp4', body.uploadId).abort();
-        } catch {
-          // an unknown or already-aborted upload leaves nothing to clean up
-        }
-        return json({ ok: true });
-      }
-
-      return json({ error: 'not found' }, 404);
     }
 
     if (path === '/api/archive' || path.startsWith('/api/archive/')) {
@@ -843,7 +995,11 @@ export default {
       return wantsHTML ? loginPage() : new Response('sign in first', { status: 401, headers: { 'cache-control': 'no-store' } });
     }
 
+    // /media/bg.mp4 is whichever background is selected; /media/bg/<id> is a
+    // named one, so the gallery can preview a background without selecting it
     if (path === '/media/bg.mp4') return serveVideo(request, env);
+    const oneBg = path.match(/^\/media\/bg\/([a-z0-9]{8,32})$/);
+    if (oneBg) return serveVideo(request, env, oneBg[1]);
 
     // authed static assets, tagged so the service worker knows they're cacheable
     const res = await env.ASSETS.fetch(request);
