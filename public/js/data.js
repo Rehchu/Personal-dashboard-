@@ -119,6 +119,16 @@ export const TILES = [
     actions: [{ label: 'Open', action: 'open' }],
   },
   {
+    id: 'service',
+    title: 'Service Planner',
+    glyph: '⛪',
+    accent: '#2f5d8c',
+    kind: 'module',
+    badge: 'SUN',
+    desc: 'Run of show for Sunday with a camera preset per segment, the set list from the song bank, and a CCLI usage report.',
+    actions: [{ label: 'Open', action: 'open' }],
+  },
+  {
     id: 'cloudflare',
     title: 'Cloudflare Fleet',
     glyph: '⚡',
