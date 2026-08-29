@@ -6,7 +6,7 @@
 import { load, save, esc, showToast } from './store.js';
 import { isGrokExport, isGrokAccountFile, grokRecords } from './grok.js';
 import { isChatGptExport, isOpenAiAccountFile, chatgptRecords } from './openai.js';
-import { isTakeoutActivity, takeoutRecords } from './google.js';
+import { isTakeoutActivity, takeoutRecords, isTakeoutHtml, takeoutHtmlRecords } from './google.js';
 
 const DB_NAME = 'pd-archive';
 
@@ -94,7 +94,7 @@ async function listImportEntries(file) {
   const JSZip = await loadJSZip();
   const zip = await JSZip.loadAsync(file);
   return Object.keys(zip.files)
-    .filter(n => !zip.files[n].dir && !/^__MACOSX\//.test(n) && /\.(jsonl?|md|txt)$/i.test(n))
+    .filter(n => !zip.files[n].dir && !/^__MACOSX\//.test(n) && /\.(jsonl?|md|txt|html?)$/i.test(n))
     .map(n => ({ name: n, read: () => zip.files[n].async('string') }));
 }
 
@@ -241,6 +241,14 @@ function codeRecord(name, text) {
 function ingestEntry(name, text) {
   if (!text || !text.trim()) return { kind: 'skip', note: `${name} is empty` };
   if (/\.(md|txt)$/i.test(name)) return { kind: 'memories', memory: text.trim() };
+  // Content wins over extension: Takeout ships activity as .html, and
+  // CODE_FILE_RE matches html, so testing the name first would file a whole
+  // Gemini or Search history as one source-code record.
+  if (isTakeoutHtml(text)) {
+    const convos = takeoutHtmlRecords(text);
+    if (convos.length) return { kind: 'convos', convos };
+    return { kind: 'skip', note: `${name}: no Gemini prompts or searches in it` };
+  }
   if (CODE_FILE_RE.test(name)) return { kind: 'files', convos: [codeRecord(name, text)] };
   let data;
   try {
