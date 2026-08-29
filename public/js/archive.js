@@ -5,6 +5,8 @@
 
 import { load, save, esc, showToast } from './store.js';
 import { isGrokExport, isGrokAccountFile, grokRecords } from './grok.js';
+import { isChatGptExport, isOpenAiAccountFile, chatgptRecords } from './openai.js';
+import { isTakeoutActivity, takeoutRecords } from './google.js';
 
 const DB_NAME = 'pd-archive';
 
@@ -255,6 +257,19 @@ function ingestEntry(name, text) {
     const convos = grokRecords(data);
     if (convos.length) return { kind: 'convos', convos };
     return { kind: 'none', note: `${name}: a Grok export with nothing in it` };
+  }
+  if (isOpenAiAccountFile(data)) {
+    return { kind: 'skip', note: `${name} holds account details — not imported` };
+  }
+  if (isChatGptExport(data)) {
+    const convos = chatgptRecords(data);
+    if (convos.length) return { kind: 'convos', convos };
+    return { kind: 'none', note: `${name}: a ChatGPT export with no readable messages` };
+  }
+  if (isTakeoutActivity(data)) {
+    const convos = takeoutRecords(data);
+    if (convos.length) return { kind: 'convos', convos };
+    return { kind: 'none', note: `${name}: Takeout activity with no Gemini prompts or searches` };
   }
   const list = recordList(data);
   const kind = list ? classifyRecords(list) : null;
