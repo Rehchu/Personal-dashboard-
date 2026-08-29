@@ -19,7 +19,8 @@ const DIRS = [
 
 const getCams = () => load(CAMS_KEY, []);
 
-async function send(cam, cmd, args = {}) {
+// exported so the service planner can recall presets without duplicating this
+export async function send(cam, cmd, args = {}) {
   const res = await fetch('/api/ptz', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

@@ -24,6 +24,7 @@ import * as dragons from './dragons.js';
 import * as archive from './archive.js';
 import * as ptz from './ptz.js';
 import * as csvedit from './csvedit.js';
+import * as service from './service.js';
 
 const MODULES = {
   today: { title: 'Today', mount: today.mount },
@@ -38,6 +39,7 @@ const MODULES = {
   cloudflare: { title: 'Cloudflare Fleet', mount: cloudflare.mount },
   ptz: { title: 'Church Cameras', mount: ptz.mount },
   csv: { title: 'Song Bank', mount: csvedit.mount },
+  service: { title: 'Service Planner', mount: service.mount },
 };
 
 const $ = sel => document.querySelector(sel);
