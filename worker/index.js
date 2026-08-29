@@ -342,6 +342,74 @@ function ptzQuery(cmd, args = {}) {
   return null;
 }
 
+// A camera address may carry a path prefix, because one tunnel hostname can
+// front several cameras (https://dyerhq.example.com/cam1). Anything the caller
+// puts there is kept as a prefix only — the endpoint itself is always ours.
+function parseCameraBase(base) {
+  let target;
+  try {
+    target = new URL(base);
+  } catch {
+    return null;
+  }
+  if (target.protocol !== 'http:' && target.protocol !== 'https:') return null;
+  const prefix = target.pathname.replace(/\/+$/, '');
+  if (prefix && !/^(\/[A-Za-z0-9._-]{1,40}){1,4}$/.test(prefix)) return null;
+  return { target, prefix };
+}
+
+// Where PTZOptics models keep their still image; they disagree, so try each in
+// turn and tell the client which one answered so it can skip the search later.
+const SNAPSHOT_PATHS = ['/snapshot.jpg', '/cgi-bin/snapshot.cgi', '/tmpfs/auto.jpg', '/tmpfs/snap.jpg'];
+const MAX_SNAPSHOT = 8 * 1024 * 1024;
+
+async function handlePtzSnapshot(request) {
+  const body = await request.json().catch(() => null);
+  const parsed = parseCameraBase(body?.base);
+  if (!parsed) return json({ error: 'camera address must be an http or https URL' }, 400);
+  const { target, prefix } = parsed;
+
+  // a remembered path is still only ever a path, never a host or a scheme
+  const asked = body?.path;
+  if (asked !== undefined && (typeof asked !== 'string' || !/^\/[A-Za-z0-9._\-/]{0,64}$/.test(asked))) {
+    return json({ error: 'bad snapshot path' }, 400);
+  }
+  const candidates = asked ? [asked, ...SNAPSHOT_PATHS.filter(p => p !== asked)] : SNAPSHOT_PATHS;
+
+  const headers = {};
+  const user = body?.auth?.user;
+  if (typeof user === 'string' && user) {
+    const pass = typeof body.auth.pass === 'string' ? body.auth.pass : '';
+    headers.authorization = `Basic ${btoa(`${user}:${pass}`)}`;
+  }
+
+  let lastStatus = 0;
+  for (const candidate of candidates) {
+    target.pathname = `${prefix}${candidate}`;
+    target.search = '';
+    let res;
+    try {
+      res = await fetch(target.toString(), { headers, signal: AbortSignal.timeout(6000), redirect: 'manual' });
+    } catch (err) {
+      const timedOut = err?.name === 'TimeoutError' || err?.name === 'AbortError';
+      return json({ error: timedOut ? 'camera did not answer (is the tunnel up?)' : 'could not reach the camera' }, 504);
+    }
+    lastStatus = res.status;
+    const type = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    if (!res.ok || !type.startsWith('image/')) continue;
+    const size = Number(res.headers.get('content-length') || 0);
+    if (size > MAX_SNAPSHOT) return json({ error: 'snapshot too large' }, 413);
+    return new Response(res.body, {
+      headers: {
+        'content-type': type,
+        'cache-control': 'no-store',
+        'x-snapshot-path': candidate, // so the client stops hunting next time
+      },
+    });
+  }
+  return json({ error: `no snapshot image on this camera (last status ${lastStatus})` }, 502);
+}
+
 async function handlePtz(request) {
   const body = await request.json().catch(() => null);
   const cmd = body?.cmd;
@@ -350,17 +418,12 @@ async function handlePtz(request) {
   const query = ptzQuery(cmd, body?.args);
   if (!query) return json({ error: `unsupported command: ${cmd.slice(0, 24)}` }, 400);
 
-  let target;
-  try {
-    target = new URL(body.base);
-  } catch {
-    return json({ error: 'camera address is not a URL' }, 400);
-  }
-  if (target.protocol !== 'http:' && target.protocol !== 'https:') {
-    return json({ error: 'camera address must be http or https' }, 400);
-  }
-  // the path is ours, never the caller's
-  target.pathname = '/cgi-bin/ptzctrl.cgi';
+  const parsed = parseCameraBase(body.base);
+  if (!parsed) return json({ error: 'camera address must be an http or https URL' }, 400);
+  const { target, prefix } = parsed;
+  // the endpoint is ours; only the configured prefix survives, so one tunnel
+  // hostname can route several cameras by path (…/cam1, …/cam2)
+  target.pathname = `${prefix}/cgi-bin/ptzctrl.cgi`;
   target.search = query;
 
   const headers = {};
@@ -686,10 +749,10 @@ export default {
       }
     }
 
-    if (path === '/api/ptz') {
+    if (path === '/api/ptz' || path === '/api/ptz/snapshot') {
       if (!authed) return json({ error: 'sign in first' }, 401);
       if (request.method !== 'POST') return json({ error: 'method not allowed' }, 405);
-      return handlePtz(request);
+      return path === '/api/ptz' ? handlePtz(request) : handlePtzSnapshot(request);
     }
 
     if (path.startsWith('/api/')) return json({ error: 'not found' }, 404);
