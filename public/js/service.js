@@ -189,7 +189,7 @@ export function mount(root, tools) {
       <div class="sv-seg">
         <input class="sv-name" value="${esc(seg.name)}" data-segname="${seg.id}" style="background:none;border:none;color:inherit">
         <select data-segcam="${seg.id}" style="padding:4px 6px">${camOptions(seg.camId)}</select>
-        <input data-segpre="${seg.id}" type="number" min="1" max="9" placeholder="preset"
+        <input data-segpre="${seg.id}" type="number" min="0" max="254" placeholder="preset"
                value="${esc(seg.preset)}" style="width:74px;padding:4px 6px">
         <button class="btn small danger" data-segdel="${seg.id}">✕</button>
       </div>`).join('') || '<p class="muted">No segments.</p>';

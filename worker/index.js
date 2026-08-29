@@ -363,6 +363,26 @@ function parseCameraBase(base) {
 const SNAPSHOT_PATHS = ['/snapshot.jpg', '/cgi-bin/snapshot.cgi', '/tmpfs/auto.jpg', '/tmpfs/snap.jpg'];
 const MAX_SNAPSHOT = 8 * 1024 * 1024;
 
+// Credentials for one camera request: the camera's own Basic auth, plus an
+// Access service token when Cloudflare Access guards the tunnel hostname.
+// Without the token the Worker would receive the Access login page, not a
+// camera — a machine cannot satisfy an interactive login.
+function ptzHeaders(body) {
+  const headers = {};
+  const user = body?.auth?.user;
+  if (typeof user === 'string' && user) {
+    const pass = typeof body.auth.pass === 'string' ? body.auth.pass : '';
+    headers.authorization = `Basic ${btoa(`${user}:${pass}`)}`;
+  }
+  const id = body?.access?.id;
+  const secret = body?.access?.secret;
+  if (typeof id === 'string' && id && typeof secret === 'string' && secret) {
+    headers['CF-Access-Client-Id'] = id;
+    headers['CF-Access-Client-Secret'] = secret;
+  }
+  return headers;
+}
+
 async function handlePtzSnapshot(request) {
   const body = await request.json().catch(() => null);
   const parsed = parseCameraBase(body?.base);
@@ -376,12 +396,7 @@ async function handlePtzSnapshot(request) {
   }
   const candidates = asked ? [asked, ...SNAPSHOT_PATHS.filter(p => p !== asked)] : SNAPSHOT_PATHS;
 
-  const headers = {};
-  const user = body?.auth?.user;
-  if (typeof user === 'string' && user) {
-    const pass = typeof body.auth.pass === 'string' ? body.auth.pass : '';
-    headers.authorization = `Basic ${btoa(`${user}:${pass}`)}`;
-  }
+  const headers = ptzHeaders(body);
 
   let lastStatus = 0;
   for (const candidate of candidates) {
@@ -426,12 +441,7 @@ async function handlePtz(request) {
   target.pathname = `${prefix}/cgi-bin/ptzctrl.cgi`;
   target.search = query;
 
-  const headers = {};
-  const user = body?.auth?.user;
-  if (typeof user === 'string' && user) {
-    const pass = typeof body.auth.pass === 'string' ? body.auth.pass : '';
-    headers.authorization = `Basic ${btoa(`${user}:${pass}`)}`;
-  }
+  const headers = ptzHeaders(body);
 
   try {
     const res = await fetch(target.toString(), {
