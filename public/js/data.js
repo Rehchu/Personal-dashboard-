@@ -99,6 +99,16 @@ export const TILES = [
     actions: [{ label: 'Open', action: 'open' }],
   },
   {
+    id: 'ptz',
+    title: 'Church Cameras',
+    glyph: '🎥',
+    accent: '#2b6f8c',
+    kind: 'module',
+    badge: 'PTZ',
+    desc: 'Pan, tilt, zoom and presets for the PTZOptics cameras — through a tunnel, so no camera is ever exposed to the internet.',
+    actions: [{ label: 'Open', action: 'open' }],
+  },
+  {
     id: 'cloudflare',
     title: 'Cloudflare Fleet',
     glyph: '⚡',

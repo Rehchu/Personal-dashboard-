@@ -22,6 +22,7 @@ import * as today from './today.js';
 import * as habits from './habits.js';
 import * as dragons from './dragons.js';
 import * as archive from './archive.js';
+import * as ptz from './ptz.js';
 
 const MODULES = {
   today: { title: 'Today', mount: today.mount },
@@ -34,6 +35,7 @@ const MODULES = {
   archive: { title: 'Chat Archive', mount: archive.mount },
   expenses: { title: 'Expenses', mount: expenses.mount },
   cloudflare: { title: 'Cloudflare Fleet', mount: cloudflare.mount },
+  ptz: { title: 'Church Cameras', mount: ptz.mount },
 };
 
 const $ = sel => document.querySelector(sel);

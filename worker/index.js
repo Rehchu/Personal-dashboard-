@@ -306,6 +306,84 @@ function chunkType(request) {
   return ct === 'application/gzip' || ct === 'application/json' ? ct : 'application/octet-stream';
 }
 
+/* ---------- PTZ camera control (PTZOptics HTTP-CGI) ----------
+   A general URL forwarder inside a signed-in Worker is a liability: anything
+   that reached this endpoint could probe hosts the Worker can see. So the
+   client never supplies a path or query. It names a command, and the query
+   string is assembled here from a fixed table with numeric arguments clamped
+   to the ranges the cameras document. */
+
+const PAN_MAX = 24;
+const TILT_MAX = 20;
+const ZOOM_MAX = 7;
+const PRESET_MAX = 254;
+
+// command -> how its query string is built
+const PTZ_MOVES = new Set([
+  'up', 'down', 'left', 'right',
+  'leftup', 'rightup', 'leftdown', 'rightdown',
+]);
+const PTZ_BARE = new Set(['ptzstop', 'home', 'zoomstop', 'focusstop']);
+const PTZ_ZOOM = new Set(['zoomin', 'zoomout', 'focusin', 'focusout']);
+const PTZ_PRESET = new Set(['poscall', 'posset']);
+
+const clamp = (n, lo, hi, fallback) => {
+  const v = Number(n);
+  return Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : fallback;
+};
+
+function ptzQuery(cmd, args = {}) {
+  if (PTZ_BARE.has(cmd)) return `ptzcmd&${cmd}`;
+  if (PTZ_MOVES.has(cmd)) {
+    return `ptzcmd&${cmd}&${clamp(args.pan, 1, PAN_MAX, 12)}&${clamp(args.tilt, 1, TILT_MAX, 12)}`;
+  }
+  if (PTZ_ZOOM.has(cmd)) return `ptzcmd&${cmd}&${clamp(args.zoom, 0, ZOOM_MAX, 3)}`;
+  if (PTZ_PRESET.has(cmd)) return `ptzcmd&${cmd}&${clamp(args.preset, 0, PRESET_MAX, 1)}`;
+  return null;
+}
+
+async function handlePtz(request) {
+  const body = await request.json().catch(() => null);
+  const cmd = body?.cmd;
+  if (typeof cmd !== 'string') return json({ error: 'missing command' }, 400);
+
+  const query = ptzQuery(cmd, body?.args);
+  if (!query) return json({ error: `unsupported command: ${cmd.slice(0, 24)}` }, 400);
+
+  let target;
+  try {
+    target = new URL(body.base);
+  } catch {
+    return json({ error: 'camera address is not a URL' }, 400);
+  }
+  if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+    return json({ error: 'camera address must be http or https' }, 400);
+  }
+  // the path is ours, never the caller's
+  target.pathname = '/cgi-bin/ptzctrl.cgi';
+  target.search = query;
+
+  const headers = {};
+  const user = body?.auth?.user;
+  if (typeof user === 'string' && user) {
+    const pass = typeof body.auth.pass === 'string' ? body.auth.pass : '';
+    headers.authorization = `Basic ${btoa(`${user}:${pass}`)}`;
+  }
+
+  try {
+    const res = await fetch(target.toString(), {
+      headers,
+      signal: AbortSignal.timeout(6000),
+      redirect: 'manual', // a redirect would take us off the vetted path
+    });
+    if (!res.ok) return json({ error: `camera returned ${res.status}` }, 502);
+    return json({ ok: true, cmd });
+  } catch (err) {
+    const timedOut = err?.name === 'TimeoutError' || err?.name === 'AbortError';
+    return json({ error: timedOut ? 'camera did not answer (is the tunnel up?)' : 'could not reach the camera' }, 504);
+  }
+}
+
 async function handleArchive(request, env, path) {
   if (path === '/api/archive') {
     if (request.method !== 'DELETE') return json({ error: 'method not allowed' }, 405);
@@ -606,6 +684,12 @@ export default {
       } catch {
         return json({ error: 'archive storage unavailable' }, 500);
       }
+    }
+
+    if (path === '/api/ptz') {
+      if (!authed) return json({ error: 'sign in first' }, 401);
+      if (request.method !== 'POST') return json({ error: 'method not allowed' }, 405);
+      return handlePtz(request);
     }
 
     if (path.startsWith('/api/')) return json({ error: 'not found' }, 404);
