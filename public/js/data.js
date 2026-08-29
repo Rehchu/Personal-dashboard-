@@ -109,6 +109,16 @@ export const TILES = [
     actions: [{ label: 'Open', action: 'open' }],
   },
   {
+    id: 'csv',
+    title: 'Song Bank',
+    glyph: '🎵',
+    accent: '#a8203a',
+    kind: 'module',
+    badge: 'CSV',
+    desc: 'The worship song bank — view, edit and add rows, then export it back in exactly the format it came in.',
+    actions: [{ label: 'Open', action: 'open' }],
+  },
+  {
     id: 'cloudflare',
     title: 'Cloudflare Fleet',
     glyph: '⚡',
