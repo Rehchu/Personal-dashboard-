@@ -14,8 +14,8 @@ const CORE = [
   // church + workshop modules and their helpers
   '/js/ptz.js', '/js/csvedit.js', '/js/service.js', '/js/expenses.js',
   '/js/videoclip.js', '/js/grok.js', '/js/openai.js', '/js/google.js',
-  // Mission Control + Gaming
-  '/js/biz.js', '/js/gaming.js',
+  // Mission Control + Gaming + Dyer Town
+  '/js/biz.js', '/js/gaming.js', '/js/town.js',
   '/css/game/assassins.css', '/css/game/cyberpunk.css', '/css/game/gtav.css',
   '/css/game/minecraft.css', '/css/game/xboxhome.css', '/css/game/ps5home.css', '/css/mobile.css', '/js/storm.js',
 ];

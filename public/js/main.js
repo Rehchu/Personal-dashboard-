@@ -27,6 +27,7 @@ import * as csvedit from './csvedit.js';
 import * as service from './service.js';
 import * as biz from './biz.js';
 import * as gaming from './gaming.js';
+import * as town from './town.js';
 
 const MODULES = {
   today: { title: 'Today', mount: today.mount },
@@ -44,6 +45,7 @@ const MODULES = {
   csv: { title: 'Song Bank', mount: csvedit.mount },
   service: { title: 'Service Planner', mount: service.mount },
   gaming: { title: 'Gaming', mount: gaming.mount },
+  town: { title: 'Dyer Town', mount: town.mount },
 };
 
 const $ = sel => document.querySelector(sel);
