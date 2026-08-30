@@ -1,16 +1,29 @@
 // Cross-device sync client. Whole collections are pushed/pulled against the
 // Worker's D1-backed /api/sync endpoints with per-collection revisions.
 // Opt-in: nothing syncs until a passphrase is set (control center → Sync).
-// Conflict strategy: arrays of {id,…} are unioned by id (local wins for the
-// same id, since this device was just editing); everything else last-write-wins.
+//
+// Everything syncs. Rather than a hand-maintained whitelist, every stored key is
+// synced except a small denylist of state that is meaningless or harmful to carry
+// between devices (the sync engine's own bookkeeping, an in-progress upload that
+// points at a file only on this device, and the focused-tile index that changes
+// on every keypress).
+//
+// Every payload is encrypted client-side with a key derived from the passphrase
+// (see synccrypto.js), so D1 only ever holds ciphertext — the camera password and
+// the Cloudflare Access token included. Local storage stays plaintext; encryption
+// wraps only the trip to and from the cloud.
+//
+// Conflict strategy: arrays of {id,…} are unioned by id (local wins for the same
+// id, since this device was just editing); everything else last-write-wins.
 
-import { load, save, onSave, debounce, showToast } from './store.js';
+import { load, save, onSave, debounce, showToast, keys as allStoredKeys } from './store.js';
+import { deriveKey, encryptData, decryptData } from './synccrypto.js';
 
-const COLS = [
-  'fit.workouts', 'fit.weights', 'books', 'nb.pages', 'habits', 'inbox',
-  'trophies', 'writing.daylog', 'writing.sprints',
-  'ui.themesUsed', 'ui.consolesUsed', 'memories', 'expenses', 'expenses.settings',
-];
+// Never synced. sync.* is the engine's own state; ui.bgUpload resumes a multipart
+// upload whose file lives only on the device that started it; ui.tile is the
+// current scroll position and would push on every tile the user browses past.
+const DENY = new Set(['ui.bgUpload', 'ui.tile']);
+const syncable = k => !k.startsWith('sync.') && !DENY.has(k);
 
 let key = load('sync.key', null);
 let meta = load('sync.meta', {});          // {col: {rev}}
@@ -20,11 +33,22 @@ let busy = false;
 let lastSync = load('sync.last', 0);
 let lastError = null;
 
+// AES-GCM key derived from the passphrase, memoized for the life of this key.
+let cryptoKey = null;
+let cryptoKeyFor = null;
+async function subtleKey() {
+  if (!key) return null;
+  if (cryptoKey && cryptoKeyFor === key) return cryptoKey;
+  cryptoKey = await deriveKey(key);
+  cryptoKeyFor = key;
+  return cryptoKey;
+}
+
 const persistMeta = () => { applying = true; save('sync.meta', meta); save('sync.dirty', [...dirty]); applying = false; };
 
 onSave((k) => {
   if (applying || k.startsWith('sync.')) return;
-  if (!COLS.includes(k)) return;
+  if (!syncable(k)) return;
   dirty.add(k);
   applying = true; save('sync.dirty', [...dirty]); applying = false;
   if (key) schedulePush();
@@ -38,6 +62,20 @@ async function api(path, opts = {}) {
   const body = await res.json().catch(() => ({}));
   if (!res.ok && res.status !== 409) throw new Error(body.error || `sync ${res.status}`);
   return { status: res.status, body };
+}
+
+// Decrypt a value that came off the wire; legacy plaintext passes straight
+// through. A wrong-key / tampered blob throws, and callers skip that collection
+// rather than overwrite good local data with garbage.
+async function decode(wire) {
+  const ck = await subtleKey();
+  if (!ck) return wire; // shouldn't happen while syncing, but never crash on it
+  return decryptData(ck, wire);
+}
+async function encode(value) {
+  const ck = await subtleKey();
+  if (!ck) return value;
+  return encryptData(ck, value);
 }
 
 function mergeCol(serverData, localData) {
@@ -57,13 +95,20 @@ function mergeCol(serverData, localData) {
 async function pull() {
   const { body } = await api('state');
   for (const [col, info] of Object.entries(body.cols || {})) {
-    if (!COLS.includes(col)) continue;
+    if (!syncable(col)) continue;
     const localRev = meta[col]?.rev || 0;
     if (info.rev <= localRev) continue;
     const { body: colBody } = await api(`col/${encodeURIComponent(col)}`);
     if (colBody.data === null) continue;
+    let serverData;
+    try {
+      serverData = await decode(colBody.data);
+    } catch {
+      lastError = `could not decrypt ${col}`; // wrong passphrase or corrupt blob — leave local untouched
+      continue;
+    }
     const localData = load(col, null);
-    const merged = dirty.has(col) ? mergeCol(colBody.data, localData) : colBody.data;
+    const merged = dirty.has(col) ? mergeCol(serverData, localData) : serverData;
     applying = true;
     save(col, merged);
     applying = false;
@@ -80,14 +125,15 @@ async function pushCol(col) {
   const baseRev = meta[col]?.rev || 0;
   const { status, body } = await api(`col/${encodeURIComponent(col)}`, {
     method: 'PUT',
-    body: JSON.stringify({ baseRev, data }),
+    body: JSON.stringify({ baseRev, data: await encode(data) }),
   });
   if (status === 409) {
-    const merged = mergeCol(body.data, data);
+    const serverData = await decode(body.data);
+    const merged = mergeCol(serverData, data);
     applying = true; save(col, merged); applying = false;
     const retry = await api(`col/${encodeURIComponent(col)}`, {
       method: 'PUT',
-      body: JSON.stringify({ baseRev: body.rev, data: merged }),
+      body: JSON.stringify({ baseRev: body.rev, data: await encode(merged) }),
     });
     if (retry.status === 409) throw new Error(`sync conflict on ${col}`);
     meta[col] = { rev: retry.body.rev };
@@ -141,8 +187,10 @@ export const sync = {
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(body.error || `claim failed (${res.status})`);
     key = passphrase;
+    cryptoKey = null; // force re-derivation for the new key
     save('sync.key', key);
-    for (const col of COLS) if (load(col, null) !== null) dirty.add(col);
+    // push everything this device already has (minus the denylist)
+    for (const col of allStoredKeys()) if (syncable(col) && load(col, null) !== null) dirty.add(col);
     await fullSync();
     showToast(body.claimed ? 'Sync enabled — this device set the passphrase' : 'Sync connected');
     return true;
@@ -150,6 +198,7 @@ export const sync = {
 
   disable() {
     key = null;
+    cryptoKey = null;
     save('sync.key', null);
     showToast('Sync off (data stays on this device)');
   },

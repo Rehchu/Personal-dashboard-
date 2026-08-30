@@ -2,7 +2,7 @@
 // /api/* is never cached (sync must always hit the network). Cross-origin
 // requests (fonts, CDN, GitHub) pass through untouched.
 
-const CACHE = 'dyerhq-v6';
+const CACHE = 'dyerhq-v7';
 const CORE = [
   '/', '/index.html', '/manifest.webmanifest',
   '/css/base.css', '/css/themes.css', '/css/fx.css', '/css/xbox.css', '/css/polish.css',

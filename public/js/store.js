@@ -30,6 +30,19 @@ export function uid() {
   return Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
 }
 
+// Every stored key, un-prefixed — so the sync engine can push all of them
+// instead of a hand-maintained whitelist.
+export function keys() {
+  const out = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(PREFIX)) out.push(k.slice(PREFIX.length));
+    }
+  } catch { /* private mode — nothing stored */ }
+  return out;
+}
+
 export function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
