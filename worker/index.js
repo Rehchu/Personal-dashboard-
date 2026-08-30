@@ -9,6 +9,7 @@ import { handleBiz } from './biz.js';
 import { handleGaming } from './gaming.js';
 import { handleBgImport } from './bgimport.js';
 import { handleTown } from './town.js';
+import { handleStream } from './stream.js';
 
 const COL_RE = /^[a-zA-Z0-9._-]{1,40}$/;
 const ARCHIVE_ID_RE = /^[a-z0-9][a-z0-9._-]{0,39}$/;
@@ -1144,6 +1145,16 @@ export default {
         return await handlePtzAccess(request, env);
       } catch {
         return json({ error: 'access-token storage unavailable' }, 500);
+      }
+    }
+
+    if (path.startsWith('/api/stream/')) {
+      if (!authed) return json({ error: 'sign in first' }, 401);
+      if (request.method !== 'GET') return json({ error: 'method not allowed' }, 405);
+      try {
+        return await handleStream(url, request, env, { getCamAccess });
+      } catch {
+        return json({ error: 'stream proxy unavailable' }, 502);
       }
     }
 

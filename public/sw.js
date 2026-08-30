@@ -2,7 +2,7 @@
 // /api/* is never cached (sync must always hit the network). Cross-origin
 // requests (fonts, CDN, GitHub) pass through untouched.
 
-const CACHE = 'dyerhq-v7';
+const CACHE = 'dyerhq-v8';
 const CORE = [
   '/', '/index.html', '/manifest.webmanifest',
   '/css/base.css', '/css/themes.css', '/css/fx.css', '/css/xbox.css', '/css/polish.css',
@@ -10,7 +10,7 @@ const CORE = [
   '/js/fitness.js', '/js/writing.js', '/js/notebook.js', '/js/cloudflare.js',
   '/js/sfx.js', '/js/ambient.js', '/js/icons.js', '/js/achievements.js',
   '/js/activity.js', '/js/sync.js', '/js/capture.js', '/js/today.js',
-  '/js/habits.js', '/js/dragons.js', '/js/archive.js', '/vendor/jszip.min.js',
+  '/js/habits.js', '/js/dragons.js', '/js/archive.js', '/vendor/jszip.min.js', '/vendor/hls.light.min.js',
   // church + workshop modules and their helpers
   '/js/ptz.js', '/js/csvedit.js', '/js/service.js', '/js/expenses.js',
   '/js/videoclip.js', '/js/grok.js', '/js/openai.js', '/js/google.js',
