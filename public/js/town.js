@@ -66,7 +66,9 @@ export function mount(root, tools) {
         <div class="panel" style="margin-top:16px"><h3>Live feed</h3><div class="town-feed" id="town-feed"></div></div>
       </div>
       <div>
-        <div class="panel"><h3>Townsfolk</h3><div id="town-agents"></div></div>
+        <div class="panel"><h3>📋 Corporate inbox</h3><div id="town-approvals"></div></div>
+        <div class="panel" style="margin-top:16px"><h3>Townsfolk</h3><div id="town-agents"></div></div>
+        <div class="panel" style="margin-top:16px"><h3>Work reports</h3><div id="town-reports"></div></div>
         <div class="panel" style="margin-top:16px"><h3>Talk to someone</h3>
           <div class="town-chat-row">
             <select id="town-who"></select>
@@ -123,12 +125,72 @@ export function mount(root, tools) {
     root.querySelector('#town-feed').innerHTML = (s.feed || []).map(e => `
       <div class="town-ev"><span class="t">t${Number(e.tick) || 0}</span><b>${esc(e.name)}</b> ${esc(e.text)}</div>`).join('');
 
+    // work reports: what each agent has actually done, at a glance
+    root.querySelector('#town-reports').innerHTML = (s.agents || []).map(a => {
+      const t = a.tally || {};
+      const line = [
+        t.buildsFinished ? `${t.buildsFinished} build${t.buildsFinished === 1 ? '' : 's'} finished` : '',
+        t.shifts ? `${t.shifts} shift${t.shifts === 1 ? '' : 's'}` : '',
+        t.jobsTaken ? `${t.jobsTaken} job${t.jobsTaken === 1 ? '' : 's'} taken` : '',
+        t.hires ? `${t.hires} hire${t.hires === 1 ? '' : 's'}` : '',
+        t.earned ? `+${t.earned}c earned` : '',
+        t.spent ? `−${t.spent}c spent` : '',
+      ].filter(Boolean).join(' · ') || 'no work on record yet';
+      const recent = (a.worklog || []).slice(-3).map(w =>
+        `<div class="town-ev"><span class="t">t${Number(w.tick) || 0}</span>${esc(w.text)}</div>`).join('');
+      return `<div style="padding:8px 0;border-top:1px solid color-mix(in oklab,var(--ink-3) 18%,transparent)">
+        <div style="font-weight:700;color:var(--ink)">${esc(a.name)} <span style="font-weight:400;font-size:12.5px;color:var(--ink-2)">${esc(line)}</span></div>
+        ${recent}</div>`;
+    }).join('');
+
     const sig = (s.agents || []).map(a => a.id).join(',');
     if (sig !== agentsSig) {
       agentsSig = sig;
       root.querySelector('#town-who').innerHTML = (s.agents || [])
         .map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('');
     }
+  }
+
+  // the corporate inbox is its own fetch — approvals live in D1, not the pushed
+  // state, so a verdict is possible even while the town server is asleep
+  async function refreshApprovals() {
+    let data;
+    try {
+      const res = await fetch('/api/town/approvals', { headers: { accept: 'application/json' } });
+      if (!res.ok) throw new Error();
+      data = await res.json();
+    } catch { return; }
+    const host = root.querySelector('#town-approvals');
+    if (!host) return;
+    const rows = data.approvals || [];
+    if (!rows.length) { host.innerHTML = '<p class="muted" style="margin:0">Nothing awaiting your signature.</p>'; return; }
+    host.innerHTML = rows.map(ap => {
+      const open = !ap.decision;
+      const verdict = ap.decision === 'approve' ? '✅ approved' : ap.decision === 'deny' ? '⛔ denied' : '';
+      return `<div style="padding:9px 0;border-top:1px solid color-mix(in oklab,var(--ink-3) 18%,transparent)">
+        <div style="font-size:13.5px;color:var(--ink)"><b style="color:var(--accent)">${esc(ap.agent)}</b> asks: “${esc(ap.question)}”</div>
+        ${open
+          ? `<div style="display:flex;gap:8px;margin-top:7px">
+              <button class="btn small" data-approve="${ap.id}">✅ Approve</button>
+              <button class="btn small danger" data-deny="${ap.id}">⛔ Deny</button>
+            </div>`
+          : `<div class="muted" style="font-size:12.5px;margin-top:3px">${verdict}${ap.note ? ` · “${esc(ap.note)}”` : ''}</div>`}
+      </div>`;
+    }).join('');
+    host.querySelectorAll('[data-approve],[data-deny]').forEach(btn => btn.addEventListener('click', async () => {
+      const approve = 'approve' in btn.dataset;
+      const id = Number(approve ? btn.dataset.approve : btn.dataset.deny);
+      const note = prompt(approve ? 'Any note for the team? (optional)' : 'Why not? (optional)') || '';
+      try {
+        await fetch('/api/town/decide', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ id, decision: approve ? 'approve' : 'deny', note }),
+        });
+        showToast(approve ? 'Approved — the team will hear back' : 'Denied — the team will hear back');
+        refreshApprovals();
+      } catch { showToast('Could not send that decision'); }
+    }));
   }
 
   async function refresh() {
@@ -182,7 +244,8 @@ export function mount(root, tools) {
   root.querySelector('#town-say').addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
 
   refresh();
-  timer = setInterval(refresh, 5000);
+  refreshApprovals();
+  timer = setInterval(() => { refresh(); refreshApprovals(); }, 5000);
 
   return function unmount() {
     alive = false;

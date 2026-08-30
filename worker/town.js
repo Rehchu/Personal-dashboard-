@@ -29,6 +29,14 @@ function ensureTables(env) {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         agent_id TEXT, message TEXT, reply TEXT,
         created_at INTEGER, replied_at INTEGER)`),
+      // corporate inbox: agents escalate, the owner rules, verdicts flow back.
+      // id is the town's own approval id, so a re-pushed request can't duplicate.
+      env.DB.prepare(`CREATE TABLE IF NOT EXISTS town_approvals (
+        id INTEGER PRIMARY KEY,
+        agent TEXT, question TEXT,
+        decision TEXT, note TEXT,
+        delivered INTEGER DEFAULT 0,
+        created_at INTEGER, decided_at INTEGER)`),
     ]).catch(err => { ready = null; throw err; });
   }
   return ready;
@@ -72,7 +80,55 @@ export async function handleTown(url, request, env, { authed, syncKeyOk }) {
     return json({ reply: row.reply ?? null, repliedAt: row.replied_at ?? null });
   }
 
+  if (path === '/api/town/approvals' && request.method === 'GET') {
+    if (!authed) return json({ error: 'sign in first' }, 401);
+    const { results } = await env.DB.prepare(
+      `SELECT id, agent, question, decision, note, created_at FROM town_approvals
+       ORDER BY id DESC LIMIT 30`,
+    ).all();
+    return json({ approvals: results || [] });
+  }
+
+  if (path === '/api/town/decide' && request.method === 'POST') {
+    if (!authed) return json({ error: 'sign in first' }, 401);
+    const body = await request.json().catch(() => null);
+    const id = Number(body?.id);
+    const decision = body?.decision === 'approve' ? 'approve' : body?.decision === 'deny' ? 'deny' : null;
+    const note = typeof body?.note === 'string' ? body.note.slice(0, 200) : '';
+    if (!Number.isInteger(id) || !decision) return json({ error: "expected {id, decision: 'approve'|'deny', note?}" }, 400);
+    await env.DB.prepare(
+      'UPDATE town_approvals SET decision = ?, note = ?, decided_at = ? WHERE id = ? AND decision IS NULL',
+    ).bind(decision, note, Date.now(), id).run();
+    return json({ ok: true });
+  }
+
   // ---- town-server side (sync passphrase) ----
+
+  if (path === '/api/town/approval' && request.method === 'POST') {
+    if (!syncKeyOk) return json({ error: 'bad key' }, 401);
+    const body = await request.json().catch(() => null);
+    const id = Number(body?.id);
+    const agent = typeof body?.agent === 'string' ? body.agent.slice(0, 40) : '';
+    const question = typeof body?.question === 'string' ? body.question.slice(0, 400) : '';
+    if (!Number.isInteger(id) || !agent || !question) return json({ error: 'expected {id, agent, question}' }, 400);
+    await env.DB.prepare(
+      'INSERT OR IGNORE INTO town_approvals (id, agent, question, created_at) VALUES (?, ?, ?, ?)',
+    ).bind(id, agent, question, Date.now()).run();
+    return json({ ok: true });
+  }
+
+  if (path === '/api/town/decisions' && request.method === 'GET') {
+    if (!syncKeyOk) return json({ error: 'bad key' }, 401);
+    const { results } = await env.DB.prepare(
+      'SELECT id, decision, note FROM town_approvals WHERE decision IS NOT NULL AND delivered = 0 LIMIT 20',
+    ).all();
+    const decisions = results || [];
+    if (decisions.length) {
+      await env.DB.batch(decisions.map(d =>
+        env.DB.prepare('UPDATE town_approvals SET delivered = 1 WHERE id = ?').bind(d.id)));
+    }
+    return json({ decisions });
+  }
 
   if (path === '/api/town/state' && request.method === 'POST') {
     if (!syncKeyOk) return json({ error: 'bad key' }, 401);
