@@ -129,7 +129,10 @@ export async function digestAuthHeader({ user, pass = '', method = 'GET', uri, c
   const useQop = offered.length === 0 || offered.includes('auth');
   if (!useQop) return null; // auth-int only: would need the request body hashed
 
-  const ncHex = String(nc).padStart(8, '0');
+  // RFC 7616 §3.4: nc is 8 lowercase HEX digits, not decimal. Sending decimal
+  // ("00000010" for 10) makes a strict camera see the count jump and force a
+  // fresh Digest handshake — a visible stall every ~10 frames of live view.
+  const ncHex = nc.toString(16).padStart(8, '0');
   const clientNonce = cnonce || hex(crypto.getRandomValues(new Uint8Array(8)));
   if (sess) ha1 = await digestHash(algorithm, `${ha1}:${challenge.nonce}:${clientNonce}`);
 

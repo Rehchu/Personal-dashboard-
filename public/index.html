@@ -12,7 +12,8 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Dyer HQ">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎮</text></svg>">
+  <!-- real shipped logo beats a generic emoji in the tab and bookmarks -->
+  <link rel="icon" href="/icons/icon-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- fonts load async: a render-blocking stylesheet also blocks module scripts,
@@ -57,6 +58,8 @@
         <button class="theme-dot" data-set-theme="minecraft"  title="Minecraft theme"><span>MC</span></button>
         <button class="theme-dot" data-set-theme="masseffect" title="Mass Effect theme"><span>N7</span></button>
         <button class="theme-dot" data-set-theme="xboxgreen" title="Xbox theme"><span>XB</span></button>
+        <button class="theme-dot" data-set-theme="playstation" title="PlayStation theme"><span>PS</span></button>
+        <button class="theme-dot" data-set-theme="xboxone" title="Xbox One theme"><span>X1</span></button>
       </nav>
       <div id="clock" aria-live="off">
         <span id="clock-time">--:--</span>

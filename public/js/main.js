@@ -3,7 +3,7 @@
 // synthesized UI sounds, ambient particles, control center, trophies.
 
 import { TILES } from './data.js';
-import { load, save, esc, showToast } from './store.js';
+import { load, save, esc, showToast, keys as storeKeys } from './store.js';
 import { sfx } from './sfx.js';
 import { initAmbient } from './ambient.js';
 import { initStorm } from './storm.js';
@@ -50,7 +50,10 @@ const $ = sel => document.querySelector(sel);
 
 /* ---------- themes & consoles ---------- */
 const GAME_THEMES = ['assassins', 'cyberpunk', 'gtav', 'minecraft', 'masseffect'];
-const THEMES = [...GAME_THEMES, 'xboxgreen'];
+// xboxgreen is the original green skin; playstation / xboxone are the two console
+// skins — each with its own generated background — kept out of GAME_THEMES so the
+// "try all five game themes" trophy still means the five franchises.
+const THEMES = [...GAME_THEMES, 'xboxgreen', 'playstation', 'xboxone'];
 const THEME_NAMES = {
   assassins: "Assassin's Creed",
   cyberpunk: 'Cyberpunk',
@@ -58,6 +61,8 @@ const THEME_NAMES = {
   minecraft: 'Minecraft',
   masseffect: 'Mass Effect',
   xboxgreen: 'Xbox',
+  playstation: 'PlayStation',
+  xboxone: 'Xbox One',
 };
 
 let consoleMode = load('console', 'ps') === 'xbox' ? 'xbox' : 'ps';
@@ -126,6 +131,7 @@ function applyTheme(name, { announce = false, fx = false } = {}) {
     b.setAttribute('aria-pressed', String(active));
   });
   ambient.setTheme(name);
+  applyThemeBg(name); // if this theme owns a background, show it (no-op otherwise)
   if (fx && uiReady) runSwitchFx(name);
   requestAnimationFrame(() => {
     const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
@@ -287,11 +293,18 @@ function openModule(id) {
   const mod = MODULES[id];
   if (!mod) return;
   $('#appview-title').textContent = mod.title;
+  // the tab/window title should follow the open module, then restore on close
+  document.title = `${mod.title} — Dyer HQ`;
   const tools = $('#appview-tools');
   const body = $('#appview-body');
   tools.innerHTML = '';
   body.innerHTML = '';
   appview.hidden = false;
+  // Make the background untabbable + invisible to assistive tech while the
+  // full-screen module owns the view, and push a history entry so the phone
+  // back gesture closes the module instead of leaving the app.
+  setBgInert(true);
+  pushOverlayState();
   ambient.pause(); // the module view fully covers the background layers
   storm.stop();
   if (!bgVideo.hidden) bgVideo.pause();
@@ -299,7 +312,17 @@ function openModule(id) {
     unmount = mod.mount(body, tools) || null;
   } catch (err) {
     body.innerHTML = `<p class="muted">This module hit an error: ${esc(err.message)}</p>`;
+    // a crashed mount was a dead end — give a way back into the module
+    const retry = document.createElement('button');
+    retry.className = 'btn';
+    retry.style.marginTop = '12px';
+    retry.textContent = 'Try again';
+    retry.addEventListener('click', () => openModule(id));
+    body.append(retry);
   }
+  // move focus into the overlay so keyboard users are not stranded behind it
+  const back = $('#appview-back');
+  if (back) back.focus();
 }
 
 function closeModule() {
@@ -307,6 +330,11 @@ function closeModule() {
   if (typeof unmount === 'function') { try { unmount(); } catch { /* noop */ } }
   unmount = null;
   appview.hidden = true;
+  document.title = 'Dyer HQ — Dashboard';
+  // hand the background back to the keyboard/AT (unless the control center is
+  // still up over it) and drop the history entry we pushed on open
+  if (ccenter.hidden) setBgInert(false);
+  consumeOverlayState();
   $('#appview-body').innerHTML = '';
   $('#appview-tools').innerHTML = '';
   ambient.resume();
@@ -323,6 +351,56 @@ $('#appview-back').addEventListener('click', closeModule);
 const ccenter = $('#ccenter');
 const ccActions = $('#cc-actions');
 const ccExtra = $('#cc-extra');
+
+/* ---------- overlay plumbing (focus, inert, phone back) ----------
+   An open overlay (module or control center) must take the background out of
+   the tab order for keyboard/AT users, and register a history entry so the
+   Android/browser back gesture just closes the overlay instead of exiting the
+   whole PWA. The two overlays are mutually exclusive in practice (the control
+   center can only be reached from the home screen), so a single pushed entry
+   is enough. */
+const BG_LAYERS = ['#topbar', '#pill-nav', '#home'];
+function setBgInert(on) {
+  BG_LAYERS.forEach(sel => {
+    const el = $(sel);
+    if (el) el.toggleAttribute('inert', on); // guard: a skin could drop a layer
+  });
+}
+
+let overlayStatePushed = false; // true while our synthetic history entry exists
+let handlingPop = false;        // guards against re-entrancy from history.back()
+function pushOverlayState() {
+  if (overlayStatePushed) return; // idempotent — never stack entries
+  overlayStatePushed = true;
+  try { history.pushState({ pdOverlay: true }, ''); } catch { /* noop */ }
+}
+// Drop our entry when an overlay closes by any route other than the back
+// gesture, so the next back press still leaves the app.
+function consumeOverlayState() {
+  if (handlingPop || !overlayStatePushed) return;
+  if (!(appview.hidden && ccenter.hidden)) return; // another overlay still open
+  overlayStatePushed = false;
+  try { history.back(); } catch { /* noop */ }
+}
+window.addEventListener('popstate', () => {
+  overlayStatePushed = false; // this entry has now been popped by the browser
+  handlingPop = true;
+  if (!ccenter.hidden) hideCC();
+  else if (!appview.hidden) closeModule();
+  handlingPop = false;
+});
+
+/* ---------- PWA install prompt ----------
+   Chrome fires beforeinstallprompt when the app is installable; the native
+   prompt can only be shown from that stashed event, later, on a user gesture. */
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+});
+window.addEventListener('appinstalled', () => { deferredInstallPrompt = null; });
+
+let ccInvoker = null; // element to restore focus to when the control center closes
 
 async function lockApp() {
   try { await fetch('/api/auth/logout', { method: 'POST' }); } catch { /* offline */ }
@@ -461,6 +539,52 @@ function playSelectedBg(explicit = false) {
   bgVideo.addEventListener('canplay', () => applyBg('video', true), { once: true });
 }
 
+/* ---------- per-theme backgrounds ----------
+   Each console theme can own a background. The map lives in 'ui.bgByTheme'
+   ({ themeName: bgId }) which the sync engine carries across devices like any
+   other saved key, so mapping Mass Effect → a clip on the desk shows the same
+   clip on the phone. Switching to a mapped theme points the player at that clip
+   WITHOUT touching the global selection, so people who never mapped a theme keep
+   the background they picked. */
+
+// Point the player at one specific background id. Reuses applyBg's own
+// reduced-motion gate: a device that prefers reduced motion and has never
+// chosen a background stays calm even on a mapped theme.
+function playThemeBg(id) {
+  videoOk = false;
+  bgVideo.src = `/media/bg/${id}?v=${Date.now()}`;
+  bgVideo.load();
+  bgVideo.addEventListener('canplay', () => applyBg('video'), { once: true });
+}
+
+function applyThemeBg(theme) {
+  // a module fully covers the background layers; don't churn them underneath it
+  if (typeof appview !== 'undefined' && appview && !appview.hidden) return;
+  const map = load('ui.bgByTheme', {});
+  const id = map[theme];
+  if (!id) return;                    // unmapped theme: leave the current background untouched
+  if (!gallery.items.length) return;  // gallery not loaded yet — the boot pass retries this
+  if (!gallery.items.some(it => it.id === id)) {
+    // the mapped object was deleted on some device: forget the dangling mapping
+    // and fall back to whatever the global selection / storm already is
+    delete map[theme];
+    save('ui.bgByTheme', map);
+    return;
+  }
+  playThemeBg(id);
+}
+
+// Bind the currently active theme to a background id and show it now.
+function useForTheme(id) {
+  const theme = document.documentElement.dataset.theme;
+  const map = load('ui.bgByTheme', {});
+  map[theme] = id;
+  save('ui.bgByTheme', map);
+  showToast(`${THEME_NAMES[theme] || 'This theme'} → this background`);
+  applyThemeBg(theme);
+  buildGallery();
+}
+
 async function selectBg(id) {
   const res = await fetch('/api/media/bg/select', {
     method: 'POST',
@@ -495,22 +619,30 @@ function buildGallery() {
       + 'instead of replacing it.</p>';
     return;
   }
+  const activeTheme = document.documentElement.dataset.theme;
+  const themeMap = load('ui.bgByTheme', {});
   host.innerHTML = gallery.items.map(it => {
     const on = it.id === gallery.selected;
+    const mappedHere = themeMap[activeTheme] === it.id;
     // a 30s trimmed clip can be under a megabyte; "0.0 MB" reads as broken
     const mb = it.bytes
       ? (it.bytes >= MB ? `${(it.bytes / MB).toFixed(1)} MB` : `${Math.max(1, Math.round(it.bytes / 1024))} KB`)
       : '';
+    const themeLabel = THEME_NAMES[activeTheme] || 'this theme';
     return `<div class="bg-card${on ? ' on' : ''}">
       <button class="bg-pick" data-use="${esc(it.id)}" title="Show this background">
         <span class="bg-name">${esc(it.name || 'Background')}</span>
-        <span class="muted bg-meta">${esc(mb)}${on ? ' · showing' : ''}</span>
+        <span class="muted bg-meta">${esc(mb)}${on ? ' · showing' : ''}${mappedHere ? ` · ${esc(themeLabel)}` : ''}</span>
       </button>
+      <button class="btn small${mappedHere ? ' bg-theme-on' : ''}" data-theme-use="${esc(it.id)}"
+        title="Use this background for the ${esc(themeLabel)} theme" aria-pressed="${mappedHere}">🎨</button>
       <button class="btn small danger" data-drop="${esc(it.id)}" title="Delete">✕</button>
     </div>`;
   }).join('');
   host.querySelectorAll('[data-use]').forEach(b =>
     b.addEventListener('click', () => selectBg(b.dataset.use)));
+  host.querySelectorAll('[data-theme-use]').forEach(b =>
+    b.addEventListener('click', () => useForTheme(b.dataset.themeUse)));
   host.querySelectorAll('[data-drop]').forEach(b => {
     const it = gallery.items.find(i => i.id === b.dataset.drop);
     b.addEventListener('click', () => deleteBg(b.dataset.drop, it?.name || 'this background'));
@@ -581,6 +713,102 @@ function uploadBgVideo(mode = 'clip') {
   input.click();
 }
 
+/* ---------- import a background from a URL ----------
+   The owner generates 8-second loops on Higgsfield; rather than downloading each
+   one to the phone and pushing it back up, the Worker pulls the file straight
+   from the (allowlisted) source into the same gallery. The two known clips get
+   one-tap preset buttons that also map themselves to their theme. */
+// One generated ambient loop per theme, matched to that theme's world. Setting
+// them up imports each into R2 once and maps it to its theme, so switching to a
+// theme becomes a full scene change on every device.
+const HIGGS_CDN = 'https://d8j0ntlcm91z4.cloudfront.net/user_3IckDDDwJI3D408OKE8QdQYJgqc';
+const HIGGS_PRESETS = {
+  masseffect:  { name: 'Mass Effect',       url: `${HIGGS_CDN}/hf_20260830_135248_0fb7af14-8236-408a-9fe3-ba6a0ce515f8.mp4` },
+  assassins:   { name: "Assassin's Creed",  url: `${HIGGS_CDN}/hf_20260830_135236_9dab5934-3f29-4d8c-8d19-e58c38f5650e.mp4` },
+  cyberpunk:   { name: 'Cyberpunk',         url: `${HIGGS_CDN}/hf_20260830_142837_5c18fb80-f8c8-4088-9b11-72e42ffd39e2.mp4` },
+  gtav:        { name: 'GTA V',             url: `${HIGGS_CDN}/hf_20260830_143039_d428c73d-5761-47cc-97c2-92112bac5adb.mp4` },
+  minecraft:   { name: 'Minecraft',         url: `${HIGGS_CDN}/hf_20260830_142837_3d683410-8ac8-4bcb-8ad0-b60feb86d992.mp4` },
+  playstation: { name: 'PlayStation',       url: `${HIGGS_CDN}/hf_20260830_143039_cd1eb944-2c48-4276-a380-17c22ba0aaeb.mp4` },
+  xboxone:     { name: 'Xbox One',          url: `${HIGGS_CDN}/hf_20260830_142837_582421f5-f08b-417c-80e8-1b674a0e2596.mp4` },
+};
+
+async function importBg(url, name) {
+  const res = await fetch('/api/media/bg/import', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(name ? { url, name } : { url }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+  return body; // { id, index }
+}
+
+function importBgFromUrl() {
+  const url = prompt('Paste a Higgsfield video URL to add to the gallery:');
+  if (!url || !url.trim()) return;
+  showToast('Importing…');
+  importBg(url.trim())
+    .then(async body => {
+      gallery = body.index || await refreshGallery();
+      showToast('Background imported 🎬');
+      playSelectedBg(); // the import selects itself server-side; show it
+      buildGallery();
+      buildCC();
+    })
+    .catch(err => showToast(`Import failed: ${err.message}`));
+}
+
+async function addPresetBg(theme) {
+  const preset = HIGGS_PRESETS[theme];
+  if (!preset) return;
+  showToast(`Adding ${preset.name} background…`);
+  try {
+    const body = await importBg(preset.url, `${preset.name} (Higgsfield)`);
+    gallery = body.index || await refreshGallery();
+    // map the clip to its theme so switching to that theme shows it everywhere
+    const map = load('ui.bgByTheme', {});
+    map[theme] = body.id;
+    save('ui.bgByTheme', map);
+    showToast(`${preset.name} background added 🎬`);
+    // if the owner is standing on that theme, show it right away; otherwise it
+    // waits quietly until they switch to it (no jarring background swap)
+    if (document.documentElement.dataset.theme === theme) applyThemeBg(theme);
+    buildGallery();
+    buildCC();
+  } catch (err) {
+    showToast(`Import failed: ${err.message}`);
+  }
+}
+
+// Import every theme's clip once and map it to its theme. Sequential on purpose:
+// the R2 index is written compare-and-set, so parallel imports would fight over
+// it, and the source is rate-limited. Idempotent — a theme already mapped to a
+// background that still exists is skipped, so re-tapping only fills the gaps.
+async function setupAllThemeBgs() {
+  const entries = Object.entries(HIGGS_PRESETS);
+  let added = 0, skipped = 0, failed = 0;
+  for (const [theme, preset] of entries) {
+    const map = load('ui.bgByTheme', {});
+    if (map[theme] && gallery.items.some(it => it.id === map[theme])) { skipped += 1; continue; }
+    showToast(`Setting up ${preset.name}… (${added + skipped + failed + 1}/${entries.length})`);
+    try {
+      const body = await importBg(preset.url, `${preset.name} (Higgsfield)`);
+      gallery = body.index || await refreshGallery();
+      const m = load('ui.bgByTheme', {});   // re-read: each import may have refreshed state
+      m[theme] = body.id;
+      save('ui.bgByTheme', m);
+      added += 1;
+    } catch (err) {
+      failed += 1;
+      showToast(`${preset.name} failed: ${err.message}`);
+    }
+  }
+  buildGallery();
+  buildCC();
+  applyThemeBg(document.documentElement.dataset.theme); // show the current theme's, if it got one
+  showToast(`Theme backgrounds ready — ${added} added${skipped ? `, ${skipped} already set` : ''}${failed ? `, ${failed} failed` : ''} 🎬`);
+}
+
 function syncAction() {
   if (!sync.enabled()) {
     const pass = prompt('Set (or enter) your sync passphrase — the same one on every device:');
@@ -594,6 +822,71 @@ function syncAction() {
   }
 }
 
+// Whole-account backup, independent of sync: dump every stored 'pd.*' key to a
+// JSON file the browser downloads. This is the escape hatch when sync is off or
+// broken and the only copy of the data lives in one browser's localStorage.
+function backupData() {
+  try {
+    const dump = {};
+    for (const k of storeKeys()) dump[k] = load(k, null);
+    const payload = { app: 'dyer-hq', version: 1, exported: new Date().toISOString(), data: dump };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `dyer-hq-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    // revoke on a tick so the download has committed to the URL first
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    showToast(`Backed up ${Object.keys(dump).length} keys`);
+  } catch (err) {
+    showToast(`Backup failed: ${err.message}`);
+  }
+}
+
+// Restore reads a picked backup file and writes its keys back through save() —
+// so the sync engine's onSave hook picks each one up — then reloads to rebuild
+// the UI from fresh state. Guarded hard against a file that is not one of ours,
+// since a bad restore would silently overwrite good data.
+function restoreData() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'application/json,.json';
+  input.addEventListener('change', () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      let parsed;
+      try {
+        parsed = JSON.parse(String(reader.result));
+      } catch {
+        showToast('Restore failed: not a valid JSON file');
+        return;
+      }
+      // accept either our wrapped {data:{…}} shape or a bare key→value map
+      const data = parsed && typeof parsed === 'object' && parsed.data && typeof parsed.data === 'object'
+        ? parsed.data : parsed;
+      if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        showToast('Restore failed: unrecognized backup file');
+        return;
+      }
+      const names = Object.keys(data);
+      if (!names.length) { showToast('Restore failed: no keys in file'); return; }
+      if (!confirm(`Restore ${names.length} keys? This overwrites data on this device.`)) return;
+      let ok = 0;
+      for (const k of names) { if (save(k, data[k])) ok += 1; }
+      showToast(`Restored ${ok} keys — reloading…`);
+      setTimeout(() => location.reload(), 800);
+    };
+    reader.onerror = () => showToast('Restore failed: could not read the file');
+    reader.readAsText(file);
+  });
+  input.click();
+}
+
 const GALLERY_CSS = `
   #bg-gallery .bg-card { display: flex; gap: 8px; align-items: center; }
   #bg-gallery .bg-pick { flex: 1; min-width: 0; text-align: left; padding: 8px 10px; border-radius: 9px;
@@ -602,7 +895,9 @@ const GALLERY_CSS = `
   #bg-gallery .bg-card.on .bg-pick { border-color: var(--accent); }
   #bg-gallery .bg-name { display: block; font-size: 13px; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; }
-  #bg-gallery .bg-meta { display: block; font-size: 11px; margin-top: 1px; }`;
+  #bg-gallery .bg-meta { display: block; font-size: 11px; margin-top: 1px; }
+  #bg-gallery .bg-theme-on { border-color: var(--accent);
+    background: color-mix(in oklab, var(--accent) 20%, transparent); }`;
 
 function buildCC() {
   if (!document.getElementById('bg-gallery-css')) {
@@ -620,16 +915,32 @@ function buildCC() {
     { ico: 'sparkle', label: BG_LABEL[bgMode] || 'Bg', fn: () => { cycleBg(); sfx.play('select'); buildCC(); } },
     { ico: 'controller', label: 'Bg clip 30s ⬆', fn: () => uploadBgVideo('clip') },
     { ico: 'controller', label: 'Bg full video ⬆', fn: () => uploadBgVideo('full') },
+    { ico: 'sparkle', label: 'Set up theme backgrounds', fn: setupAllThemeBgs },
+    { ico: 'sparkle', label: 'Import bg from URL', fn: importBgFromUrl },
     { ico: 'sparkle', label: `Gallery (${gallery.items.length})`, fn: () => { const h = galleryHost(); if (h) { h.hidden = !h.hidden; if (!h.hidden) h.scrollIntoView({ block: 'nearest' }); } } },
-    { ico: 'home', label: sync.status(), fn: syncAction },
+    // surface the underlying error as a hover/long-press title so a stuck sync
+    // is legible, not just the generic "Sync error" label
+    { ico: 'home', label: sync.status(), title: sync.lastError() || undefined, fn: syncAction },
+    { ico: 'sparkle', label: 'Backup (.json)', fn: backupData },
+    { ico: 'sparkle', label: 'Restore', fn: restoreData },
     { ico: 'soundOff', label: 'Lock', fn: lockApp },
     { ico: 'controller', label: 'Cloudflare', href: 'https://dash.cloudflare.com' },
   ];
+  // only offer Install when the browser has actually handed us a prompt to fire
+  if (deferredInstallPrompt) {
+    items.push({ ico: 'sparkle', label: 'Install app', fn: async () => {
+      const e = deferredInstallPrompt;
+      deferredInstallPrompt = null; // a prompt event can only be used once
+      try { e.prompt(); await e.userChoice; } catch { /* dismissed */ }
+      buildCC(); // the item drops off now that the prompt is spent
+    } });
+  }
   ccActions.innerHTML = '';
   items.forEach(it => {
     const node = document.createElement(it.href ? 'a' : 'button');
     node.className = 'cc-btn';
     if (it.href) { node.href = it.href; node.target = '_blank'; node.rel = 'noopener'; node.style.textDecoration = 'none'; }
+    if (it.title) node.title = it.title; // e.g. the full sync error behind a "Sync error" label
     node.innerHTML = `<span class="cc-ico">${ICONS[it.ico] || ''}</span><span class="cc-label">${esc(it.label)}</span>`;
     if (it.fn) node.addEventListener('click', it.fn);
     ccActions.append(node);
@@ -670,15 +981,35 @@ function toggleTrophies() {
 }
 
 function showCC() {
+  // remember who opened it so focus can return there on close
+  ccInvoker = (document.activeElement && document.activeElement !== document.body)
+    ? document.activeElement : $('#cc-btn');
   buildCC();
   ccExtra.hidden = true;
   ccenter.hidden = false;
+  const sheet = $('#cc-sheet');
+  if (sheet) sheet.setAttribute('aria-modal', 'true');
+  setBgInert(true);
+  pushOverlayState();
+  // pull focus into the sheet so keyboard users land on its first control
+  const first = ccActions.querySelector('.cc-btn');
+  if (first) first.focus();
   sfx.play('open');
 }
 
 function hideCC() {
   if (ccenter.hidden) return;
   ccenter.hidden = true;
+  const sheet = $('#cc-sheet');
+  if (sheet) sheet.removeAttribute('aria-modal');
+  // release the background unless a module is still open beneath the sheet
+  if (appview.hidden) setBgInert(false);
+  consumeOverlayState();
+  // return focus to whatever opened the control center
+  if (ccInvoker && typeof ccInvoker.focus === 'function') {
+    try { ccInvoker.focus(); } catch { /* node may be gone */ }
+  }
+  ccInvoker = null;
   sfx.play('back');
 }
 
@@ -845,7 +1176,12 @@ applyBg(bgMode);
 // element ships pointing at /media/bg.mp4 (whichever is selected), so the
 // picture is up before the gallery listing comes back.
 bgVideo.addEventListener('canplay', () => { if (load('ui.bg', 'storm') === 'video') applyBg('video', true); }, { once: true });
-refreshGallery().then(() => { if (!gallery.items.length) videoOk = false; });
+refreshGallery().then(() => {
+  if (!gallery.items.length) videoOk = false;
+  // the gallery is loaded now, so a theme that owns a background can finally
+  // resolve its mapping (the applyTheme during boot ran before this landed)
+  applyThemeBg(document.documentElement.dataset.theme);
+});
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => { /* offline support is best-effort */ });
 }
