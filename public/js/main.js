@@ -172,6 +172,10 @@ function applyConsole(mode, { announce = false } = {}) {
   applyTheme(load(`theme.${consoleMode}`, consoleMode === 'xbox' ? 'xboxgreen' : 'masseffect'),
     { fx: uiReady });
   updateConsoleBtn();
+  // each console speaks its own dialect: PlayStation has Trophies, Xbox has
+  // Achievements — the pill should say the word the current view means
+  const trophiesPill = document.querySelector('#pill-nav [data-pill="trophies"]');
+  if (trophiesPill) trophiesPill.textContent = consoleMode === 'xbox' ? 'Achievements' : 'Trophies';
   if (announce) {
     sfx.play('switch');
     showToast(consoleMode === 'xbox' ? 'Xbox view' : 'PlayStation view');
@@ -213,6 +217,7 @@ function iconHost(t) {
 }
 
 function renderRail() {
+  setRailFilter(''); // a rebuilt rail starts unfiltered (fresh tiles carry no dim class)
   rail.innerHTML = '';
   tileEls = TILES.map((t, i) => {
     const tile = document.createElement('button');
@@ -295,6 +300,7 @@ function setFocus(i, scroll = true) {
 }
 
 function activate(t) {
+  setRailFilter(''); // opening something is the filter's happy ending
   if (t.kind === 'module') { sfx.play('open'); openModule(t.id); }
   else if (t.url) { sfx.play('select'); window.open(t.url, '_blank', 'noopener'); }
 }
@@ -1088,6 +1094,8 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (e.isComposing) return; // don't cancel IME composition into a close
     if (!ccenter.hidden) { hideCC(); return; }
+    // an active rail filter is the nearest thing to dismiss
+    if (appview.hidden && railFilter) { setRailFilter(''); return; }
     // First Escape in a module form field just leaves the field.
     if (!appview.hidden && (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT')) {
       document.activeElement.blur();
@@ -1103,6 +1111,21 @@ document.addEventListener('keydown', e => {
   // buttons) must keep its native Enter/Space activation; the rail shortcuts
   // below are for when focus is on the rail/body, not an interactive element.
   const onInteractive = tag === 'A' || tag === 'BUTTON';
+  // type-to-filter: letters/digits narrow the rail. 't', 'c' and space keep
+  // their shortcuts only while no filter is active; mid-filter they're input.
+  if (e.key === 'Backspace' && railFilter) {
+    setRailFilter(railFilter.slice(0, -1));
+    e.preventDefault();
+    return;
+  }
+  if (e.key.length === 1 && /[a-z0-9 ]/i.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const reserved = !railFilter && (e.key === 't' || e.key === 'c' || e.key === ' ');
+    if (!reserved) {
+      setRailFilter((railFilter + e.key).toLowerCase());
+      e.preventDefault();
+      return;
+    }
+  }
   // Arrow keys move the rail selection; if DOM focus sits on a tile from an
   // earlier click, follow it — otherwise Enter would fire the stale tile.
   const chaseFocus = () => {
@@ -1135,6 +1158,44 @@ rail.addEventListener('wheel', e => {
     e.preventDefault();
   }
 }, { passive: false });
+
+/* ---------- type-to-filter ----------
+   Start typing on the home screen and the rail narrows to matching tiles,
+   PS5-quick-menu style: non-matches dim, the first match takes focus, Enter
+   opens it, Escape (or backspacing to empty) clears. The 't'/'c' shortcuts
+   keep working while no filter is active; once you're typing, letters are
+   letters. */
+let railFilter = '';
+
+function filterChip() {
+  let chip = document.getElementById('rail-filter-chip');
+  if (!chip) {
+    chip = document.createElement('div');
+    chip.id = 'rail-filter-chip';
+    chip.setAttribute('role', 'status');
+    document.getElementById('rail-wrap')?.prepend(chip);
+  }
+  return chip;
+}
+
+function setRailFilter(text) {
+  railFilter = text;
+  const chip = filterChip();
+  if (!railFilter) {
+    chip.hidden = true;
+    tileEls.forEach(el => el.classList.remove('filter-dim'));
+    return;
+  }
+  chip.hidden = false;
+  chip.textContent = `⌕ ${railFilter}`;
+  let first = -1;
+  TILES.forEach((t, i) => {
+    const hit = t.title.toLowerCase().includes(railFilter);
+    tileEls[i]?.classList.toggle('filter-dim', !hit);
+    if (hit && first < 0) first = i;
+  });
+  if (first >= 0) setFocus(first);
+}
 
 /* ---------- boot splash ---------- */
 function boot() {
@@ -1192,6 +1253,70 @@ async function pollOps() {
   refreshOpsBadge();
 }
 
+/* ---------- live status dots ----------
+   The Worker probes a fixed list of the owner's sites (/api/status) so the
+   rail itself shows when one is down: a small dot on each link tile — green
+   up, red down, nothing while unknown. The last answer is kept in
+   'status.checks' so a reload paints dots instantly from cache, then the
+   fresh probe corrects them. */
+const STATUS_POLL_MS = 3 * 60 * 1000;
+
+// tiles whose dot is driven by a host other than their own url — the Church
+// Cameras module is "up" when the cam tunnel answers, not when any site does
+const STATUS_TILE_HOSTS = { ptz: 'cam1.myfaithtech.com' };
+
+function statusHostFor(t) {
+  if (STATUS_TILE_HOSTS[t.id]) return STATUS_TILE_HOSTS[t.id];
+  if (t.kind !== 'link' || !t.url) return null;
+  try {
+    return new URL(t.url).hostname;
+  } catch {
+    return null;
+  }
+}
+
+function paintStatusDots() {
+  const checks = load('status.checks', null)?.checks;
+  if (!checks) return;
+  TILES.forEach((t, i) => {
+    const el = tileEls[i];
+    if (!el) return;
+    const host = statusHostFor(t);
+    const check = host ? checks[host] : null;
+    let dot = el.querySelector('.tile-dot');
+    if (!check) { if (dot) dot.remove(); return; } // unchecked host: no dot at all
+    if (!dot) {
+      dot = document.createElement('span');
+      dot.className = 'tile-dot';
+      dot.setAttribute('aria-hidden', 'true'); // the title carries the detail for pointers
+      el.append(dot);
+    }
+    dot.classList.toggle('up', !!check.up);
+    dot.classList.toggle('down', !check.up);
+    dot.title = check.up ? `up · ${check.ms}ms` : 'DOWN';
+  });
+}
+
+async function refreshStatus() {
+  try {
+    const res = await fetch('/api/status');
+    if (res.ok) {
+      const body = await res.json();
+      if (body && body.checks) save('status.checks', { at: body.at || Date.now(), checks: body.checks });
+    }
+  } catch { /* offline — the cached dots stand */ }
+  paintStatusDots();
+}
+
+// poll only while the tab is actually being looked at, and catch up on return
+// if the cached answer has gone stale while the tab was hidden
+setInterval(() => { if (document.visibilityState === 'visible') refreshStatus(); }, STATUS_POLL_MS);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  const at = load('status.checks', null)?.at || 0;
+  if (Date.now() - at > STATUS_POLL_MS) refreshStatus();
+});
+
 // A module (e.g. the Today briefing) can ask to jump to another module.
 window.addEventListener('pd:open', e => {
   const id = e.detail;
@@ -1208,6 +1333,8 @@ applyConsole(consoleMode);
 renderRail();
 refreshOpsBadge();
 pollOps();
+paintStatusDots(); // last known answers, instantly, before the network says anything
+refreshStatus();
 boot();
 initAchievements(() => consoleMode);
 sync.init();

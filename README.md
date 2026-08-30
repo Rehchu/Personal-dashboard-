@@ -42,7 +42,7 @@ console remembers its own theme.
 Console extras: synthesized UI sounds per console (mutable in the control
 center), a boot splash, per-theme ambient particles (drifting starfield, pixel
 blocks, glyph rain, Animus dust, sunset haze, green bokeh), and a
-**trophy/achievement system** — 12 unlockables driven by your real fitness,
+**trophy/achievement system** — 15 unlockables driven by your real fitness,
 writing, and notebook activity, with PS trophy or Xbox achievement banners.
 
 ## Themes
@@ -71,9 +71,15 @@ size; export any page as PNG.
 
 ## Data & privacy
 
-Fitness logs, book chapters, and notebook pages live entirely in the browser's
-`localStorage` on the device you use — nothing is sent to a server. The only
-outbound request is the public GitHub API for the repo list.
+Everything works local-first: fitness logs, book chapters, and notebook pages
+live in the browser's storage on each device. Cross-device sync is opt-in and
+stays inside your own Cloudflare account — payloads are encrypted in the browser
+with a key derived from your passphrase before they reach your Worker's D1, so
+the database only ever holds ciphertext. The chat archive syncs (also opt-in)
+into your own private R2 bucket behind your login. Outbound requests beyond your
+own Worker: the public GitHub API for the repo list, the weather and
+verse-of-the-day APIs on the Today screen, and — only once configured — the
+Xbox/PlayStation profile APIs the gaming bridge proxies server-side.
 
 ## Develop
 
