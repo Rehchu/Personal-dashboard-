@@ -120,6 +120,8 @@ export function mount(root, tools) {
         display: grid; place-items: center; }
       #ptz-img { width: 100%; height: 100%; object-fit: contain; display: none; }
       #ptz-img.on { display: block; }
+      #ptz-vid { width: 100%; height: 100%; object-fit: contain; display: none; }
+      #ptz-vid.on { display: block; }
       #ptz-view-msg { position: absolute; padding: 0 16px; text-align: center; font-size: 13px; }
       .ptz-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: center; }
       .ptz-preset { min-width: 44px; min-height: 44px; }
@@ -161,10 +163,12 @@ export function mount(root, tools) {
         </div>
         <div id="ptz-view">
           <img id="ptz-img" alt="Camera preview">
+          <video id="ptz-vid" playsinline muted autoplay></video>
           <div id="ptz-view-msg" class="muted">No camera selected</div>
         </div>
         <div class="ptz-row" style="margin:10px 0 16px">
           <button class="btn small" id="ptz-live">▸ Live view</button>
+          <button class="btn small" id="ptz-video">🎥 Video</button>
           <span class="muted" id="ptz-fps"></span>
         </div>
         <div id="ptz-controls">
@@ -242,6 +246,7 @@ export function mount(root, tools) {
       // the preview must follow the selection: a new generation cancels the old
       // loop (and its in-flight frame) so only one camera is ever polled
       if (live) { misses = 0; frameTimes = []; frameLoop(++liveGen); }
+      if (videoOn) { stopVideo(); startVideo(); }   // video follows the selection too
     }));
     host.querySelectorAll('[data-del]').forEach(btn => btn.addEventListener('click', () => {
       const cam = cams.find(c => c.id === btn.dataset.del);
@@ -562,7 +567,86 @@ export function mount(root, tools) {
     frameLoop(++liveGen);
   }
 
-  liveBtn.addEventListener('click', () => (live ? stopLive('Paused') : startLive()));
+  /* ---------- real video (MediaMTX → LL-HLS) ----------
+     When MediaMTX runs on the booth Mac, each camera's RTSP feed becomes a
+     low-latency HLS stream the Worker proxies at /api/stream/<name>/…, with
+     the stored Access token attached server-side. This plays actual video —
+     smooth and a couple of seconds behind at most — where the snapshot loop
+     above is the fallback for cameras with no stream configured. */
+  const vid = root.querySelector('#ptz-vid');
+  const videoBtn = root.querySelector('#ptz-video');
+  let hls = null;
+  let videoOn = false;
+
+  // MediaMTX names each stream after the camera's tunnel hostname's first
+  // label: cam1.myfaithtech.com → cam1. A camera can override with .stream.
+  function streamNameFor(cam) {
+    if (cam?.stream && /^[a-z0-9_-]{1,24}$/.test(cam.stream)) return cam.stream;
+    try {
+      const label = new URL(cam.base).hostname.split('.')[0].toLowerCase();
+      return /^[a-z0-9_-]{1,24}$/.test(label) ? label : null;
+    } catch { return null; }
+  }
+
+  let hlsLibPromise = null;
+  const loadHlsLib = () => hlsLibPromise ||= new Promise((resolve, reject) => {
+    if (window.Hls) return resolve(window.Hls);
+    const s = document.createElement('script');
+    s.src = '/vendor/hls.light.min.js';
+    s.onload = () => (window.Hls ? resolve(window.Hls) : reject(new Error('player failed to load')));
+    s.onerror = () => reject(new Error('player failed to load'));
+    document.head.append(s);
+  });
+
+  function stopVideo(reason) {
+    videoOn = false;
+    if (hls) { hls.destroy(); hls = null; }
+    vid.removeAttribute('src');
+    vid.load();
+    vid.classList.remove('on');
+    videoBtn.textContent = '🎥 Video';
+    if (reason) showMsg(reason);
+  }
+
+  async function startVideo() {
+    if (!current) { showMsg('Add a camera first'); return; }
+    const name = streamNameFor(current);
+    if (!name) { showMsg('This camera has no stream name'); return; }
+    stopLive();                       // one picture source at a time
+    img.classList.remove('on');
+    videoOn = true;
+    videoBtn.textContent = '⏸ Stop video';
+    showMsg('Connecting to the stream…');
+    const src = `/api/stream/${name}/index.m3u8`;
+    const failed = why => { if (videoOn) stopVideo(`${why} — is MediaMTX running at the booth?`); };
+    if (vid.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari plays HLS natively; same-origin, so the session cookie rides along
+      vid.src = src;
+      vid.classList.add('on');
+      vid.addEventListener('playing', () => { if (videoOn) showMsg(''); }, { once: true });
+      vid.addEventListener('error', () => failed('stream not available'), { once: true });
+      vid.play().catch(() => {});
+      return;
+    }
+    let Hls;
+    try { Hls = await loadHlsLib(); } catch (err) { stopVideo(err.message); return; }
+    if (!videoOn) return;
+    if (!Hls.isSupported()) { stopVideo('This browser cannot play the stream'); return; }
+    hls = new Hls({ lowLatencyMode: true, liveDurationInfinity: true });
+    hls.on(Hls.Events.ERROR, (_ev, data) => { if (data?.fatal) failed('stream error'); });
+    hls.on(Hls.Events.FRAG_BUFFERED, () => { if (videoOn) { showMsg(''); vid.classList.add('on'); } });
+    hls.loadSource(src);
+    hls.attachMedia(vid);
+    vid.play().catch(() => {});
+  }
+
+  videoBtn.addEventListener('click', () => (videoOn ? stopVideo('Stopped') : startVideo()));
+
+  liveBtn.addEventListener('click', () => {
+    if (live) { stopLive('Paused'); return; }
+    stopVideo();                      // switching back to the snapshot loop
+    startLive();
+  });
   // resuming or switching cameras starts a fresh generation; the old loop exits
   const onVisible = () => { if (live && !document.hidden) frameLoop(++liveGen); };
   document.addEventListener('visibilitychange', onVisible);
@@ -583,6 +667,7 @@ export function mount(root, tools) {
     // never leave a camera panning because the module was closed mid-press
     stoppers.forEach(stop => stop());
     stopLive();
+    stopVideo();
     document.removeEventListener('visibilitychange', onVisible);
     if (objectUrl) URL.revokeObjectURL(objectUrl);
   };
