@@ -112,9 +112,13 @@ export function mount(root, tools) {
           `<span class="town-pill bld" title="${esc(st.name)}">${KIND_ICO[st.kind] || '🏗️'} ${st.progress < 100 ? `${esc(st.name)} ${Number(st.progress) || 0}%` : esc(st.name)}</span>`).join('')}</div>
       </div>`).join('');
 
-    root.querySelector('#town-agents').innerHTML = (s.agents || []).map(a => `
-      <div class="town-agent"><span class="nm">${esc(a.name)}</span>
-        <span class="rl">${esc(a.role)} · ${esc(a.loc)}</span><span class="co">${Number(a.coins) || 0}c</span></div>`).join('');
+    root.querySelector('#town-agents').innerHTML = (s.agents || []).map(a => {
+      const ev = a.eval && a.eval.note
+        ? `<div style="flex-basis:100%;font-size:12.5px;color:#e0b23a;margin-top:2px">${'★'.repeat(Math.max(1, Math.min(5, Number(a.eval.rating) || 3)))}${'☆'.repeat(5 - Math.max(1, Math.min(5, Number(a.eval.rating) || 3)))} ${esc(a.eval.by)}: “${esc(a.eval.note)}”</div>`
+        : '';
+      return `<div class="town-agent" style="flex-wrap:wrap"><span class="nm">${esc(a.name)}</span>
+        <span class="rl">${esc(a.role)} · ${esc(a.loc)}</span><span class="co">${Number(a.coins) || 0}c</span>${ev}</div>`;
+    }).join('');
 
     root.querySelector('#town-feed').innerHTML = (s.feed || []).map(e => `
       <div class="town-ev"><span class="t">t${Number(e.tick) || 0}</span><b>${esc(e.name)}</b> ${esc(e.text)}</div>`).join('');
