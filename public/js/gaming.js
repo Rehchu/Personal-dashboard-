@@ -1,0 +1,253 @@
+// Gaming — real Xbox and PlayStation, side by side. The Worker's /api/gaming/*
+// bridges hold the keys and talk to OpenXBL and Sony's mobile API; this module
+// paints the normalized shapes they return, and offers the one-time key setup.
+// Nothing here ever sees a key after it's saved — the bridge only tells us
+// whether one is configured.
+//
+// Last good payload is cached in localStorage (gaming.xbox / gaming.psn) so the
+// profile chip and activity cards have something to show before the fetch lands.
+
+import { load, save, esc, showToast } from './store.js';
+
+const CACHE = { xbox: 'gaming.xbox', psn: 'gaming.psn' };
+
+async function pull(path, cacheKey) {
+  try {
+    const res = await fetch(path, { headers: { accept: 'application/json' } });
+    const data = await res.json();
+    if (cacheKey && data && data.configured && !data.error) save(cacheKey, { at: Date.now(), data });
+    return data;
+  } catch {
+    const cached = cacheKey ? load(cacheKey, null) : null;
+    return cached ? { ...cached.data, _stale: true } : { _error: true };
+  }
+}
+
+const num = n => (Number.isFinite(Number(n)) ? Number(n) : 0);
+
+function injectStyle() {
+  if (document.getElementById('gaming-style')) return;
+  const style = document.createElement('style');
+  style.id = 'gaming-style';
+  style.textContent = `
+    .gm-cols { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    @media (max-width:760px){ .gm-cols { grid-template-columns:1fr; } }
+    .gm-card { border-radius:16px; border:1px solid var(--line,rgba(255,255,255,.1)); background:var(--surface-2); overflow:hidden; }
+    .gm-head { padding:16px; display:flex; align-items:center; gap:14px; }
+    .gm-head.xbox { background:linear-gradient(120deg,#107c10,#0b4d0b); }
+    .gm-head.psn { background:linear-gradient(120deg,#0070d1,#003791); }
+    .gm-avatar { width:52px; height:52px; border-radius:50%; object-fit:cover; background:rgba(0,0,0,.25); flex:none; }
+    .gm-head .who { color:#fff; min-width:0; }
+    .gm-head .tag { font:800 18px var(--font-display,system-ui); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .gm-head .sub { font-size:13px; opacity:.9; }
+    .gm-body { padding:14px 16px; }
+    .gm-tiers { display:flex; gap:14px; margin-bottom:14px; }
+    .gm-tier { text-align:center; }
+    .gm-tier .n { font:800 1.3rem var(--font-display,system-ui); color:var(--ink); }
+    .gm-tier .l { font-size:11px; color:var(--ink-2); text-transform:uppercase; letter-spacing:.04em; }
+    .gm-tier.plat .n { color:#8ea9c1; } .gm-tier.gold .n { color:#e0b23a; }
+    .gm-tier.silver .n { color:#b9c2cc; } .gm-tier.bronze .n { color:#c17a44; }
+    .gm-game { display:flex; align-items:center; gap:11px; padding:9px 0; border-top:1px solid var(--line,rgba(255,255,255,.07)); }
+    .gm-game:first-of-type { border-top:0; }
+    .gm-box { width:46px; height:46px; border-radius:8px; object-fit:cover; background:var(--surface-3,rgba(255,255,255,.06)); flex:none; }
+    .gm-box.fallback { display:flex; align-items:center; justify-content:center; font-size:20px; }
+    .gm-game .info { min-width:0; flex:1; }
+    .gm-game .nm { color:var(--ink); font-weight:600; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .gm-game .pr { color:var(--ink-2); font-size:12.5px; margin-top:2px; }
+    .gm-bar { height:5px; border-radius:3px; background:var(--surface-3,rgba(255,255,255,.1)); overflow:hidden; margin-top:5px; }
+    .gm-bar i { display:block; height:100%; background:var(--accent); }
+    .gm-setup { padding:18px 16px; }
+    .gm-setup p { color:var(--ink-2); font-size:13.5px; line-height:1.5; margin:0 0 12px; }
+    .gm-setup ol { color:var(--ink-2); font-size:13px; line-height:1.6; margin:0 0 12px; padding-left:20px; }
+    .gm-setup a { color:var(--accent); }
+    .gm-setup input { width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--line,rgba(255,255,255,.15));
+      background:var(--surface-3,rgba(0,0,0,.2)); color:var(--ink); font-size:14px; margin-bottom:10px; box-sizing:border-box; }
+    .gm-setup button { padding:10px 18px; border-radius:10px; border:0; background:var(--accent); color:#fff; font-weight:700; cursor:pointer; }
+    .gm-note { font-size:12.5px; color:var(--ink-3); margin:10px 0 0; }
+    .gm-banner { padding:9px 14px; border-radius:10px; background:color-mix(in oklab,#e0913a 22%,var(--surface-2)); color:var(--ink); font-size:12.5px; margin-bottom:12px; }
+    @media (prefers-reduced-motion: no-preference){ .gm-card { animation:gm-in .35s ease both; } @keyframes gm-in { from { opacity:0; transform:translateY(6px);} } }`;
+  document.head.append(style);
+}
+
+function boxArt(url, fallback) {
+  const safe = typeof url === 'string' && /^https:\/\//.test(url) ? url : '';
+  if (!safe) return `<div class="gm-box fallback" aria-hidden="true">${fallback}</div>`;
+  return `<img class="gm-box" src="${esc(safe)}" alt="" loading="lazy"
+    onerror="this.outerHTML='<div class=\\'gm-box fallback\\' aria-hidden=\\'true\\'>${fallback}</div>'">`;
+}
+
+function xboxSetup() {
+  return `<div class="gm-setup">
+    <p>Show your real gamerscore and recently-played games. You'll need a free
+       OpenXBL key — it reads your Xbox profile without storing your password.</p>
+    <ol>
+      <li>Go to <a href="https://xbl.io" target="_blank" rel="noopener">xbl.io</a> and sign in with your Microsoft account.</li>
+      <li>Open the <b>API Keys</b> page and copy your key.</li>
+      <li>Paste it below — it's stored on the Worker, never in the browser.</li>
+    </ol>
+    <input type="password" id="gm-xbl" placeholder="OpenXBL API key" autocomplete="off" spellcheck="false">
+    <button data-save="xbl_key" data-input="gm-xbl">Connect Xbox</button>
+  </div>`;
+}
+
+function psnSetup() {
+  return `<div class="gm-setup">
+    <p>Show your PlayStation trophy level and recent games. You'll paste your
+       account's NPSSO token — Sony's own single-sign-on cookie.</p>
+    <ol>
+      <li>Sign in at <a href="https://playstation.com" target="_blank" rel="noopener">playstation.com</a>.</li>
+      <li>In the same browser open
+        <a href="https://ca.account.sony.com/api/v1/ssocookie" target="_blank" rel="noopener">ca.account.sony.com/api/v1/ssocookie</a>.</li>
+      <li>Copy the 64-character <b>npsso</b> value and paste it below.</li>
+    </ol>
+    <input type="password" id="gm-psn" placeholder="NPSSO token" autocomplete="off" spellcheck="false">
+    <button data-save="psn_npsso" data-input="gm-psn">Connect PlayStation</button>
+  </div>`;
+}
+
+function xboxCard(d) {
+  if (!d || d._error) return `<div class="gm-card"><div class="gm-head xbox"><div class="who"><div class="tag">Xbox</div><div class="sub">bridge unreachable</div></div></div></div>`;
+  if (d.configured === false) return `<div class="gm-card">${xboxSetup()}</div>`;
+
+  const p = d.profile || {};
+  const recent = d.recent || [];
+  const banner = d.error ? `<div class="gm-banner">Xbox Live didn't answer${d._stale || d.stale ? ' — showing the last snapshot' : ''}.</div>` : '';
+  const games = recent.length ? recent.map(g => {
+    const pct = g.total ? Math.round((num(g.earned) / num(g.total)) * 100) : 0;
+    return `<div class="gm-game">
+      ${boxArt(g.art, '🎮')}
+      <div class="info">
+        <div class="nm">${esc(g.name || 'Game')}</div>
+        <div class="pr">${num(g.earned)}/${num(g.total)} achievements${g.score ? ` · ${num(g.score)}G` : ''}</div>
+        ${g.total ? `<div class="gm-bar"><i style="width:${pct}%"></i></div>` : ''}
+      </div>
+    </div>`;
+  }).join('') : '<p class="gm-note">No recently played titles.</p>';
+
+  return `<div class="gm-card">
+    <div class="gm-head xbox">
+      ${p.avatar ? `<img class="gm-avatar" src="${esc(p.avatar)}" alt="" onerror="this.remove()">` : ''}
+      <div class="who"><div class="tag">${esc(p.gamertag || 'Xbox')}</div>
+        <div class="sub">${num(p.gamerscore).toLocaleString()} G</div></div>
+    </div>
+    <div class="gm-body">${banner}${games}</div>
+  </div>`;
+}
+
+function psnCard(d) {
+  if (!d || d._error) return `<div class="gm-card"><div class="gm-head psn"><div class="who"><div class="tag">PlayStation</div><div class="sub">bridge unreachable</div></div></div></div>`;
+  if (d.configured === false) return `<div class="gm-card">${psnSetup()}</div>`;
+
+  const s = d.summary || {};
+  const recent = d.recent || [];
+  const reauth = d.error === 'reauth';
+  const banner = reauth
+    ? `<div class="gm-banner">Your PlayStation sign-in expired. ${d._stale || d.stale ? 'Showing the last snapshot — ' : ''}re-connect below with a fresh NPSSO.</div>`
+    : (d.error ? `<div class="gm-banner">PSN didn't answer${d._stale || d.stale ? ' — showing the last snapshot' : ''}.</div>` : '');
+
+  const tiers = `<div class="gm-tiers">
+    <div class="gm-tier plat"><div class="n">${num(s.platinum)}</div><div class="l">Plat</div></div>
+    <div class="gm-tier gold"><div class="n">${num(s.gold)}</div><div class="l">Gold</div></div>
+    <div class="gm-tier silver"><div class="n">${num(s.silver)}</div><div class="l">Silver</div></div>
+    <div class="gm-tier bronze"><div class="n">${num(s.bronze)}</div><div class="l">Bronze</div></div>
+  </div>`;
+
+  const games = recent.length ? recent.map(g => `
+    <div class="gm-game">
+      ${boxArt(g.art, '🏆')}
+      <div class="info">
+        <div class="nm">${esc(g.name || 'Game')}</div>
+        <div class="pr">${num(g.progress)}% complete</div>
+        <div class="gm-bar"><i style="width:${num(g.progress)}%"></i></div>
+      </div>
+    </div>`).join('') : '<p class="gm-note">No recent trophy titles.</p>';
+
+  return `<div class="gm-card">
+    <div class="gm-head psn">
+      <div class="who"><div class="tag">Trophy Level ${num(s.level)}</div>
+        <div class="sub">${num(s.platinum)} platinum${num(s.platinum) === 1 ? '' : 's'}</div></div>
+    </div>
+    <div class="gm-body">${banner}${tiers}${games}${reauth ? psnSetup() : ''}</div>
+  </div>`;
+}
+
+export function mount(root, tools) {
+  injectStyle();
+  let alive = true;
+  let xbox = load(CACHE.xbox, null)?.data || null;
+  let psn = load(CACHE.psn, null)?.data || null;
+
+  root.innerHTML = `<div class="gm-cols">
+    <div id="gm-xbox"><p class="muted">Loading Xbox…</p></div>
+    <div id="gm-psn"><p class="muted">Loading PlayStation…</p></div>
+  </div>`;
+
+  const xboxEl = root.querySelector('#gm-xbox');
+  const psnEl = root.querySelector('#gm-psn');
+
+  const refreshBtn = document.createElement('button');
+  refreshBtn.className = 'btn small';
+  refreshBtn.textContent = '⟳ Refresh';
+  tools.append(refreshBtn);
+
+  function paint() {
+    if (!alive) return;
+    xboxEl.innerHTML = xboxCard(xbox);
+    psnEl.innerHTML = psnCard(psn);
+    wireSetup();
+  }
+
+  // save handlers for whichever setup form is showing
+  function wireSetup() {
+    root.querySelectorAll('[data-save]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const field = btn.dataset.save;
+        const input = root.querySelector('#' + btn.dataset.input);
+        const val = (input?.value || '').trim();
+        if (!val) { showToast('Paste a key first'); return; }
+        btn.disabled = true; btn.textContent = 'Connecting…';
+        try {
+          const res = await fetch('/api/gaming/keys', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ [field]: val }),
+          });
+          if (!res.ok) throw new Error();
+          showToast('Connected — loading your games');
+          await loadAll();
+        } catch {
+          showToast('Could not save that key');
+          btn.disabled = false; btn.textContent = 'Try again';
+        }
+      });
+    });
+  }
+
+  async function loadAll() {
+    paint(); // paint cache first
+    const [x, p] = await Promise.all([
+      pull('/api/gaming/xbox', CACHE.xbox),
+      pull('/api/gaming/psn', CACHE.psn),
+    ]);
+    if (!alive) return;
+    xbox = x; psn = p;
+    paint();
+    window.dispatchEvent(new Event('pd:data-changed')); // refresh the profile chip
+  }
+
+  refreshBtn.addEventListener('click', () => loadAll());
+  loadAll();
+
+  return function unmount() { alive = false; };
+}
+
+// Compact profile-chip line: gamerscore + trophy level, from the cached
+// payloads only (no fetch — the chip updates whenever the module refreshes).
+export function chipSummary() {
+  const x = load(CACHE.xbox, null)?.data;
+  const p = load(CACHE.psn, null)?.data;
+  const bits = [];
+  if (x?.profile?.gamerscore) bits.push(`🟢 ${num(x.profile.gamerscore).toLocaleString()}`);
+  if (p?.summary?.level) bits.push(`🔵 L${num(p.summary.level)}`);
+  return bits.join(' · ');
+}

@@ -97,6 +97,34 @@ function archiveCards() {
   ];
 }
 
+function opsCards() {
+  const shop = load('biz.shop', null)?.data;
+  const it = load('biz.ariseit', null)?.data;
+  if (!shop && !it) return [{ v: '🛰️', l: 'open to sync' }, { v: '…', l: 'shop + church' }];
+  const cards = [];
+  if (shop && shop.configured !== false) {
+    cards.push({ v: String(shop.tickets?.length || 0), l: 'open tickets' });
+    cards.push({ v: String(shop.leads?.count || 0), l: 'leads waiting' });
+  }
+  if (it && it.configured !== false) {
+    cards.push({ v: String(it.open?.length || 0), l: 'IT tickets' });
+  }
+  const plan = load('biz.arise', null)?.data?.nextPlan;
+  if (plan) cards.push({ v: `${plan.accepted}/${plan.positions}`, l: 'Sunday staffed' });
+  return cards.length ? cards : [{ v: '✅', l: 'all clear' }];
+}
+
+function gamingCards() {
+  const x = load('gaming.xbox', null)?.data;
+  const p = load('gaming.psn', null)?.data;
+  if (!x?.profile && !p?.summary) return [{ v: '🎮', l: 'connect a console' }, { v: 'XB · PS', l: 'gamerscore + trophies' }];
+  const cards = [];
+  if (x?.profile?.gamerscore) cards.push({ v: kfmt(x.profile.gamerscore), l: 'gamerscore' });
+  if (p?.summary?.level) cards.push({ v: String(p.summary.level), l: 'trophy level' });
+  if (p?.summary?.platinum) cards.push({ v: String(p.summary.platinum), l: 'platinums' });
+  return cards.length ? cards : [{ v: '🎮', l: 'no data yet' }];
+}
+
 const BUILDERS = {
   fitness: fitnessCards,
   writing: writingCards,
@@ -104,6 +132,8 @@ const BUILDERS = {
   projects: projectsCards,
   cloudflare: cloudflareCards,
   archive: archiveCards,
+  ops: opsCards,
+  gaming: gamingCards,
 };
 
 export function activityCards(tileId) {

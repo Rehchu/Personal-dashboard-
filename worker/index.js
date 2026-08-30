@@ -5,6 +5,8 @@
 // cookies signed with a server-side secret kept in D1.
 
 import { parseDigestChallenge, digestAuthHeader } from './digest.js';
+import { handleBiz } from './biz.js';
+import { handleGaming } from './gaming.js';
 
 const COL_RE = /^[a-zA-Z0-9._-]{1,40}$/;
 const ARCHIVE_ID_RE = /^[a-z0-9][a-z0-9._-]{0,39}$/;
@@ -584,6 +586,24 @@ function ptzQuery(cmd, args = {}) {
   return null;
 }
 
+// The camera password and — worse — the reusable Cloudflare Access service
+// token ride on every request the Worker makes to a camera address. That token
+// also fronts arisehub/itportal, so it must never leave to an arbitrary host.
+// Like serveIcon's ICON_HOSTS, the camera endpoint is NOT an open proxy: only
+// the church tunnel domain and private/LAN addresses are reachable. Everything
+// else is rejected before any secret is attached.
+function cameraHostAllowed(host) {
+  const h = host.toLowerCase();
+  // the church cameras and any sibling behind the same tunnel domain
+  if (h === 'myfaithtech.com' || h.endsWith('.myfaithtech.com')) return true;
+  // a camera addressed directly on the LAN (the Worker can only reach these
+  // through a tunnel anyway, so this is permissive, not a new exposure)
+  if (h === 'localhost' || h.endsWith('.local')) return true;
+  if (/^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
+  return false;
+}
+
 // A camera address may carry a path prefix, because one tunnel hostname can
 // front several cameras (https://dyerhq.example.com/cam1). Anything the caller
 // puts there is kept as a prefix only — the endpoint itself is always ours.
@@ -595,8 +615,12 @@ function parseCameraBase(base) {
     return null;
   }
   if (target.protocol !== 'http:' && target.protocol !== 'https:') return null;
+  // credentials in the URL make fetch() throw; reject them with a clear reason
+  if (target.username || target.password) return null;
+  if (!cameraHostAllowed(target.hostname)) return null;
   const prefix = target.pathname.replace(/\/+$/, '');
-  if (prefix && !/^(\/[A-Za-z0-9._-]{1,40}){1,4}$/.test(prefix)) return null;
+  // reject dot-segments so a prefix cannot walk off its intended path
+  if (prefix && (!/^(\/[A-Za-z0-9._-]{1,40}){1,4}$/.test(prefix) || /(^|\/)\.\.(\/|$)/.test(prefix))) return null;
   return { target, prefix };
 }
 
@@ -985,6 +1009,28 @@ export default {
       if (!authed) return json({ error: 'sign in first' }, 401);
       if (request.method !== 'POST') return json({ error: 'method not allowed' }, 405);
       return path === '/api/ptz' ? handlePtz(request) : handlePtzSnapshot(request);
+    }
+
+    // Business bridges (shop / church IT / AriseHub) and the gaming bridge
+    // (Xbox / PlayStation). Both sit behind the session check above and answer
+    // their own path space; a thrown bridge reads as "unreachable", never a 500
+    // that takes the shell down.
+    if (path.startsWith('/api/biz/')) {
+      if (!authed) return json({ error: 'sign in first' }, 401);
+      try {
+        return await handleBiz(url, request, env) || json({ error: 'not found' }, 404);
+      } catch {
+        return json({ error: 'unreachable' }, 502);
+      }
+    }
+
+    if (path.startsWith('/api/gaming/')) {
+      if (!authed) return json({ error: 'sign in first' }, 401);
+      try {
+        return await handleGaming(url, request, env) || json({ error: 'not found' }, 404);
+      } catch {
+        return json({ error: 'gaming bridge unavailable' }, 502);
+      }
     }
 
     if (path.startsWith('/api/')) return json({ error: 'not found' }, 404);
