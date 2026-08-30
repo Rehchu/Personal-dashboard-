@@ -201,13 +201,18 @@ export function mount(root, tools) {
     statusEl.style.color = bad ? '#ff8a92' : '';
   };
 
+  // Returns whether the command actually reached the camera, so callers that
+  // report success (e.g. saving a preset) can tell a real save from a failure
+  // instead of announcing "saved" on a command that threw.
   async function run(cmd, args) {
-    if (!current) { setStatus('add a camera first', true); return; }
+    if (!current) { setStatus('add a camera first', true); return false; }
     try {
       await send(current, cmd, args);
       setStatus(`${cmd} ok`);
+      return true;
     } catch (err) {
       setStatus(err.message, true);
+      return false;
     }
   }
 
@@ -303,7 +308,10 @@ export function mount(root, tools) {
     host.querySelectorAll('[data-preset]').forEach(btn => btn.addEventListener('click', () => {
       const n = Number(btn.dataset.preset);
       if (saveMode) {
-        run('posset', { preset: n }).then(() => showToast(`Saved preset ${n}`));
+        // only claim the preset was saved once the camera actually stored it;
+        // a swallowed failure used to show "Saved preset N" for a no-op
+        run('posset', { preset: n }).then(ok =>
+          showToast(ok ? `Saved preset ${n}` : `Preset ${n} did NOT save`));
         saveMode = false;
         savemodeBtn.textContent = 'Save to…';
         renderPresets();

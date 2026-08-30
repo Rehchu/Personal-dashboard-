@@ -3,7 +3,7 @@
 // synthesized UI sounds, ambient particles, control center, trophies.
 
 import { TILES } from './data.js';
-import { load, save, esc, showToast } from './store.js';
+import { load, save, esc, showToast, keys as storeKeys } from './store.js';
 import { sfx } from './sfx.js';
 import { initAmbient } from './ambient.js';
 import { initStorm } from './storm.js';
@@ -293,11 +293,18 @@ function openModule(id) {
   const mod = MODULES[id];
   if (!mod) return;
   $('#appview-title').textContent = mod.title;
+  // the tab/window title should follow the open module, then restore on close
+  document.title = `${mod.title} — Dyer HQ`;
   const tools = $('#appview-tools');
   const body = $('#appview-body');
   tools.innerHTML = '';
   body.innerHTML = '';
   appview.hidden = false;
+  // Make the background untabbable + invisible to assistive tech while the
+  // full-screen module owns the view, and push a history entry so the phone
+  // back gesture closes the module instead of leaving the app.
+  setBgInert(true);
+  pushOverlayState();
   ambient.pause(); // the module view fully covers the background layers
   storm.stop();
   if (!bgVideo.hidden) bgVideo.pause();
@@ -305,7 +312,17 @@ function openModule(id) {
     unmount = mod.mount(body, tools) || null;
   } catch (err) {
     body.innerHTML = `<p class="muted">This module hit an error: ${esc(err.message)}</p>`;
+    // a crashed mount was a dead end — give a way back into the module
+    const retry = document.createElement('button');
+    retry.className = 'btn';
+    retry.style.marginTop = '12px';
+    retry.textContent = 'Try again';
+    retry.addEventListener('click', () => openModule(id));
+    body.append(retry);
   }
+  // move focus into the overlay so keyboard users are not stranded behind it
+  const back = $('#appview-back');
+  if (back) back.focus();
 }
 
 function closeModule() {
@@ -313,6 +330,11 @@ function closeModule() {
   if (typeof unmount === 'function') { try { unmount(); } catch { /* noop */ } }
   unmount = null;
   appview.hidden = true;
+  document.title = 'Dyer HQ — Dashboard';
+  // hand the background back to the keyboard/AT (unless the control center is
+  // still up over it) and drop the history entry we pushed on open
+  if (ccenter.hidden) setBgInert(false);
+  consumeOverlayState();
   $('#appview-body').innerHTML = '';
   $('#appview-tools').innerHTML = '';
   ambient.resume();
@@ -329,6 +351,56 @@ $('#appview-back').addEventListener('click', closeModule);
 const ccenter = $('#ccenter');
 const ccActions = $('#cc-actions');
 const ccExtra = $('#cc-extra');
+
+/* ---------- overlay plumbing (focus, inert, phone back) ----------
+   An open overlay (module or control center) must take the background out of
+   the tab order for keyboard/AT users, and register a history entry so the
+   Android/browser back gesture just closes the overlay instead of exiting the
+   whole PWA. The two overlays are mutually exclusive in practice (the control
+   center can only be reached from the home screen), so a single pushed entry
+   is enough. */
+const BG_LAYERS = ['#topbar', '#pill-nav', '#home'];
+function setBgInert(on) {
+  BG_LAYERS.forEach(sel => {
+    const el = $(sel);
+    if (el) el.toggleAttribute('inert', on); // guard: a skin could drop a layer
+  });
+}
+
+let overlayStatePushed = false; // true while our synthetic history entry exists
+let handlingPop = false;        // guards against re-entrancy from history.back()
+function pushOverlayState() {
+  if (overlayStatePushed) return; // idempotent — never stack entries
+  overlayStatePushed = true;
+  try { history.pushState({ pdOverlay: true }, ''); } catch { /* noop */ }
+}
+// Drop our entry when an overlay closes by any route other than the back
+// gesture, so the next back press still leaves the app.
+function consumeOverlayState() {
+  if (handlingPop || !overlayStatePushed) return;
+  if (!(appview.hidden && ccenter.hidden)) return; // another overlay still open
+  overlayStatePushed = false;
+  try { history.back(); } catch { /* noop */ }
+}
+window.addEventListener('popstate', () => {
+  overlayStatePushed = false; // this entry has now been popped by the browser
+  handlingPop = true;
+  if (!ccenter.hidden) hideCC();
+  else if (!appview.hidden) closeModule();
+  handlingPop = false;
+});
+
+/* ---------- PWA install prompt ----------
+   Chrome fires beforeinstallprompt when the app is installable; the native
+   prompt can only be shown from that stashed event, later, on a user gesture. */
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+});
+window.addEventListener('appinstalled', () => { deferredInstallPrompt = null; });
+
+let ccInvoker = null; // element to restore focus to when the control center closes
 
 async function lockApp() {
   try { await fetch('/api/auth/logout', { method: 'POST' }); } catch { /* offline */ }
@@ -750,6 +822,71 @@ function syncAction() {
   }
 }
 
+// Whole-account backup, independent of sync: dump every stored 'pd.*' key to a
+// JSON file the browser downloads. This is the escape hatch when sync is off or
+// broken and the only copy of the data lives in one browser's localStorage.
+function backupData() {
+  try {
+    const dump = {};
+    for (const k of storeKeys()) dump[k] = load(k, null);
+    const payload = { app: 'dyer-hq', version: 1, exported: new Date().toISOString(), data: dump };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `dyer-hq-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    // revoke on a tick so the download has committed to the URL first
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    showToast(`Backed up ${Object.keys(dump).length} keys`);
+  } catch (err) {
+    showToast(`Backup failed: ${err.message}`);
+  }
+}
+
+// Restore reads a picked backup file and writes its keys back through save() —
+// so the sync engine's onSave hook picks each one up — then reloads to rebuild
+// the UI from fresh state. Guarded hard against a file that is not one of ours,
+// since a bad restore would silently overwrite good data.
+function restoreData() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'application/json,.json';
+  input.addEventListener('change', () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      let parsed;
+      try {
+        parsed = JSON.parse(String(reader.result));
+      } catch {
+        showToast('Restore failed: not a valid JSON file');
+        return;
+      }
+      // accept either our wrapped {data:{…}} shape or a bare key→value map
+      const data = parsed && typeof parsed === 'object' && parsed.data && typeof parsed.data === 'object'
+        ? parsed.data : parsed;
+      if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        showToast('Restore failed: unrecognized backup file');
+        return;
+      }
+      const names = Object.keys(data);
+      if (!names.length) { showToast('Restore failed: no keys in file'); return; }
+      if (!confirm(`Restore ${names.length} keys? This overwrites data on this device.`)) return;
+      let ok = 0;
+      for (const k of names) { if (save(k, data[k])) ok += 1; }
+      showToast(`Restored ${ok} keys — reloading…`);
+      setTimeout(() => location.reload(), 800);
+    };
+    reader.onerror = () => showToast('Restore failed: could not read the file');
+    reader.readAsText(file);
+  });
+  input.click();
+}
+
 const GALLERY_CSS = `
   #bg-gallery .bg-card { display: flex; gap: 8px; align-items: center; }
   #bg-gallery .bg-pick { flex: 1; min-width: 0; text-align: left; padding: 8px 10px; border-radius: 9px;
@@ -781,15 +918,29 @@ function buildCC() {
     { ico: 'sparkle', label: 'Set up theme backgrounds', fn: setupAllThemeBgs },
     { ico: 'sparkle', label: 'Import bg from URL', fn: importBgFromUrl },
     { ico: 'sparkle', label: `Gallery (${gallery.items.length})`, fn: () => { const h = galleryHost(); if (h) { h.hidden = !h.hidden; if (!h.hidden) h.scrollIntoView({ block: 'nearest' }); } } },
-    { ico: 'home', label: sync.status(), fn: syncAction },
+    // surface the underlying error as a hover/long-press title so a stuck sync
+    // is legible, not just the generic "Sync error" label
+    { ico: 'home', label: sync.status(), title: sync.lastError() || undefined, fn: syncAction },
+    { ico: 'sparkle', label: 'Backup (.json)', fn: backupData },
+    { ico: 'sparkle', label: 'Restore', fn: restoreData },
     { ico: 'soundOff', label: 'Lock', fn: lockApp },
     { ico: 'controller', label: 'Cloudflare', href: 'https://dash.cloudflare.com' },
   ];
+  // only offer Install when the browser has actually handed us a prompt to fire
+  if (deferredInstallPrompt) {
+    items.push({ ico: 'sparkle', label: 'Install app', fn: async () => {
+      const e = deferredInstallPrompt;
+      deferredInstallPrompt = null; // a prompt event can only be used once
+      try { e.prompt(); await e.userChoice; } catch { /* dismissed */ }
+      buildCC(); // the item drops off now that the prompt is spent
+    } });
+  }
   ccActions.innerHTML = '';
   items.forEach(it => {
     const node = document.createElement(it.href ? 'a' : 'button');
     node.className = 'cc-btn';
     if (it.href) { node.href = it.href; node.target = '_blank'; node.rel = 'noopener'; node.style.textDecoration = 'none'; }
+    if (it.title) node.title = it.title; // e.g. the full sync error behind a "Sync error" label
     node.innerHTML = `<span class="cc-ico">${ICONS[it.ico] || ''}</span><span class="cc-label">${esc(it.label)}</span>`;
     if (it.fn) node.addEventListener('click', it.fn);
     ccActions.append(node);
@@ -830,15 +981,35 @@ function toggleTrophies() {
 }
 
 function showCC() {
+  // remember who opened it so focus can return there on close
+  ccInvoker = (document.activeElement && document.activeElement !== document.body)
+    ? document.activeElement : $('#cc-btn');
   buildCC();
   ccExtra.hidden = true;
   ccenter.hidden = false;
+  const sheet = $('#cc-sheet');
+  if (sheet) sheet.setAttribute('aria-modal', 'true');
+  setBgInert(true);
+  pushOverlayState();
+  // pull focus into the sheet so keyboard users land on its first control
+  const first = ccActions.querySelector('.cc-btn');
+  if (first) first.focus();
   sfx.play('open');
 }
 
 function hideCC() {
   if (ccenter.hidden) return;
   ccenter.hidden = true;
+  const sheet = $('#cc-sheet');
+  if (sheet) sheet.removeAttribute('aria-modal');
+  // release the background unless a module is still open beneath the sheet
+  if (appview.hidden) setBgInert(false);
+  consumeOverlayState();
+  // return focus to whatever opened the control center
+  if (ccInvoker && typeof ccInvoker.focus === 'function') {
+    try { ccInvoker.focus(); } catch { /* node may be gone */ }
+  }
+  ccInvoker = null;
   sfx.play('back');
 }
 

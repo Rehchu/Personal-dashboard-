@@ -32,6 +32,10 @@ let applying = false;                       // suppress dirty-marking during pul
 let busy = false;
 let lastSync = load('sync.last', 0);
 let lastError = null;
+// A stuck sync is otherwise silent. Toast once when a cycle first fails after a
+// working one, but not on every 4s retry: the flag stays set through the outage
+// and only clears on the next success, so one failed streak yields one toast.
+let failureToasted = false;
 
 // AES-GCM key derived from the passphrase, memoized for the life of this key.
 let cryptoKey = null;
@@ -157,8 +161,15 @@ async function fullSync() {
     await push();
     lastSync = Date.now();
     save('sync.last', lastSync);
+    failureToasted = false; // recovered — arm the toast for the next outage
   } catch (err) {
     lastError = err.message;
+    // only speak up on the first failure of a streak, and only if sync was
+    // working before (lastSync set) — a never-configured device stays quiet
+    if (lastSync && !failureToasted) {
+      failureToasted = true;
+      showToast(`Sync failed: ${err.message}`);
+    }
   } finally {
     busy = false;
   }

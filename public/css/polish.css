@@ -359,3 +359,29 @@
 @media (prefers-reduced-motion: reduce) {
   .tile .tile-glyph, .tile .tile-logo { transition: none; }
 }
+
+/* ---------- accessibility overrides ----------
+   These live here (not in a theme file) so they win over every skin's
+   own shadow stacks and color rules regardless of load order. */
+
+/* Keyboard focus was invisible on tiles: an outline (not a box-shadow)
+   survives the skins that stack their own shadows on .tile. */
+.tile:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* The gamerscore reads at ~1.8:1 on the Assassin's (light) Xbox ground.
+   A dark warm ink on that parchment clears 4.5:1. */
+[data-console="xbox"][data-theme="assassins"] #profile-score {
+  color: #3b342a;
+}
+
+/* The PS hint bar faded its text with opacity:0.62, which crushes the
+   already-muted ink below 4.5:1. Give it a solid, high-contrast color.
+   The html prefix outweighs ps5home.css's own equal-specificity rule that
+   loads after this file. */
+html[data-console="ps"] #hint {
+  color: #cbd4df;
+  opacity: 1;
+}

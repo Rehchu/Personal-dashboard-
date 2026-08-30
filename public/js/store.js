@@ -62,6 +62,9 @@ export function showToast(msg) {
   if (!toastEl) {
     toastEl = document.createElement('div');
     toastEl.id = 'toast';
+    // role=status carries an implicit aria-live=polite, so screen readers
+    // announce each toast without us wiring up the attribute by hand.
+    toastEl.setAttribute('role', 'status');
     document.body.append(toastEl);
   }
   toastEl.textContent = msg;
