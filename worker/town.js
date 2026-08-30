@@ -19,6 +19,18 @@ const json = (data, status = 200) =>
 const MAX_STATE = 512 * 1024;   // a town snapshot is a few KB; half a MB is generous
 const MAX_MSG = 500;
 
+// Building art for the animated map. Generated once on Higgsfield, pulled by
+// the Worker (this container of code never proxies arbitrary hosts — same
+// allowlist discipline as bgimport.js) and kept in R2 under fixed keys.
+const ART_KINDS = new Set(['house', 'shop', 'landmark']);
+const MAX_ART = 8 * 1024 * 1024;   // a 1k PNG is ~1–2 MB
+function artHostAllowed(host) {
+  const h = host.toLowerCase();
+  if (h === 'd8j0ntlcm91z4.cloudfront.net') return true;
+  if (h === 'higgsfield.ai' || h.endsWith('.higgsfield.ai')) return true;
+  return false;
+}
+
 // Created on first use so a deploy needs no migration step (gaming_cache pattern).
 let ready = null;
 function ensureTables(env) {
@@ -78,6 +90,51 @@ export async function handleTown(url, request, env, { authed, syncKeyOk }) {
       .bind(Number(pollMatch[1])).first();
     if (!row) return json({ error: 'no such message' }, 404);
     return json({ reply: row.reply ?? null, repliedAt: row.replied_at ?? null });
+  }
+
+  const artMatch = path.match(/^\/api\/town\/art\/(house|shop|landmark)$/);
+  if (artMatch && request.method === 'GET') {
+    if (!authed) return json({ error: 'sign in first' }, 401);
+    const obj = await env.MEDIA.get(`town/art/${artMatch[1]}`);
+    if (!obj) return json({ error: 'no art yet' }, 404);
+    return new Response(obj.body, {
+      headers: {
+        'content-type': obj.httpMetadata?.contentType || 'image/png',
+        'cache-control': 'private, max-age=86400',
+      },
+    });
+  }
+
+  if (path === '/api/town/art' && request.method === 'POST') {
+    if (!authed) return json({ error: 'sign in first' }, 401);
+    const body = await request.json().catch(() => null);
+    const kind = ART_KINDS.has(body?.kind) ? body.kind : null;
+    const raw = typeof body?.url === 'string' ? body.url.trim() : '';
+    if (!kind || !raw) return json({ error: 'expected {kind, url}' }, 400);
+    let target;
+    try { target = new URL(raw); } catch { return json({ error: 'not a valid URL' }, 400); }
+    if (target.protocol !== 'https:') return json({ error: 'only https URLs are allowed' }, 400);
+    if (target.username || target.password) return json({ error: 'credentials in the URL are not allowed' }, 400);
+    if (!artHostAllowed(target.hostname)) return json({ error: 'that host is not on the import allowlist' }, 400);
+    let res;
+    try {
+      res = await fetch(target.toString(), { redirect: 'follow', signal: AbortSignal.timeout(20000) });
+    } catch { return json({ error: 'could not reach the source' }, 502); }
+    if (!res.ok || !res.body) return json({ error: `source returned ${res.status}` }, 502);
+    const type = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    if (!/^image\/[a-z0-9.+-]{1,30}$/.test(type)) return json({ error: 'that URL did not return an image' }, 415);
+    const declared = Number(res.headers.get('content-length') || 0);
+    if (declared > MAX_ART) return json({ error: 'image too large' }, 413);
+    const key = `town/art/${kind}`;
+    let obj;
+    try {
+      obj = await env.MEDIA.put(key, res.body, { httpMetadata: { contentType: type } });
+    } catch { return json({ error: 'could not store the image' }, 502); }
+    if ((obj?.size ?? 0) > MAX_ART || !obj?.size) {
+      await env.MEDIA.delete(key);
+      return json({ error: obj?.size ? 'image too large' : 'the source sent no data' }, obj?.size ? 413 : 502);
+    }
+    return json({ ok: true, kind, bytes: obj.size });
   }
 
   if (path === '/api/town/approvals' && request.method === 'GET') {
