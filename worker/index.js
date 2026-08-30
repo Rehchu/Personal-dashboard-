@@ -499,6 +499,64 @@ async function serveIcon(env, url) {
   return json({ error: 'no icon' }, 404);
 }
 
+/* ---------- live status for the link tiles ---------- */
+
+// Same discipline as ICON_HOSTS: a FIXED list of the owner's properties, never
+// a caller-supplied URL — a status prober that accepts URLs is a port scanner
+// wearing our session cookie. Add a property here, never a parameter.
+const STATUS_URLS = [
+  'https://arisehub.myfaithtech.com',
+  'https://www.arisecenla.church/',
+  'https://apextraining.dev',
+  'https://ctrl-alt-pc-repair.dyer-hq.workers.dev',
+  'https://itportal.myfaithtech.com',
+  // the church camera tunnel, behind Cloudflare Access: an unauthenticated
+  // probe is answered 302/401, which still proves the tunnel is UP — checkOne
+  // below counts any HTTP answer as alive for exactly this reason
+  'https://cam1.myfaithtech.com',
+];
+const STATUS_TTL = 120 * 1000;      // rail loads must not ping the fleet every time
+const STATUS_TIMEOUT = 5000;
+
+// isolate-level cache; per-isolate is fine because staleness only costs one
+// extra round of probes, never a wrong answer for long
+let statusCache = null; // { checks, at }
+
+// Any HTTP response — 200, 302, 401, even a 500 — proves the host answered;
+// only a network failure or timeout reads as down. HEAD first (no body to
+// haul back); some servers refuse HEAD at the socket, so a thrown HEAD gets
+// one GET retry before the host is called down.
+async function checkOne(rawUrl) {
+  const host = new URL(rawUrl).hostname;
+  const started = Date.now();
+  const probe = method => fetch(rawUrl, {
+    method,
+    redirect: 'manual', // a 3xx is already an answer; no need to chase it
+    signal: AbortSignal.timeout(STATUS_TIMEOUT),
+  });
+  try {
+    let res;
+    try {
+      res = await probe('HEAD');
+    } catch {
+      res = await probe('GET');
+    }
+    try { await res.body?.cancel(); } catch { /* body already drained */ }
+    return [host, { up: true, status: res.status, ms: Date.now() - started }];
+  } catch {
+    // down is a result, not an error — this endpoint never turns an
+    // unreachable site into a 500 of its own
+    return [host, { up: false, status: 0, ms: Date.now() - started }];
+  }
+}
+
+async function serveStatus() {
+  if (statusCache && Date.now() - statusCache.at < STATUS_TTL) return json(statusCache);
+  const entries = await Promise.all(STATUS_URLS.map(checkOne));
+  statusCache = { checks: Object.fromEntries(entries), at: Date.now() };
+  return json(statusCache);
+}
+
 /* ---------- chat archive (private, chunked in R2) ---------- */
 
 const ARCHIVE_INDEX_KEY = 'archive/index.json';
@@ -1049,6 +1107,16 @@ export default {
         return await serveIcon(env, url);
       } catch {
         return json({ error: 'icon unavailable' }, 502);
+      }
+    }
+
+    if (path === '/api/status' && request.method === 'GET') {
+      if (!authed) return json({ error: 'sign in first' }, 401);
+      try {
+        return await serveStatus();
+      } catch {
+        // a broken prober must not take the rail down with it
+        return json({ error: 'status unavailable' }, 502);
       }
     }
 

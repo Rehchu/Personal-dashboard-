@@ -68,6 +68,9 @@ const STYLE = `
   .wr-card.current { border-color: var(--accent); }
   .wr-card h4 { margin: 0 0 6px; font-family: var(--font-display); font-size: 15px; }
   .wr-card .wr-syn { color: var(--ink-2); font-size: 13px; line-height: 1.45; min-height: 34px; }
+  /* an empty synopsis shows its prompt — the data-placeholder was always set,
+     this rule is what actually paints it */
+  .wr-syn:empty::before { content: attr(data-placeholder); color: var(--ink-3); }
   .wr-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px;
     letter-spacing: .06em; text-transform: uppercase; margin-top: 9px; color: var(--ink-2); }
   .wr-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
@@ -171,9 +174,13 @@ export function mount(root, tools) {
 
   function renderLists() {
     root.querySelector('#wr-books').innerHTML = books.map(b => `
-      <button class="btn small" data-book="${b.id}" style="display:block;width:100%;text-align:left;margin-bottom:6px;${b.id === book.id ? 'border-color:var(--accent);' : ''}">
-        ${esc(b.title)} <span class="muted">· ${bookWords(b).toLocaleString()}w</span>
-      </button>`).join('');
+      <div style="display:flex;gap:5px;margin-bottom:6px">
+        <button class="btn small" data-book="${b.id}" style="flex:1;text-align:left;${b.id === book.id ? 'border-color:var(--accent);' : ''}">
+          ${esc(b.title)} <span class="muted">· ${bookWords(b).toLocaleString()}w</span>
+        </button>
+        <button class="btn small" data-book-ren="${b.id}" title="Rename book">✎</button>
+        ${books.length > 1 ? `<button class="btn small danger" data-book-del="${b.id}" title="Delete book">✕</button>` : ''}
+      </div>`).join('');
     root.querySelector('#wr-chapters').innerHTML = book.chapters.map(c => `
       <button class="btn small" data-ch="${c.id}" style="display:block;width:100%;text-align:left;margin-bottom:6px;${c.id === chapter?.id ? 'border-color:var(--accent);' : ''}">
         ${esc(c.title)} <span class="muted">· ${words(c.text).toLocaleString()}w</span>
@@ -184,6 +191,25 @@ export function mount(root, tools) {
       book = books.find(b => b.id === btn.dataset.book);
       chapter = book.chapters[0] || null;
       remember(); renderAll();
+    }));
+    root.querySelectorAll('[data-book-ren]').forEach(btn => btn.addEventListener('click', () => {
+      const b = books.find(x => x.id === btn.dataset.bookRen);
+      if (!b) return;
+      const title = prompt('Rename book:', b.title);
+      if (!title || !title.trim()) return;
+      b.title = title.trim();
+      persist(); renderAll();
+    }));
+    // whole-book delete: a confirmed, deliberate act — the chapters go with it.
+    // books is a whole-list synced collection; a plain splice is how its sibling
+    // edits work, and the last book can't be deleted (the studio needs one open).
+    root.querySelectorAll('[data-book-del]').forEach(btn => btn.addEventListener('click', () => {
+      const b = books.find(x => x.id === btn.dataset.bookDel);
+      if (!b || books.length < 2) return;
+      if (!confirm(`Delete "${b.title}" and its ${b.chapters.length} chapter${b.chapters.length === 1 ? '' : 's'}? This cannot be undone.`)) return;
+      books = books.filter(x => x.id !== b.id);
+      if (book.id === b.id) { book = books[0]; chapter = book.chapters[0] || null; }
+      persist(); remember(); renderAll();
     }));
     root.querySelectorAll('[data-ch]').forEach(btn => btn.addEventListener('click', () => {
       commitNow();

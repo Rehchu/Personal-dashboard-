@@ -2,6 +2,7 @@
 // Pure read: computes from localStorage, renders static markup, no listeners.
 
 import { load, esc, alive } from './store.js';
+import { CF_FLEET } from './data.js';
 
 function dayKey(offset) {
   const d = new Date();
@@ -82,15 +83,17 @@ function projectsCards() {
 }
 
 function cloudflareCards() {
+  // computed from the data file, so adding a worker there updates this card
   return [
-    { v: '7', l: 'apps + infra workers' },
+    { v: String(CF_FLEET.apps.length + CF_FLEET.infra.length), l: 'apps + infra workers' },
     { v: 'lifehq', l: '+ this dashboard' },
   ];
 }
 
 function archiveCards() {
   const count = load('archive.count', 0);
-  if (!count) return [{ v: '⬆', l: 'import your export' }, { v: '🔒', l: 'on-device only' }];
+  // the archive syncs to the owner's private R2 now — "on-device only" was stale copy
+  if (!count) return [{ v: '⬆', l: 'import your export' }, { v: '🔒', l: 'private · synced' }];
   return [
     { v: count.toLocaleString(), l: 'conversations' },
     { v: load('archive.msgs', 0).toLocaleString(), l: 'messages' },

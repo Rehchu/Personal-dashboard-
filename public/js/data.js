@@ -164,7 +164,7 @@ export const TILES = [
     glyph: '⚡',
     accent: '#9a5b16',
     kind: 'module',
-    badge: 'LIVE',
+    badge: 'SNAPSHOT',
     desc: 'Everything running on my Cloudflare account — Workers, deploys, and where each one lives.',
     actions: [
       { label: 'Open', action: 'open' },
