@@ -12,6 +12,10 @@ const SPEED_KEY = 'ptz.speed';
 const CAMS_KEY = 'ptz.cams';
 const ACCESS_KEY = 'ptz.access';
 const LOGIN_KEY = 'ptz.login';
+// The church's Access service-token id. Not a secret — it identifies the token
+// the way a username does — so it ships as the default and pre-fills the field;
+// only the Client Secret ever has to be typed, and that goes to the Worker.
+const DEFAULT_ACCESS_ID = 'fd73ab11177bd8fd81f7f6eb2cf8acd5.access';
 const SEEDED_KEY = 'ptz.seeded';
 
 // The church's three PTZ cameras, each behind its own tunnel hostname. They are
@@ -128,14 +132,16 @@ export function mount(root, tools) {
         <details id="ptz-creds" style="margin-top:12px">
           <summary style="cursor:pointer;font-size:13px"><strong>Sign-in</strong> <span class="muted" id="ptz-creds-state"></span></summary>
           <p class="muted" style="font-size:12px;margin:8px 0 10px">
-            Typed once and used for every camera. Stored in this dashboard only,
-            behind your login.
+            Typed once and used for every camera. The Access <em>Client Secret</em>
+            is stored on the Worker (Cloudflare), never in the browser — so pasting
+            it once covers every device.
           </p>
           <label class="ptz-f">Camera username<input id="pc-user" autocomplete="off" spellcheck="false"></label>
           <label class="ptz-f">Camera password<input id="pc-pass" type="password" autocomplete="off"></label>
           <label class="ptz-f">Access Client ID <span class="muted">(blank if Access is off)</span>
             <input id="pc-aid" autocomplete="off" spellcheck="false"></label>
-          <label class="ptz-f">Access Client Secret<input id="pc-asec" type="password" autocomplete="off"></label>
+          <label class="ptz-f">Access Client Secret <span class="muted">(leave blank to keep the stored one)</span>
+            <input id="pc-asec" type="password" autocomplete="off" placeholder="•••••• stored on Cloudflare"></label>
           <button class="btn small" id="pc-save" style="margin-top:10px">Save for all cameras</button>
         </details>
         <p class="muted" style="margin-top:12px;font-size:12.5px">
@@ -334,13 +340,25 @@ export function mount(root, tools) {
   // One login and one token, for every camera. Secrets go back into the fields
   // so they can be corrected, but never into text the page renders — the status
   // line names what is set, not what it is.
+  // The Access Client Secret lives on the Worker now; this is what it reports
+  // back — configured?, and the non-secret id — so the UI knows without ever
+  // holding the secret.
+  let serverAccess = { configured: false, id: '' };
+  async function loadServerAccess() {
+    try {
+      const res = await fetch('/api/ptz/access', { headers: { accept: 'application/json' } });
+      if (res.ok) { serverAccess = await res.json(); renderAccess(); fill(); }
+    } catch { /* offline — the pre-filled default id still lets a save go through */ }
+  }
+
   const credsBox = root.querySelector('#ptz-creds');
   function renderAccess() {
     const login = getLogin();
     const access = getAccess();
     const bits = [];
     bits.push(login?.user ? `signed in as ${esc(login.user)}` : 'no camera login yet');
-    if (access?.id) bits.push('Access token set');
+    if (serverAccess.configured) bits.push('Access token stored on Cloudflare');
+    else if (access?.id) bits.push('Access token set');
     const perCam = cams.filter(c => c.user || c.accessId).length;
     if (perCam) bits.push(`${perCam} camera${perCam > 1 ? 's' : ''} using their own`);
     root.querySelector('#ptz-creds-state').textContent = `· ${bits.join(' · ')}`;
@@ -353,17 +371,33 @@ export function mount(root, tools) {
     const access = getAccess() || {};
     root.querySelector('#pc-user').value = login.user || '';
     root.querySelector('#pc-pass').value = login.pass || '';
-    root.querySelector('#pc-aid').value = access.id || '';
-    root.querySelector('#pc-asec').value = access.secret || '';
+    // prefer a stored id, then the server's, then the baked-in church default
+    root.querySelector('#pc-aid').value = access.id || serverAccess.id || DEFAULT_ACCESS_ID;
+    // the secret is write-only from here — never pulled back into the field
+    root.querySelector('#pc-asec').value = '';
   };
 
-  root.querySelector('#pc-save').addEventListener('click', () => {
+  root.querySelector('#pc-save').addEventListener('click', async () => {
     const user = root.querySelector('#pc-user').value.trim();
     const pass = root.querySelector('#pc-pass').value;
     const id = root.querySelector('#pc-aid').value.trim();
     const secret = root.querySelector('#pc-asec').value.trim();
     save(LOGIN_KEY, user ? { user, pass } : null);
-    save(ACCESS_KEY, id ? { id, secret } : null);
+    // The Access secret goes to the Worker, not localStorage. A blank secret box
+    // means "keep the stored one"; only send when the user actually typed a new
+    // secret. The shared copy is never kept on the device.
+    if (secret) {
+      try {
+        const res = await fetch('/api/ptz/access', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ id: id || DEFAULT_ACCESS_ID, secret }),
+        });
+        if (res.ok) serverAccess = await res.json();
+        else showToast('Could not save the Access token');
+      } catch { showToast('Offline — the Access token was not saved'); }
+    }
+    save(ACCESS_KEY, null); // the shared secret never lives on this device
     // a camera carrying its own copy would shadow the shared one, so retire those
     let freed = 0;
     cams.forEach(c => {
@@ -376,7 +410,7 @@ export function mount(root, tools) {
     if (freed) save(CAMS_KEY, cams);
     renderAccess();
     credsBox.open = false;
-    showToast(user ? 'Saved for all cameras' : 'Sign-in cleared');
+    showToast(user || secret ? 'Saved for all cameras' : 'Sign-in updated');
   });
 
   tools.querySelector('#ptz-test').addEventListener('click', async () => {
@@ -478,6 +512,7 @@ export function mount(root, tools) {
   });
 
   fill();
+  loadServerAccess(); // reflect the Worker-stored Access token, then re-fill
   renderList();
   renderPresets();
   if (current) showMsg('Press Live view to see the camera');
