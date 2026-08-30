@@ -85,6 +85,12 @@ let bgChosen = load('ui.bg', null) !== null;
 function applyBg(mode, explicit = false) {
   if (explicit) { bgChosen = true; save('ui.bg', mode); }
   if (!bgChosen && matchMedia('(prefers-reduced-motion: reduce)').matches) mode = 'off';
+  // The element ships with no src (see index.html) so Storm/Off never fetches
+  // the video. The first time a video background is actually asked for, point it
+  // at the selected-background route and load — canplay then flips videoOk true
+  // (the init listener below re-runs applyBg('video')). A specific clip set by
+  // playSelectedBg/playThemeBg already owns .src, so don't clobber it.
+  if (mode === 'video' && !bgVideo.src) { bgVideo.src = '/media/bg.mp4'; bgVideo.load(); }
   if (mode === 'video' && !videoOk) mode = 'storm';
   bgMode = mode;
   document.documentElement.dataset.bg = mode;
@@ -95,7 +101,13 @@ function applyBg(mode, explicit = false) {
 }
 
 function cycleBg() {
-  const order = videoOk ? ['storm', 'video', 'off'] : ['storm', 'off'];
+  // Video is offered once a clip has proven playable (videoOk) OR the gallery
+  // holds backgrounds — since the video no longer preloads, a fresh page can't
+  // have flipped videoOk yet even though a perfectly good clip is one tap away.
+  // Choosing Video then lazily loads the clip: storm shows for a beat, and the
+  // init canplay listener promotes to video the moment the file is ready.
+  const haveVideo = videoOk || gallery.items.length > 0;
+  const order = haveVideo ? ['storm', 'video', 'off'] : ['storm', 'off'];
   applyBg(order[(order.indexOf(bgMode) + 1) % order.length], true);
 }
 
@@ -552,7 +564,10 @@ function playSelectedBg(explicit = false) {
 // chosen a background stays calm even on a mapped theme.
 function playThemeBg(id) {
   videoOk = false;
-  bgVideo.src = `/media/bg/${id}?v=${Date.now()}`;
+  // /media/bg/<id> is already unique per background, so no cache-buster is
+  // needed — dropping the ?v=Date.now() lets switching back to a theme reuse
+  // the cached clip instead of re-downloading it every time.
+  bgVideo.src = `/media/bg/${id}`;
   bgVideo.load();
   bgVideo.addEventListener('canplay', () => applyBg('video'), { once: true });
 }
@@ -1109,11 +1124,14 @@ function boot() {
     return;
   }
   $('#boot-icon').innerHTML = ICONS[consoleMode === 'xbox' ? 'xbox' : 'ps'];
+  // 700ms hold (was 1400) — still long enough to read as an intentional
+  // splash, half the fixed cost on first launch. Once-per-session via the
+  // 'pd.booted' flag set below, so it's a one-time tax, not every navigation.
   setTimeout(() => {
     el.classList.add('done');
     try { sessionStorage.setItem('pd.booted', '1'); } catch { /* noop */ }
     setTimeout(() => { el.hidden = true; }, 550);
-  }, 1400);
+  }, 700);
 }
 
 /* ---------- Mission Control live badge ----------
@@ -1172,9 +1190,10 @@ boot();
 initAchievements(() => consoleMode);
 sync.init();
 applyBg(bgMode);
-// if a background exists it becomes selectable a moment after load. The
-// element ships pointing at /media/bg.mp4 (whichever is selected), so the
-// picture is up before the gallery listing comes back.
+// applyBg only points the (src-less) element at /media/bg.mp4 when the saved
+// background is 'video', so Storm/Off visits never fetch it. When it IS video,
+// that load fires canplay here and we flip the picture up — before the gallery
+// listing comes back — without a network hit for anyone else.
 bgVideo.addEventListener('canplay', () => { if (load('ui.bg', 'storm') === 'video') applyBg('video', true); }, { once: true });
 refreshGallery().then(() => {
   if (!gallery.items.length) videoOk = false;

@@ -24,6 +24,17 @@ self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE)
       .then(c => Promise.allSettled(CORE.map(u => c.add(u))))
+      .then(results => {
+        // A signed-out install 401s every CORE fetch; allSettled swallows that
+        // and the install "succeeds" with an empty cache, so it never retries —
+        // the app then has no offline support even after signing in. Count the
+        // fulfilled adds and, if most failed, throw so the browser fails this
+        // install and retries it on a later (signed-in) visit.
+        const ok = results.filter(r => r.status === 'fulfilled').length;
+        if (ok < results.length / 2) {
+          throw new Error(`precache incomplete: only ${ok}/${results.length} cached`);
+        }
+      })
       .then(() => self.skipWaiting()),
   );
 });

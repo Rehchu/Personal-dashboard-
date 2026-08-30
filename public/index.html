@@ -33,9 +33,18 @@
   <link rel="stylesheet" href="/css/game/minecraft.css">
   <link rel="stylesheet" href="/css/game/xboxhome.css">
   <link rel="stylesheet" href="/css/mobile.css">
+  <!-- warm the shell's most-imported modules with the first paint so their
+       fetch starts now instead of waterfalling behind main.js's parse -->
+  <link rel="modulepreload" href="/js/store.js">
+  <link rel="modulepreload" href="/js/data.js">
+  <link rel="modulepreload" href="/js/icons.js">
+  <link rel="modulepreload" href="/js/sfx.js">
 </head>
 <body>
-  <video id="bg-video" muted loop playsinline preload="metadata" src="/media/bg.mp4" hidden aria-hidden="true"></video>
+  <!-- no src ships: a video background is opt-in, so the file is only fetched
+       once applyBg/playThemeBg point the element at it (see main.js). Shipping
+       src=/media/bg.mp4 made every visit hit the network even in Storm/Off. -->
+  <video id="bg-video" muted loop playsinline preload="metadata" hidden aria-hidden="true"></video>
   <div id="ambient" aria-hidden="true"></div>
   <canvas id="storm-canvas" hidden aria-hidden="true"></canvas>
   <div id="theme-fx" aria-hidden="true"></div>
