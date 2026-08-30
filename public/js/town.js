@@ -9,6 +9,39 @@ import { load, save, esc, showToast } from './store.js';
 
 const KIND_ICO = { house: '🏠', shop: '🏪', landmark: '🗼' };
 
+// Building art, generated on Higgsfield. The Worker pulls each file server-side
+// into R2 the first time a signed-in browser asks for it (this module posts the
+// source URL; the Worker's allowlist vets it), then serves it from R2 forever.
+const TOWN_ART_SRC = {
+  house: 'https://d8j0ntlcm91z4.cloudfront.net/user_3IckDDDwJI3D408OKE8QdQYJgqc/hf_20260830_183122_ea85b24e-4253-47c4-ba5e-aebc8877285f.png',
+  shop: 'https://d8j0ntlcm91z4.cloudfront.net/user_3IckDDDwJI3D408OKE8QdQYJgqc/hf_20260830_183122_caac7e17-d1ca-42d5-b360-f4e4ffab20bd.png',
+  landmark: 'https://d8j0ntlcm91z4.cloudfront.net/user_3IckDDDwJI3D408OKE8QdQYJgqc/hf_20260830_183122_d78f1a17-0477-466c-a549-c501105b297a.png',
+};
+
+async function loadTownArt(kind) {
+  const get = () => fetch(`/api/town/art/${kind}`);
+  let res = await get();
+  if (res.status === 404) {
+    // first device ever to render the map — ask the Worker to import the art
+    const imp = await fetch('/api/town/art', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind, url: TOWN_ART_SRC[kind] }),
+    });
+    if (!imp.ok) return null;
+    res = await get();
+  }
+  if (!res.ok) return null;
+  const blob = await res.blob();
+  const img = new Image();
+  img.src = URL.createObjectURL(blob);
+  await img.decode().catch(() => {});
+  return img.naturalWidth ? img : null;
+}
+
+const AGENT_FACES = ['🧑‍🔧', '🧑‍💼', '🧑‍🍳', '🧑‍🎨', '🧑‍🚒', '🧑‍🌾', '🧑‍💻', '🧑‍🏫'];
+const hashStr = s => { let h = 0; for (const c of s) h = (h * 31 + c.codePointAt(0)) >>> 0; return h; };
+
 function injectStyle() {
   if (document.getElementById('town-style')) return;
   const style = document.createElement('style');
@@ -16,15 +49,8 @@ function injectStyle() {
   style.textContent = `
     #town-grid { display:grid; grid-template-columns: 1.3fr 1fr; gap:16px; align-items:start; }
     @media (max-width: 860px){ #town-grid { grid-template-columns:1fr; } }
-    .town-map { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
-    .town-place { background:var(--surface-2); border:1px solid color-mix(in oklab,var(--ink-3) 28%,transparent);
-      border-radius:12px; padding:10px 12px; min-height:78px; }
-    .town-place .pn { font-size:11px; color:var(--ink-3); text-transform:uppercase; letter-spacing:.08em; }
-    .town-place .row { margin-top:6px; display:flex; flex-wrap:wrap; gap:5px; }
-    .town-pill { font-size:12px; padding:2px 8px; border-radius:999px;
-      background:color-mix(in oklab,var(--accent) 20%,transparent);
-      border:1px solid color-mix(in oklab,var(--accent) 38%,transparent); color:var(--ink); }
-    .town-pill.bld { background:color-mix(in oklab,#e0b23a 16%,transparent); border-color:color-mix(in oklab,#e0b23a 42%,transparent); }
+    #town-canvas { display:block; width:100%; border-radius:12px;
+      background:#101a16; border:1px solid color-mix(in oklab,var(--ink-3) 28%,transparent); }
     .town-feed { max-height:300px; overflow:auto; }
     .town-ev { padding:6px 0; border-top:1px solid color-mix(in oklab,var(--ink-3) 18%,transparent); font-size:13.5px; color:var(--ink-2); }
     .town-ev:first-child { border-top:0; }
@@ -62,7 +88,7 @@ export function mount(root, tools) {
   root.innerHTML = `
     <div id="town-grid">
       <div>
-        <div class="panel"><h3>The town</h3><div class="town-map" id="town-map"></div></div>
+        <div class="panel"><h3>The town</h3><canvas id="town-canvas"></canvas></div>
         <div class="panel" style="margin-top:16px"><h3>Live feed</h3><div class="town-feed" id="town-feed"></div></div>
       </div>
       <div>
@@ -84,6 +110,190 @@ export function mount(root, tools) {
   const grid = root.querySelector('#town-grid');
   const offline = root.querySelector('#town-offline');
 
+  // ---- the living map ----
+  // A little game world, Smallville-style: districts on a canvas, buildings in
+  // them, and each agent as a sprite that actually WALKS — across town when the
+  // engine moves them, and wandering about their district in between. State
+  // arrives every 5s; everything between polls is animated locally.
+  const canvas = root.querySelector('#town-canvas');
+  const ctx = canvas.getContext('2d');
+  const art = {};
+  for (const kind of Object.keys(TOWN_ART_SRC)) loadTownArt(kind).then(img => { if (img) art[kind] = img; });
+
+  const CELL_H = 200;
+  let districts = {};      // loc key -> {x,y,w,h,label}
+  let placedStructs = [];  // structures with computed x/y
+  const sprites = new Map();
+  const bubblesShown = new Set();
+  let mapReady = false;
+  let raf = 0;
+
+  const randIn = d => ({
+    x: d.x + 24 + Math.random() * (d.w - 48),
+    y: d.y + 64 + Math.random() * (d.h - 92),
+  });
+
+  function syncWorld(s) {
+    const keys = Object.keys(s.map || {});
+    if (!keys.length) { mapReady = false; return; }
+    const cols = keys.length > 4 ? 3 : 2;
+    const rows = Math.ceil(keys.length / cols);
+    const W = 900, H = rows * CELL_H;
+    if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+    districts = {};
+    keys.forEach((k, i) => {
+      districts[k] = {
+        x: (i % cols) * (W / cols) + 6, y: Math.floor(i / cols) * CELL_H + 6,
+        w: W / cols - 12, h: CELL_H - 12, label: s.map[k],
+      };
+    });
+
+    const perLoc = {};
+    placedStructs = (s.structures || []).map(st => {
+      const d = districts[st.loc] || districts[keys[0]];
+      const i = (perLoc[st.loc] = (perLoc[st.loc] || 0) + 1) - 1;
+      return { ...st, x: d.x + 46 + (i % 3) * 86, y: d.y + 52 + Math.floor(i / 3) * 12 };
+    });
+
+    const seen = new Set();
+    for (const a of s.agents || []) {
+      seen.add(a.id);
+      let sp = sprites.get(a.id);
+      const d = districts[a.loc] || districts[keys[0]];
+      if (!sp) {
+        const p = randIn(d);
+        sp = { x: p.x, y: p.y, tx: p.x, ty: p.y, loc: a.loc, wanderAt: 0, bubble: null, bubbleUntil: 0 };
+        sprites.set(a.id, sp);
+      } else if (sp.loc !== a.loc) {
+        sp.loc = a.loc;                    // walk across town to the new district
+        const p = randIn(d);
+        sp.tx = p.x; sp.ty = p.y;
+      }
+      sp.name = a.name;
+      sp.face = AGENT_FACES[hashStr(a.id) % AGENT_FACES.length];
+      sp.hue = hashStr(a.name || a.id) % 360;
+    }
+    for (const id of sprites.keys()) if (!seen.has(id)) sprites.delete(id);
+
+    // fresh feed lines become speech bubbles over their agent
+    const feed = s.feed || [];
+    const maxTick = feed.reduce((m, e) => Math.max(m, Number(e.tick) || 0), 0);
+    for (const e of feed) {
+      if ((Number(e.tick) || 0) < maxTick - 1) continue;
+      const key = `${e.tick}|${e.name}|${e.text}`;
+      if (bubblesShown.has(key)) continue;
+      bubblesShown.add(key);
+      for (const sp of sprites.values()) {
+        if (sp.name === e.name) {
+          sp.bubble = String(e.text || '').slice(0, 52);
+          sp.bubbleUntil = performance.now() + 6500;
+        }
+      }
+    }
+    if (bubblesShown.size > 400) bubblesShown.clear();
+    mapReady = true;
+  }
+
+  let lastT = 0;
+  function frame(t) {
+    raf = requestAnimationFrame(frame);
+    if (!mapReady || grid.hidden) return;
+    const dt = Math.min(0.1, (t - lastT) / 1000 || 0);
+    lastT = t;
+    const now = performance.now();
+
+    for (const sp of sprites.values()) {
+      const dx = sp.tx - sp.x, dy = sp.ty - sp.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > 2) {
+        const speed = 55;                                  // px/s — a stroll
+        sp.x += (dx / dist) * speed * dt;
+        sp.y += (dy / dist) * speed * dt;
+        sp.moving = true;
+      } else if (sp.moving || !sp.wanderAt) {
+        sp.moving = false;
+        sp.wanderAt = now + 1200 + Math.random() * 3500;   // linger, then wander
+      } else if (now > sp.wanderAt) {
+        const d = districts[sp.loc];
+        if (d) { const p = randIn(d); sp.tx = p.x; sp.ty = p.y; }
+        sp.wanderAt = now + 1200 + Math.random() * 3500;
+      }
+    }
+    draw(now, t);
+  }
+
+  function draw(now, t) {
+    const { width: W, height: H } = canvas;
+    ctx.clearRect(0, 0, W, H);
+    for (const d of Object.values(districts)) {
+      ctx.fillStyle = '#16241d';
+      ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+      ctx.beginPath();
+      ctx.roundRect(d.x, d.y, d.w, d.h, 14);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.42)';
+      ctx.font = '600 12px system-ui';
+      ctx.textAlign = 'left';
+      ctx.fillText(d.label.toUpperCase(), d.x + 14, d.y + 22);
+    }
+    for (const st of placedStructs) {
+      const done = (Number(st.progress) || 0) >= 100;
+      const img = done && art[st.kind];
+      if (img) {
+        ctx.drawImage(img, st.x - 34, st.y - 34, 68, 68);
+      } else {
+        ctx.font = '26px system-ui';
+        ctx.textAlign = 'center';
+        ctx.globalAlpha = done ? 1 : 0.55;
+        ctx.fillText(done ? (KIND_ICO[st.kind] || '🏘️') : '🏗️', st.x, st.y + 8);
+        ctx.globalAlpha = 1;
+      }
+      if (!done) {
+        const p = Math.max(0, Math.min(100, Number(st.progress) || 0));
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.fillRect(st.x - 26, st.y + 16, 52, 5);
+        ctx.fillStyle = '#e0b23a';
+        ctx.fillRect(st.x - 26, st.y + 16, 52 * p / 100, 5);
+      }
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.font = '10px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText(String(st.name || '').slice(0, 16), st.x, st.y + 34);
+    }
+    const walkers = [...sprites.values()].sort((a, b) => a.y - b.y);
+    for (const sp of walkers) {
+      const bob = sp.moving ? Math.sin(t / 90) * 2.2 : 0;
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.beginPath();
+      ctx.ellipse(sp.x, sp.y + 12, 9, 3.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = `hsl(${sp.hue} 45% 38%)`;
+      ctx.beginPath();
+      ctx.arc(sp.x, sp.y + bob, 11, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.font = '13px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText(sp.face, sp.x, sp.y + bob + 4);
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.font = '600 11px system-ui';
+      ctx.fillText(sp.name || '', sp.x, sp.y + 28);
+      if (sp.bubble && now < sp.bubbleUntil) {
+        ctx.font = '11px system-ui';
+        const tw = Math.min(220, ctx.measureText(sp.bubble).width + 16);
+        const bx = Math.max(4, Math.min(canvas.width - tw - 4, sp.x - tw / 2));
+        ctx.fillStyle = 'rgba(20,28,24,0.92)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+        ctx.beginPath();
+        ctx.roundRect(bx, sp.y - 42, tw, 22, 8);
+        ctx.fill(); ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.textAlign = 'left';
+        ctx.fillText(sp.bubble, bx + 8, sp.y - 27, tw - 16);
+      }
+    }
+  }
+  raf = requestAnimationFrame(frame);
+
   function paintOffline(updatedAt) {
     grid.hidden = true;
     offline.hidden = false;
@@ -102,17 +312,7 @@ export function mount(root, tools) {
     offline.hidden = true;
     const s = d.state;
 
-    const byLoc = {};
-    for (const a of s.agents || []) (byLoc[a.loc] ||= []).push(a.name);
-    const stByLoc = {};
-    for (const st of s.structures || []) (stByLoc[st.loc] ||= []).push(st);
-
-    root.querySelector('#town-map').innerHTML = Object.entries(s.map || {}).map(([k, label]) => `
-      <div class="town-place"><div class="pn">${esc(label)}</div>
-        <div class="row">${(byLoc[k] || []).map(n => `<span class="town-pill">${esc(n)}</span>`).join('')}</div>
-        <div class="row">${(stByLoc[k] || []).map(st =>
-          `<span class="town-pill bld" title="${esc(st.name)}">${KIND_ICO[st.kind] || '🏗️'} ${st.progress < 100 ? `${esc(st.name)} ${Number(st.progress) || 0}%` : esc(st.name)}</span>`).join('')}</div>
-      </div>`).join('');
+    syncWorld(s);
 
     root.querySelector('#town-agents').innerHTML = (s.agents || []).map(a => {
       const ev = a.eval && a.eval.note
@@ -250,5 +450,6 @@ export function mount(root, tools) {
   return function unmount() {
     alive = false;
     clearInterval(timer);
+    cancelAnimationFrame(raf);
   };
 }
