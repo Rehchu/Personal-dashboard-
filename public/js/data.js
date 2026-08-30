@@ -139,6 +139,16 @@ export const TILES = [
     actions: [{ label: 'Open', action: 'open' }],
   },
   {
+    id: 'town',
+    title: 'Dyer Town',
+    glyph: '🏙️',
+    accent: '#2fb6c9',
+    kind: 'module',
+    badge: 'AI',
+    desc: 'A living town of AI agents — they talk, work, hire each other, and build their own houses. Watch it live and talk to anyone.',
+    actions: [{ label: 'Open', action: 'open' }],
+  },
+  {
     id: 'gaming',
     title: 'Gaming',
     glyph: '🎮',

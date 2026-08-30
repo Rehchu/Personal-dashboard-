@@ -8,6 +8,7 @@ import { parseDigestChallenge, digestAuthHeader } from './digest.js';
 import { handleBiz } from './biz.js';
 import { handleGaming } from './gaming.js';
 import { handleBgImport } from './bgimport.js';
+import { handleTown } from './town.js';
 
 const COL_RE = /^[a-zA-Z0-9._-]{1,40}$/;
 const ARCHIVE_ID_RE = /^[a-z0-9][a-z0-9._-]{0,39}$/;
@@ -1103,6 +1104,19 @@ export default {
         return await handleGaming(url, request, env) || json({ error: 'not found' }, 404);
       } catch {
         return json({ error: 'gaming bridge unavailable' }, 502);
+      }
+    }
+
+    // Dyer Town: the Mac's town server writes with the sync passphrase, the
+    // dashboard reads behind the session — town.js gets both verdicts and
+    // gates each route by direction itself.
+    if (path.startsWith('/api/town/')) {
+      try {
+        const syncKeyOk = (await requireSyncKey(request, env)) === null;
+        return await handleTown(url, request, env, { authed, syncKeyOk })
+          || json({ error: 'not found' }, 404);
+      } catch {
+        return json({ error: 'town bridge unavailable' }, 502);
       }
     }
 

@@ -1,10 +1,12 @@
 // Habits module — daily check-offs, contribution grids, streaks. All localStorage.
 
-import { load, save, uid, todayISO, esc, showToast } from './store.js';
+import { load, save, uid, todayISO, esc, showToast, softDelete, alive } from './store.js';
 
 const WEEKS = 12;
 const DAYS = WEEKS * 7;
 
+// Full stored list, tombstones included — writes must carry them forward or a
+// sync merge resurrects the deleted habit. Render paths wrap this in alive().
 const getHabits = () => load('habits', []);
 
 function setHabits(habits) {
@@ -122,7 +124,7 @@ export function mount(root, tools) {
   let popId = null; // habit just checked off — gets the pop animation after render
 
   function render() {
-    const habits = getHabits();
+    const habits = alive(getHabits());
     const today = todayISO();
 
     const currents = habits.map(h => currentStreak(h.days));
@@ -173,6 +175,7 @@ export function mount(root, tools) {
       const today = todayISO();
       if (h.days[today]) delete h.days[today];
       else { h.days[today] = 1; popId = h.id; }
+      h.ts = Date.now(); // an edit newer than a delete elsewhere wins the merge (recreate)
       setHabits(habits);
       render();
     } else if (rename) {
@@ -183,12 +186,14 @@ export function mount(root, tools) {
       h.name = name.trim().slice(0, 60);
       const emoji = prompt('Emoji:', h.emoji);
       if (emoji !== null && emoji.trim()) h.emoji = emoji.trim().slice(0, 4);
+      h.ts = Date.now();
       setHabits(habits);
       render();
     } else if (del) {
       const h = habits.find(x => x.id === del.dataset.del);
       if (!h || !confirm(`Delete "${h.name}"? Its history goes with it.`)) return;
-      setHabits(habits.filter(x => x.id !== h.id));
+      // tombstone, not a splice: the sync merge unions by id and would bring it back
+      setHabits(softDelete(habits, h.id));
       render();
       showToast('Habit deleted');
     }
@@ -199,7 +204,7 @@ export function mount(root, tools) {
     const name = root.querySelector('#hab-name').value.trim();
     if (!name) return;
     const emoji = root.querySelector('#hab-emoji').value.trim() || '✅';
-    setHabits([...getHabits(), { id: uid(), name: name.slice(0, 60), emoji: emoji.slice(0, 4), days: {} }]);
+    setHabits([...getHabits(), { id: uid(), name: name.slice(0, 60), emoji: emoji.slice(0, 4), days: {}, ts: Date.now() }]);
     e.target.reset();
     root.querySelector('#hab-add').hidden = true;
     render();

@@ -14,8 +14,8 @@ const CORE = [
   // church + workshop modules and their helpers
   '/js/ptz.js', '/js/csvedit.js', '/js/service.js', '/js/expenses.js',
   '/js/videoclip.js', '/js/grok.js', '/js/openai.js', '/js/google.js',
-  // Mission Control + Gaming
-  '/js/biz.js', '/js/gaming.js',
+  // Mission Control + Gaming + Dyer Town
+  '/js/biz.js', '/js/gaming.js', '/js/town.js',
   '/css/game/assassins.css', '/css/game/cyberpunk.css', '/css/game/gtav.css',
   '/css/game/minecraft.css', '/css/game/xboxhome.css', '/css/game/ps5home.css', '/css/mobile.css', '/js/storm.js',
 ];
@@ -24,6 +24,17 @@ self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE)
       .then(c => Promise.allSettled(CORE.map(u => c.add(u))))
+      .then(results => {
+        // A signed-out install 401s every CORE fetch; allSettled swallows that
+        // and the install "succeeds" with an empty cache, so it never retries —
+        // the app then has no offline support even after signing in. Count the
+        // fulfilled adds and, if most failed, throw so the browser fails this
+        // install and retries it on a later (signed-in) visit.
+        const ok = results.filter(r => r.status === 'fulfilled').length;
+        if (ok < results.length / 2) {
+          throw new Error(`precache incomplete: only ${ok}/${results.length} cached`);
+        }
+      })
       .then(() => self.skipWaiting()),
   );
 });

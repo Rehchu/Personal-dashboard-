@@ -27,6 +27,7 @@ import * as csvedit from './csvedit.js';
 import * as service from './service.js';
 import * as biz from './biz.js';
 import * as gaming from './gaming.js';
+import * as town from './town.js';
 
 const MODULES = {
   today: { title: 'Today', mount: today.mount },
@@ -44,6 +45,7 @@ const MODULES = {
   csv: { title: 'Song Bank', mount: csvedit.mount },
   service: { title: 'Service Planner', mount: service.mount },
   gaming: { title: 'Gaming', mount: gaming.mount },
+  town: { title: 'Dyer Town', mount: town.mount },
 };
 
 const $ = sel => document.querySelector(sel);
@@ -85,6 +87,12 @@ let bgChosen = load('ui.bg', null) !== null;
 function applyBg(mode, explicit = false) {
   if (explicit) { bgChosen = true; save('ui.bg', mode); }
   if (!bgChosen && matchMedia('(prefers-reduced-motion: reduce)').matches) mode = 'off';
+  // The element ships with no src (see index.html) so Storm/Off never fetches
+  // the video. The first time a video background is actually asked for, point it
+  // at the selected-background route and load — canplay then flips videoOk true
+  // (the init listener below re-runs applyBg('video')). A specific clip set by
+  // playSelectedBg/playThemeBg already owns .src, so don't clobber it.
+  if (mode === 'video' && !bgVideo.src) { bgVideo.src = '/media/bg.mp4'; bgVideo.load(); }
   if (mode === 'video' && !videoOk) mode = 'storm';
   bgMode = mode;
   document.documentElement.dataset.bg = mode;
@@ -95,7 +103,13 @@ function applyBg(mode, explicit = false) {
 }
 
 function cycleBg() {
-  const order = videoOk ? ['storm', 'video', 'off'] : ['storm', 'off'];
+  // Video is offered once a clip has proven playable (videoOk) OR the gallery
+  // holds backgrounds — since the video no longer preloads, a fresh page can't
+  // have flipped videoOk yet even though a perfectly good clip is one tap away.
+  // Choosing Video then lazily loads the clip: storm shows for a beat, and the
+  // init canplay listener promotes to video the moment the file is ready.
+  const haveVideo = videoOk || gallery.items.length > 0;
+  const order = haveVideo ? ['storm', 'video', 'off'] : ['storm', 'off'];
   applyBg(order[(order.indexOf(bgMode) + 1) % order.length], true);
 }
 
@@ -552,7 +566,10 @@ function playSelectedBg(explicit = false) {
 // chosen a background stays calm even on a mapped theme.
 function playThemeBg(id) {
   videoOk = false;
-  bgVideo.src = `/media/bg/${id}?v=${Date.now()}`;
+  // /media/bg/<id> is already unique per background, so no cache-buster is
+  // needed — dropping the ?v=Date.now() lets switching back to a theme reuse
+  // the cached clip instead of re-downloading it every time.
+  bgVideo.src = `/media/bg/${id}`;
   bgVideo.load();
   bgVideo.addEventListener('canplay', () => applyBg('video'), { once: true });
 }
@@ -907,28 +924,37 @@ function buildCC() {
     document.head.append(style);
   }
   const other = consoleMode === 'ps' ? 'xbox' : 'ps';
-  const items = [
-    { ico: 'home', label: 'Home', fn: () => { closeModule(); hideCC(); } },
-    { ico: other, label: other === 'xbox' ? 'Xbox view' : 'PS view', fn: () => { applyConsole(other, { announce: true }); buildCC(); } },
-    { ico: sfx.isMuted() ? 'soundOff' : 'sound', label: sfx.isMuted() ? 'Sound off' : 'Sound on', fn: () => { sfx.setMuted(!sfx.isMuted()); if (!sfx.isMuted()) sfx.play('select'); buildCC(); } },
-    { ico: 'trophy', label: 'Trophies', fn: toggleTrophies },
-    { ico: 'sparkle', label: BG_LABEL[bgMode] || 'Bg', fn: () => { cycleBg(); sfx.play('select'); buildCC(); } },
-    { ico: 'controller', label: 'Bg clip 30s ⬆', fn: () => uploadBgVideo('clip') },
-    { ico: 'controller', label: 'Bg full video ⬆', fn: () => uploadBgVideo('full') },
-    { ico: 'sparkle', label: 'Set up theme backgrounds', fn: setupAllThemeBgs },
-    { ico: 'sparkle', label: 'Import bg from URL', fn: importBgFromUrl },
-    { ico: 'sparkle', label: `Gallery (${gallery.items.length})`, fn: () => { const h = galleryHost(); if (h) { h.hidden = !h.hidden; if (!h.hidden) h.scrollIntoView({ block: 'nearest' }); } } },
-    // surface the underlying error as a hover/long-press title so a stuck sync
-    // is legible, not just the generic "Sync error" label
-    { ico: 'home', label: sync.status(), title: sync.lastError() || undefined, fn: syncAction },
-    { ico: 'sparkle', label: 'Backup (.json)', fn: backupData },
-    { ico: 'sparkle', label: 'Restore', fn: restoreData },
-    { ico: 'soundOff', label: 'Lock', fn: lockApp },
-    { ico: 'controller', label: 'Cloudflare', href: 'https://dash.cloudflare.com' },
+  // The strip outgrew a single row — sixteen buttons wrapped into an unreadable
+  // pile that overflowed the sheet on phones. Grouped by what you're doing, so
+  // the eye finds the row it needs, and the sheet itself scrolls when short.
+  const groups = [
+    { title: 'Quick', items: [
+      { ico: 'home', label: 'Home', fn: () => { closeModule(); hideCC(); } },
+      { ico: other, label: other === 'xbox' ? 'Xbox view' : 'PS view', fn: () => { applyConsole(other, { announce: true }); buildCC(); } },
+      { ico: sfx.isMuted() ? 'soundOff' : 'sound', label: sfx.isMuted() ? 'Sound off' : 'Sound on', fn: () => { sfx.setMuted(!sfx.isMuted()); if (!sfx.isMuted()) sfx.play('select'); buildCC(); } },
+      { ico: 'trophy', label: 'Trophies', fn: toggleTrophies },
+      { ico: 'soundOff', label: 'Lock', fn: lockApp },
+    ] },
+    { title: 'Background', items: [
+      { ico: 'sparkle', label: BG_LABEL[bgMode] || 'Bg', fn: () => { cycleBg(); sfx.play('select'); buildCC(); } },
+      { ico: 'sparkle', label: 'Theme bgs', title: 'Import all seven generated theme backgrounds', fn: setupAllThemeBgs },
+      { ico: 'sparkle', label: `Gallery (${gallery.items.length})`, fn: () => { const h = galleryHost(); if (h) { h.hidden = !h.hidden; if (!h.hidden) h.scrollIntoView({ block: 'nearest' }); } } },
+      { ico: 'controller', label: 'Clip 30s ⬆', fn: () => uploadBgVideo('clip') },
+      { ico: 'controller', label: 'Full video ⬆', fn: () => uploadBgVideo('full') },
+      { ico: 'sparkle', label: 'From URL', fn: importBgFromUrl },
+    ] },
+    { title: 'Account', items: [
+      // surface the underlying error as a hover/long-press title so a stuck sync
+      // is legible, not just the generic "Sync error" label
+      { ico: 'home', label: sync.status(), title: sync.lastError() || undefined, fn: syncAction },
+      { ico: 'sparkle', label: 'Backup', fn: backupData },
+      { ico: 'sparkle', label: 'Restore', fn: restoreData },
+      { ico: 'controller', label: 'Cloudflare', href: 'https://dash.cloudflare.com' },
+    ] },
   ];
   // only offer Install when the browser has actually handed us a prompt to fire
   if (deferredInstallPrompt) {
-    items.push({ ico: 'sparkle', label: 'Install app', fn: async () => {
+    groups[2].items.push({ ico: 'sparkle', label: 'Install app', fn: async () => {
       const e = deferredInstallPrompt;
       deferredInstallPrompt = null; // a prompt event can only be used once
       try { e.prompt(); await e.userChoice; } catch { /* dismissed */ }
@@ -936,14 +962,25 @@ function buildCC() {
     } });
   }
   ccActions.innerHTML = '';
-  items.forEach(it => {
-    const node = document.createElement(it.href ? 'a' : 'button');
-    node.className = 'cc-btn';
-    if (it.href) { node.href = it.href; node.target = '_blank'; node.rel = 'noopener'; node.style.textDecoration = 'none'; }
-    if (it.title) node.title = it.title; // e.g. the full sync error behind a "Sync error" label
-    node.innerHTML = `<span class="cc-ico">${ICONS[it.ico] || ''}</span><span class="cc-label">${esc(it.label)}</span>`;
-    if (it.fn) node.addEventListener('click', it.fn);
-    ccActions.append(node);
+  groups.forEach(group => {
+    const wrap = document.createElement('div');
+    wrap.className = 'cc-group';
+    const title = document.createElement('div');
+    title.className = 'cc-group-title';
+    title.textContent = group.title;
+    const row = document.createElement('div');
+    row.className = 'cc-group-row';
+    group.items.forEach(it => {
+      const node = document.createElement(it.href ? 'a' : 'button');
+      node.className = 'cc-btn';
+      if (it.href) { node.href = it.href; node.target = '_blank'; node.rel = 'noopener'; node.style.textDecoration = 'none'; }
+      if (it.title) node.title = it.title; // e.g. the full sync error behind a "Sync error" label
+      node.innerHTML = `<span class="cc-ico">${ICONS[it.ico] || ''}</span><span class="cc-label">${esc(it.label)}</span>`;
+      if (it.fn) node.addEventListener('click', it.fn);
+      row.append(node);
+    });
+    wrap.append(title, row);
+    ccActions.append(wrap);
   });
 
   // named theme row — the game skins, spelled out
@@ -1109,11 +1146,14 @@ function boot() {
     return;
   }
   $('#boot-icon').innerHTML = ICONS[consoleMode === 'xbox' ? 'xbox' : 'ps'];
+  // 700ms hold (was 1400) — still long enough to read as an intentional
+  // splash, half the fixed cost on first launch. Once-per-session via the
+  // 'pd.booted' flag set below, so it's a one-time tax, not every navigation.
   setTimeout(() => {
     el.classList.add('done');
     try { sessionStorage.setItem('pd.booted', '1'); } catch { /* noop */ }
     setTimeout(() => { el.hidden = true; }, 550);
-  }, 1400);
+  }, 700);
 }
 
 /* ---------- Mission Control live badge ----------
@@ -1172,9 +1212,10 @@ boot();
 initAchievements(() => consoleMode);
 sync.init();
 applyBg(bgMode);
-// if a background exists it becomes selectable a moment after load. The
-// element ships pointing at /media/bg.mp4 (whichever is selected), so the
-// picture is up before the gallery listing comes back.
+// applyBg only points the (src-less) element at /media/bg.mp4 when the saved
+// background is 'video', so Storm/Off visits never fetch it. When it IS video,
+// that load fires canplay here and we flip the picture up — before the gallery
+// listing comes back — without a network hit for anyone else.
 bgVideo.addEventListener('canplay', () => { if (load('ui.bg', 'storm') === 'video') applyBg('video', true); }, { once: true });
 refreshGallery().then(() => {
   if (!gallery.items.length) videoOk = false;

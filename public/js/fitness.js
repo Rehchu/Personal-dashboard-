@@ -1,12 +1,16 @@
 // Fitness module — workout log, weigh-ins, streaks, trends. All localStorage.
 
-import { load, save, uid, todayISO, esc } from './store.js';
+import { load, save, uid, todayISO, esc, softDelete, alive } from './store.js';
 import { lineChart, barChart } from './charts.js';
 
 const TYPES = ['Strength', 'Run', 'Walk', 'Cycle', 'Swim', 'Sports', 'Stretch', 'Other'];
 
-const getWorkouts = () => load('fit.workouts', []);
-const getWeights = () => load('fit.weights', []);
+// Raw lists (tombstones included) are only for writing back; everything the UI
+// and stats touch goes through alive() so deleted entries never render or count.
+const allWorkouts = () => load('fit.workouts', []);
+const allWeights = () => load('fit.weights', []);
+const getWorkouts = () => alive(allWorkouts());
+const getWeights = () => alive(allWeights());
 
 function dayKey(offset) {
   const d = new Date();
@@ -139,7 +143,8 @@ export function mount(root, tools) {
     root.querySelector('#fit-empty').hidden = workouts.length > 0;
 
     rows.querySelectorAll('[data-del]').forEach(btn => btn.addEventListener('click', () => {
-      save('fit.workouts', getWorkouts().filter(w => w.id !== btn.dataset.del));
+      // tombstone, not a splice: the sync merge unions by id and would bring it back
+      save('fit.workouts', softDelete(allWorkouts(), btn.dataset.del));
       render();
     }));
   }
@@ -154,9 +159,10 @@ export function mount(root, tools) {
       minutes: Number(root.querySelector('#fw-min').value) || 0,
       srw: root.querySelector('#fw-srw').value.trim(),
       notes: root.querySelector('#fw-notes').value.trim(),
+      ts: Date.now(), // lets the sync merge order this entry against a tombstone
     };
     if (!w.name) return;
-    save('fit.workouts', [...getWorkouts(), w]);
+    save('fit.workouts', [...allWorkouts(), w]);
     e.target.reset();
     root.querySelector('#fw-date').value = todayISO();
     render();
@@ -168,9 +174,12 @@ export function mount(root, tools) {
     const date = root.querySelector('#wt-date').value || todayISO();
     const value = Number(root.querySelector('#wt-val').value);
     if (!value) return;
-    // one weigh-in per day — latest wins
-    const rest = getWeights().filter(w => w.date !== date);
-    save('fit.weights', [...rest, { id: uid(), date, value }]);
+    // one weigh-in per day — latest wins. The replaced entry is a delete like
+    // any other, so it gets a tombstone instead of quietly vanishing (a sync
+    // merge would otherwise restore it next to the new one).
+    let rest = allWeights();
+    for (const w of getWeights()) if (w.date === date) rest = softDelete(rest, w.id);
+    save('fit.weights', [...rest, { id: uid(), date, value, ts: Date.now() }]);
     root.querySelector('#wt-val').value = '';
     render();
     window.dispatchEvent(new CustomEvent('pd:data-changed'));

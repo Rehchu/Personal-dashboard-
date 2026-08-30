@@ -4,7 +4,7 @@
 // banner (PS: dark pill from the top · Xbox: green-circled pill from the
 // bottom), queued one at a time.
 
-import { load, save } from './store.js';
+import { load, save, alive } from './store.js';
 import { sfx } from './sfx.js';
 import { ICONS } from './icons.js';
 
@@ -38,17 +38,18 @@ const DEFS = [
 
 function gather() {
   const books = load('books', []);
+  // alive(): deleted items persist as sync tombstones and must not count
   return {
-    workouts: load('fit.workouts', []),
-    weights: load('fit.weights', []),
+    workouts: alive(load('fit.workouts', [])),
+    weights: alive(load('fit.weights', [])),
     words: books.reduce((s, b) => s + (b.chapters || []).reduce((n, c) => n + words(c.text), 0), 0),
     chapters: books.reduce((s, b) => s + (b.chapters || []).length, 0),
-    inked: load('nb.pages', []).filter(p => (p.strokes || []).length).length,
+    inked: alive(load('nb.pages', [])).filter(p => (p.strokes || []).length).length,
     themes: load('ui.themesUsed', []),
     consoles: load('ui.consolesUsed', []),
     sprints: load('writing.sprints', []).length,
-    captured: load('inbox', []).length,
-    habitStreak: Math.max(0, ...load('habits', []).map(h => {
+    captured: alive(load('inbox', [])).length,
+    habitStreak: Math.max(0, ...alive(load('habits', [])).map(h => {
       const days = h.days || {};
       let n = 0;
       const d = new Date();

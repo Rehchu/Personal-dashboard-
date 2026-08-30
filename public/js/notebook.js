@@ -170,7 +170,13 @@ const pageText = p => p.texts.map(t => t.text).join('\n');
 const countWords = s => (s.match(/[^\s]+/g) || []).length;
 
 export function mount(root, tools) {
-  let pages = normalize(load('nb.pages', null));
+  // Deleted pages live on in storage as tombstones ({id, deleted:1, ts}) so the
+  // sync merge can't resurrect them. They are split off BEFORE normalize —
+  // which would otherwise flesh a tombstone out into a blank live page — and
+  // re-joined on every save (see persistNow), never rendered or edited.
+  const storedPages = load('nb.pages', null);
+  let tombstones = Array.isArray(storedPages) ? storedPages.filter(p => p?.deleted) : [];
+  let pages = normalize(Array.isArray(storedPages) ? storedPages.filter(p => !p?.deleted) : storedPages);
 
   let curId = load('nb.pageId', null);
   if (!pages.some(p => p.id === curId)) {
@@ -197,8 +203,9 @@ export function mount(root, tools) {
   let warnedStorage = false;
   function persistNow() {
     const idx = pages.findIndex(p => p.id === curId);
-    // nb.page stays a flat index: the dashboard's activity cards read it
-    const ok = save('nb.pages', pages) && save('nb.page', Math.max(0, idx));
+    // nb.page stays a flat index: the dashboard's activity cards read it.
+    // Tombstones ride at the end so deletions survive the round trip to sync.
+    const ok = save('nb.pages', [...pages, ...tombstones]) && save('nb.page', Math.max(0, idx));
     save('nb.pageId', curId);
     save('nb.sec', curSec);
     if (!ok && !warnedStorage) {
@@ -865,6 +872,8 @@ export function mount(root, tools) {
       const has = p.strokes.length || p.texts.length;
       if (has && !confirm(`Delete "${p.title}"? Its ink and text go with it.`)) return;
       const sec = { id: p.secId, name: p.secName, ord: p.secOrd };
+      // the tombstone keeps only the id — section fields and ink go with the page
+      tombstones.push({ id: p.id, deleted: 1, ts: Date.now() });
       pages = pages.filter(x => x.id !== id);
       let next = pagesIn(pages, sec.id)[0];
       if (!next) {
@@ -880,6 +889,8 @@ export function mount(root, tools) {
       const sec = sectionsOf(pages).find(s => s.id === id);
       if (!sec) return;
       if (!confirm(`Delete section "${sec.name}" and its ${sec.n} page${sec.n === 1 ? '' : 's'}?`)) return;
+      // every page of the section is a deletion — one tombstone each
+      for (const p of pages) if (p.secId === id) tombstones.push({ id: p.id, deleted: 1, ts: Date.now() });
       pages = pages.filter(p => p.secId !== id);
       if (!pages.length) pages = normalize(null);
       curSec = pages[0].secId;

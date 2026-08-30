@@ -3,7 +3,7 @@
 // newest first. Both factories return elements with an el.destroy() that
 // releases their window/mic hooks — call it when you remove the element.
 
-import { load, save, uid, esc, showToast } from './store.js';
+import { load, save, uid, esc, showToast, softDelete, alive } from './store.js';
 
 const STYLE_ID = 'capture-style';
 
@@ -27,7 +27,10 @@ function ensureStyle() {
   document.head.append(style);
 }
 
-const getInbox = () => load('inbox', []);
+// allEntries keeps deletion tombstones so writes carry them forward for the
+// sync merge; getInbox is what lists render and search — live entries only.
+const allEntries = () => load('inbox', []);
+const getInbox = () => alive(allEntries());
 
 const notify = () => window.dispatchEvent(new CustomEvent('pd:data-changed'));
 
@@ -117,7 +120,7 @@ export function captureBox() {
     const text = ta.value.trim();
     if (!text) return;
     stopDictation();
-    const ok = save('inbox', [{ id: uid(), text, ts: Date.now() }, ...getInbox()]);
+    const ok = save('inbox', [{ id: uid(), text, ts: Date.now() }, ...allEntries()]);
     ta.value = '';
     base = '';
     showToast(ok ? 'Captured' : 'Storage full — not saved');
@@ -163,7 +166,8 @@ export function inboxList({ limit, onUse, useLabel } = {}) {
   }
 
   function removeEntry(id) {
-    save('inbox', getInbox().filter(i => i.id !== id));
+    // tombstone, not a splice: the sync merge unions by id and would bring it back
+    save('inbox', softDelete(allEntries(), id));
     notify(); // re-renders every live list, this one included
   }
 

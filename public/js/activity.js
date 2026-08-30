@@ -1,7 +1,7 @@
 // PS5-style activity cards — tiny live stats under the focused tile.
 // Pure read: computes from localStorage, renders static markup, no listeners.
 
-import { load, esc } from './store.js';
+import { load, esc, alive } from './store.js';
 
 function dayKey(offset) {
   const d = new Date();
@@ -16,8 +16,9 @@ const kfmt = n =>
   n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 
 function fitnessCards() {
-  const workouts = load('fit.workouts', []);
-  const weights = load('fit.weights', []);
+  // alive(): deleted entries persist as sync tombstones and must not count
+  const workouts = alive(load('fit.workouts', []));
+  const weights = alive(load('fit.weights', []));
   const week = new Set();
   for (let i = 0; i < 7; i++) week.add(dayKey(i));
   const inWeek = workouts.filter(w => week.has(w.date));
@@ -57,7 +58,7 @@ function writingCards() {
 }
 
 function notebookCards() {
-  const pages = load('nb.pages', []);
+  const pages = alive(load('nb.pages', [])); // deleted pages are tombstones
   const inked = pages.filter(p => p.strokes && p.strokes.length > 0).length;
   const idx = Math.max(0, Math.min(load('nb.page', 0), pages.length - 1));
   const cur = pages[idx];

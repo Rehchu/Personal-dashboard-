@@ -6,7 +6,7 @@
 // setup note in the panel) — nothing here asks for a camera to be exposed to
 // the internet.
 
-import { load, save, uid, esc, showToast } from './store.js';
+import { load, save, uid, esc, showToast, softDelete, alive } from './store.js';
 
 const SPEED_KEY = 'ptz.speed';
 const CAMS_KEY = 'ptz.cams';
@@ -95,8 +95,11 @@ export async function send(cam, cmd, args = {}) {
 }
 
 export function mount(root, tools) {
+  // `cams` keeps the full stored list (removal tombstones included) so every
+  // save carries the deletions forward for sync; the UI only ever sees live().
   let cams = getCams();
-  let current = cams.find(c => c.id === load('ptz.sel', null)) || cams[0] || null;
+  const live0 = alive(cams);
+  let current = live0.find(c => c.id === load('ptz.sel', null)) || live0[0] || null;
   let speed = load(SPEED_KEY, 12);
   let saveMode = false;
 
@@ -219,12 +222,13 @@ export function mount(root, tools) {
   function renderList() {
     renderAccess();
     const host = root.querySelector('#ptz-list');
-    if (!cams.length) {
+    const liveCams = alive(cams); // tombstoned (removed) cameras never render
+    if (!liveCams.length) {
       host.innerHTML = '<p class="muted">No cameras yet. Add one with its address.</p>';
       nameEl.textContent = 'No camera';
       return;
     }
-    host.innerHTML = cams.map(c => `
+    host.innerHTML = liveCams.map(c => `
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
         <button class="btn small" data-cam="${c.id}" style="flex:1;text-align:left;${c.id === current?.id ? 'border-color:var(--accent);' : ''}">
           ${esc(c.name)}${c.viewOnly ? ' <span class="muted">· view only</span>' : ''}<br><span class="muted" style="font-size:11.5px">${esc(c.base)}</span>
@@ -242,8 +246,9 @@ export function mount(root, tools) {
     host.querySelectorAll('[data-del]').forEach(btn => btn.addEventListener('click', () => {
       const cam = cams.find(c => c.id === btn.dataset.del);
       if (!cam || !confirm(`Remove ${cam.name}?`)) return;
-      cams = cams.filter(c => c.id !== cam.id);
-      if (current?.id === cam.id) current = cams[0] || null;
+      // tombstone, not a splice: the sync merge unions by id and would bring it back
+      cams = softDelete(cams, cam.id);
+      if (current?.id === cam.id) current = alive(cams)[0] || null;
       save(CAMS_KEY, cams);
       renderList();
     }));
@@ -338,6 +343,7 @@ export function mount(root, tools) {
     const cam = {
       id: uid(), name: name.trim(), base: normalizeBase(base),
       user: user.trim(), pass, viewOnly,
+      ts: Date.now(), // lets the sync merge order this camera against a tombstone
     };
     cams.push(cam);
     current = cam;
@@ -466,11 +472,20 @@ export function mount(root, tools) {
     if (reason) showMsg(reason);
   }
 
-  async function frameLoop(gen) {
+  // Two fetchers run staggered so a frame is always in flight while the last one
+  // paints — a single fetch-then-paint loop pays the full church-tunnel round
+  // trip between every frame, which is where the lag lived. Sequence numbers
+  // keep painting in send order: a frame that arrives after a newer one already
+  // painted is simply dropped, never shown backwards.
+  let frameSeq = 0;
+  let lastPainted = 0;
+
+  async function fetcherLoop(gen) {
     while (live && gen === liveGen && current) {
       // a hidden tab idles instead of hammering the camera; visibility resumes it
       if (document.hidden) { await sleep(500); continue; }
       const cam = current;               // a switch mid-fetch must not paint here
+      const mySeq = ++frameSeq;          // send order = paint order
       const t0 = performance.now();
       try {
         const res = await fetch('/api/ptz/snapshot', {
@@ -496,6 +511,8 @@ export function mount(root, tools) {
         }
         const blob = await res.blob();
         if (gen !== liveGen || cam !== current) continue; // switched away — drop this frame
+        if (mySeq <= lastPainted) continue;               // a newer frame already showed
+        lastPainted = mySeq;
         const url = URL.createObjectURL(blob);
         img.src = url;
         img.classList.add('on');
@@ -519,11 +536,20 @@ export function mount(root, tools) {
         await sleep(2000);               // back off after a failure, then retry
         continue;
       }
-      // no artificial gap — just a small floor so a very fast camera can't spin
-      // the loop hotter than ~10 fps (which would flood the tunnel for no gain)
+      // per-fetcher floor: two fetchers at 200ms each cap the pair near 10 fps,
+      // so a fast camera can't flood the tunnel for no visible gain
       const elapsed = performance.now() - t0;
-      if (elapsed < 100) await sleep(100 - elapsed);
+      if (elapsed < 200) await sleep(200 - elapsed);
     }
+  }
+
+  function frameLoop(gen) {
+    frameSeq = 0;
+    lastPainted = 0;
+    fetcherLoop(gen);
+    // the second fetcher starts half a beat later so the two interleave rather
+    // than firing shoulder-to-shoulder at the same instant
+    setTimeout(() => { if (live && gen === liveGen) fetcherLoop(gen); }, 350);
   }
 
   function startLive() {

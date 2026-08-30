@@ -287,6 +287,15 @@ export function initAmbient(canvas) {
   let raf = 0;
   let last = 0;
 
+  // Idle stop: the loop is pure ambience, so after IDLE_MS with no pointer or
+  // key input we stop the rAF entirely (an unattended tab shouldn't burn a
+  // frame budget forever) and resume on the next input. Kept distinct from
+  // pause()/resume(), which the shell uses to hide the canvas behind an open
+  // module — idle must never resume the loop behind one.
+  const IDLE_MS = 60000;
+  let paused = false; // true while a module view covers the canvas
+  let idle = false;   // true while stopped for inactivity
+
   function seed() {
     system = SYSTEMS[theme](w, h, motion.matches ? 0.5 : 1);
     if (motion.matches) {
@@ -328,6 +337,21 @@ export function initAmbient(canvas) {
     raf = 0;
   }
 
+  let idleTimer = 0;
+  function armIdle() {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      if (paused || motion.matches) return; // nothing to stop
+      idle = true;
+      stop();
+    }, IDLE_MS);
+  }
+  function onInput() {
+    if (idle) { idle = false; if (!paused) start(); }
+    armIdle(); // debounce the idle deadline forward on every input
+  }
+  const INPUT_EVENTS = ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart'];
+
   function onMotionChange() {
     stop();
     seed();
@@ -336,18 +360,22 @@ export function initAmbient(canvas) {
 
   addEventListener('resize', resize);
   motion.addEventListener('change', onMotionChange);
+  INPUT_EVENTS.forEach(t => addEventListener(t, onInput, { passive: true }));
   resize();
   start();
+  armIdle();
 
   return {
-    pause: stop,   // e.g. while an opaque module view covers the canvas
-    resume: start, // no-ops under prefers-reduced-motion
+    pause() { paused = true; stop(); },              // module view covers the canvas
+    resume() { paused = false; idle = false; start(); armIdle(); }, // no-ops under reduced motion
     setTheme(name) {
       theme = SYSTEMS[name] ? name : 'masseffect';
       seed();
     },
     destroy() {
       stop();
+      clearTimeout(idleTimer);
+      INPUT_EVENTS.forEach(t => removeEventListener(t, onInput));
       removeEventListener('resize', resize);
       motion.removeEventListener('change', onMotionChange);
       ctx.clearRect(0, 0, w, h);
