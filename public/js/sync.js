@@ -13,8 +13,11 @@
 // the Cloudflare Access token included. Local storage stays plaintext; encryption
 // wraps only the trip to and from the cloud.
 //
-// Conflict strategy: arrays of {id,…} are unioned by id (local wins for the same
-// id, since this device was just editing); everything else last-write-wins.
+// Conflict strategy: arrays of {id,…} are unioned by id. Deletes are tombstones
+// ({id, deleted:1, ts} — see store.softDelete): when either copy of an id is a
+// tombstone the newer ts wins, so a delete sticks across devices instead of the
+// item resurrecting out of the union. Two live copies keep the old rule — local
+// wins, since this device was just editing. Everything else last-write-wins.
 
 import { load, save, onSave, debounce, showToast, keys as allStoredKeys } from './store.js';
 import { deriveKey, encryptData, decryptData } from './synccrypto.js';
@@ -82,12 +85,36 @@ async function encode(value) {
   return encryptData(ck, value);
 }
 
-function mergeCol(serverData, localData) {
+// Tombstones older than this are swept from merge results — by then every
+// device that will ever sync has seen the delete, and the markers must not
+// pile up forever.
+const TOMBSTONE_TTL = 30 * 24 * 60 * 60 * 1000;
+
+// Same id on both sides. Two live copies keep the historical rule: local wins
+// (this device was just editing). Once a tombstone is involved, the NEWER ts
+// wins — a fresh delete beats an older edit, and an item edited after the
+// delete wins back (recreate). Legacy items without a ts count as 0, and a tie
+// goes to the tombstone: deleting was the deliberate act.
+function pickById(server, local) {
+  if (!server.deleted && !local.deleted) return local;
+  const sTs = Number(server.ts) || 0;
+  const lTs = Number(local.ts) || 0;
+  if (sTs !== lTs) return sTs > lTs ? server : local;
+  return server.deleted ? server : local;
+}
+
+// Exported for tests only (tombstone merge semantics are load-bearing and the
+// app itself always calls this via pull()/pushCol()).
+export function mergeCol(serverData, localData) {
   if (Array.isArray(serverData) && Array.isArray(localData) && (serverData[0]?.id || localData[0]?.id)) {
     const byId = new Map();
     for (const item of serverData) if (item && item.id) byId.set(item.id, item);
-    for (const item of localData) if (item && item.id) byId.set(item.id, item); // local wins
-    return [...byId.values()];
+    for (const item of localData) if (item && item.id) {
+      const other = byId.get(item.id);
+      byId.set(item.id, other ? pickById(other, item) : item);
+    }
+    const cutoff = Date.now() - TOMBSTONE_TTL;
+    return [...byId.values()].filter(it => !it.deleted || (Number(it.ts) || 0) > cutoff);
   }
   if (serverData && localData && typeof serverData === 'object' && !Array.isArray(serverData)
     && typeof localData === 'object' && !Array.isArray(localData)) {

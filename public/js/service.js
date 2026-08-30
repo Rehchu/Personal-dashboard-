@@ -6,7 +6,7 @@
 // Segments recall a camera preset so a shot is one tap during the service
 // instead of a pad you drive blind while it is happening.
 
-import { load, save, uid, esc, todayISO, showToast } from './store.js';
+import { load, save, uid, esc, todayISO, showToast, softDelete, alive } from './store.js';
 import { send as sendPtz } from './ptz.js';
 
 const SERVICES_KEY = 'services';
@@ -16,7 +16,7 @@ const CSV_KEY = 'csv.files';
 // a plausible order of service, editable — most services are a variation on it
 const DEFAULT_SEGMENTS = ['Countdown', 'Worship', 'Welcome', 'Offering', 'Message', 'Response'];
 
-const getCams = () => load(CAMS_KEY, []);
+const getCams = () => alive(load(CAMS_KEY, [])); // removed cameras are tombstones
 
 /* ---------- the song bank, read out of whatever CSV was imported ---------- */
 
@@ -24,7 +24,7 @@ const TITLE_RE = /^title$/i;
 const CCLI_RE = /ccli/i;
 
 export function songBank() {
-  for (const file of load(CSV_KEY, [])) {
+  for (const file of alive(load(CSV_KEY, []))) {
     const rows = file?.rows;
     if (!Array.isArray(rows) || rows.length < 2) continue;
     const headers = rows[0].map(h => String(h || '').trim());
@@ -45,7 +45,8 @@ export function songBank() {
 // song list, but the occasions — the same song in three services is three rows.
 export function usageRows(services, fromISO, toISO) {
   const rows = [['Title', 'CCLI Song No.', 'Date', 'Service']];
-  for (const svc of [...services].sort((a, b) => (a.date < b.date ? -1 : 1))) {
+  // alive(): a deleted service is a tombstone and must not report song uses
+  for (const svc of alive(services).sort((a, b) => (a.date < b.date ? -1 : 1))) {
     if (fromISO && svc.date < fromISO) continue;
     if (toISO && svc.date > toISO) continue;
     for (const song of svc.songs || []) {
@@ -77,8 +78,11 @@ const STYLE = `
 `;
 
 export function mount(root, tools) {
+  // `services` keeps deletion tombstones so saves carry them forward for sync;
+  // the list UI, selection, and reports only ever see alive() entries.
   let services = load(SERVICES_KEY, []);
-  let current = services.find(s => s.id === load('services.sel', null)) || services[0] || null;
+  const live0 = alive(services);
+  let current = live0.find(s => s.id === load('services.sel', null)) || live0[0] || null;
   let live = false;
   let activeSeg = null;
 
@@ -125,6 +129,7 @@ export function mount(root, tools) {
   function newService() {
     const svc = {
       id: uid(),
+      ts: Date.now(), // lets the sync merge order this service against a tombstone
       date: todayISO(),
       name: 'Sunday service',
       segments: DEFAULT_SEGMENTS.map(n => ({ id: uid(), name: n, camId: '', preset: '' })),
@@ -138,8 +143,9 @@ export function mount(root, tools) {
   }
 
   function renderList() {
-    $('#sv-list').innerHTML = services.length
-      ? services.map(s => `
+    const liveSvcs = alive(services);
+    $('#sv-list').innerHTML = liveSvcs.length
+      ? liveSvcs.map(s => `
         <div style="display:flex;gap:6px;margin-bottom:6px">
           <button class="btn small" data-svc="${s.id}" style="flex:1;text-align:left;${s.id === current?.id ? 'border-color:var(--accent);' : ''}">
             ${esc(s.name)}<br><span class="muted" style="font-size:11.5px">${esc(s.date)} · ${(s.songs || []).length} songs</span>
@@ -156,8 +162,9 @@ export function mount(root, tools) {
     $('#sv-list').querySelectorAll('[data-delsvc]').forEach(b => b.addEventListener('click', () => {
       const svc = services.find(s => s.id === b.dataset.delsvc);
       if (!svc || !confirm(`Delete "${svc.name}" (${svc.date})?`)) return;
-      services = services.filter(s => s.id !== svc.id);
-      if (current?.id === svc.id) current = services[0] || null;
+      // tombstone, not a splice: the sync merge unions by id and would bring it back
+      services = softDelete(services, svc.id);
+      if (current?.id === svc.id) current = alive(services)[0] || null;
       persist(); renderAll();
     }));
   }
@@ -312,7 +319,7 @@ export function mount(root, tools) {
   });
 
   tools.querySelector('#sv-ccli').addEventListener('click', () => {
-    if (!services.length) { showToast('No services to report'); return; }
+    if (!alive(services).length) { showToast('No services to report'); return; }
     const rows = usageRows(services);
     if (rows.length < 2) { showToast('No songs logged in any service yet'); return; }
     const blob = new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8' });
@@ -324,7 +331,7 @@ export function mount(root, tools) {
     showToast(`${rows.length - 1} song uses exported`);
   });
 
-  if (!services.length) newService(); else renderAll();
+  if (!alive(services).length) newService(); else renderAll();
 
   return () => {};
 }

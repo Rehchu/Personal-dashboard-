@@ -751,6 +751,12 @@ table.data td:first-child { color: var(--ink); }
   border-radius: 20px;
   padding: 18px 20px;
   animation: cc-in 240ms cubic-bezier(.2,.9,.3,1.1);
+  /* the sheet grew past a viewport once the action strip gained groups — it
+     scrolls inside itself rather than clipping the bottom rows off-screen */
+  max-height: min(80vh, 80dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 [data-console="xbox"] #cc-sheet { border-radius: 8px; }
@@ -762,8 +768,22 @@ table.data td:first-child { color: var(--ink); }
 
 #cc-actions {
   display: flex;
+  flex-direction: column;
   gap: 14px;
-  justify-content: center;
+}
+
+.cc-group-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 0 0 6px 6px;
+}
+
+.cc-group-row {
+  display: flex;
+  gap: 10px;
   flex-wrap: wrap;
 }
 

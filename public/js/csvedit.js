@@ -6,7 +6,7 @@
 // names), CRLF line endings (flip them and every line looks changed), and
 // minimal quoting (quote only the fields that need it, not every field).
 
-import { load, save, uid, esc, showToast } from './store.js';
+import { load, save, uid, esc, showToast, softDelete, alive } from './store.js';
 
 const FILES_KEY = 'csv.files';
 
@@ -118,8 +118,11 @@ const STYLE = `
 `;
 
 export function mount(root, tools) {
+  // `files` keeps replacement tombstones (see the import handler) so every save
+  // carries them forward for sync; pickers and selection only see live entries.
   let files = load(FILES_KEY, []);
-  let current = files.find(f => f.id === load('csv.sel', null)) || files[0] || null;
+  const live0 = alive(files);
+  let current = live0.find(f => f.id === load('csv.sel', null)) || live0[0] || null;
   let filter = '';
 
   tools.innerHTML = `
@@ -153,7 +156,7 @@ export function mount(root, tools) {
   };
 
   function renderPicker() {
-    $('#cs-pick').innerHTML = files.map(f =>
+    $('#cs-pick').innerHTML = alive(files).map(f =>
       `<option value="${f.id}"${f.id === current?.id ? ' selected' : ''}>${esc(f.name)}</option>`).join('')
       || '<option>—</option>';
   }
@@ -229,8 +232,11 @@ export function mount(root, tools) {
     if (!file) return;
     const { rows, dialect } = await parseCsvFile(file);
     if (!rows.length) { showToast('That file has no rows'); return; }
-    const entry = { id: uid(), name: file.name, rows, dialect, edited: false };
-    files = [entry, ...files.filter(f => f.name !== file.name)];
+    const entry = { id: uid(), name: file.name, rows, dialect, edited: false, ts: Date.now() };
+    // re-importing a file replaces the old copy — that IS a delete, so the old
+    // entry becomes a tombstone or a sync merge would restore both side by side
+    for (const f of alive(files)) if (f.name === file.name) files = softDelete(files, f.id);
+    files = [entry, ...files];
     current = entry;
     save('csv.sel', entry.id);
     persist(); render();

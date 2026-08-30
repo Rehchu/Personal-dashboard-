@@ -30,6 +30,22 @@ export function uid() {
   return Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
 }
 
+// Tombstoned deletes for the array-of-{id} collections. The sync engine unions
+// those lists by id, so a plain splice resurrects the moment another device
+// pushes its copy. Instead the item is replaced by a tiny marker — only the id,
+// a deleted flag, and when — so the merge can see the deletion and let the
+// newest intent win (see mergeCol in sync.js).
+export function softDelete(list, id) {
+  return (Array.isArray(list) ? list : [])
+    .map(it => (it && it.id === id ? { id, deleted: 1, ts: Date.now() } : it));
+}
+
+// What UIs and stats should render: the list without its tombstones. A list
+// that never had a delete passes through untouched.
+export function alive(list) {
+  return (Array.isArray(list) ? list : []).filter(it => !it?.deleted);
+}
+
 // Every stored key, un-prefixed — so the sync engine can push all of them
 // instead of a hand-maintained whitelist.
 export function keys() {

@@ -1,7 +1,7 @@
 // Today module — the daily briefing: greeting, stat cards, weather, verse of
 // the day, and quick capture. First tile of the dashboard.
 
-import { load, save, todayISO, esc } from './store.js';
+import { load, save, todayISO, esc, alive } from './store.js';
 import { captureBox, inboxList } from './capture.js';
 
 const WX_CACHE_MS = 30 * 60 * 1000;
@@ -44,7 +44,8 @@ function dayOfYear() {
 }
 
 function fitStats() {
-  const workouts = load('fit.workouts', []);
+  // alive(): deleted workouts persist as sync tombstones and must not count
+  const workouts = alive(load('fit.workouts', []));
   const dates = new Set(workouts.map(w => w.date));
   let streak = 0;
   const offset = dates.has(dayKey(0)) ? 0 : 1; // today counts; else streak may end yesterday
@@ -72,7 +73,7 @@ function wordsToday() {
 }
 
 function habitStats() {
-  const habits = load('habits', []);
+  const habits = alive(load('habits', [])); // deleted habits are tombstones
   const today = todayISO();
   return {
     done: habits.filter(h => h.days && h.days[today]).length,

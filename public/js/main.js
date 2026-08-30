@@ -922,28 +922,37 @@ function buildCC() {
     document.head.append(style);
   }
   const other = consoleMode === 'ps' ? 'xbox' : 'ps';
-  const items = [
-    { ico: 'home', label: 'Home', fn: () => { closeModule(); hideCC(); } },
-    { ico: other, label: other === 'xbox' ? 'Xbox view' : 'PS view', fn: () => { applyConsole(other, { announce: true }); buildCC(); } },
-    { ico: sfx.isMuted() ? 'soundOff' : 'sound', label: sfx.isMuted() ? 'Sound off' : 'Sound on', fn: () => { sfx.setMuted(!sfx.isMuted()); if (!sfx.isMuted()) sfx.play('select'); buildCC(); } },
-    { ico: 'trophy', label: 'Trophies', fn: toggleTrophies },
-    { ico: 'sparkle', label: BG_LABEL[bgMode] || 'Bg', fn: () => { cycleBg(); sfx.play('select'); buildCC(); } },
-    { ico: 'controller', label: 'Bg clip 30s ⬆', fn: () => uploadBgVideo('clip') },
-    { ico: 'controller', label: 'Bg full video ⬆', fn: () => uploadBgVideo('full') },
-    { ico: 'sparkle', label: 'Set up theme backgrounds', fn: setupAllThemeBgs },
-    { ico: 'sparkle', label: 'Import bg from URL', fn: importBgFromUrl },
-    { ico: 'sparkle', label: `Gallery (${gallery.items.length})`, fn: () => { const h = galleryHost(); if (h) { h.hidden = !h.hidden; if (!h.hidden) h.scrollIntoView({ block: 'nearest' }); } } },
-    // surface the underlying error as a hover/long-press title so a stuck sync
-    // is legible, not just the generic "Sync error" label
-    { ico: 'home', label: sync.status(), title: sync.lastError() || undefined, fn: syncAction },
-    { ico: 'sparkle', label: 'Backup (.json)', fn: backupData },
-    { ico: 'sparkle', label: 'Restore', fn: restoreData },
-    { ico: 'soundOff', label: 'Lock', fn: lockApp },
-    { ico: 'controller', label: 'Cloudflare', href: 'https://dash.cloudflare.com' },
+  // The strip outgrew a single row — sixteen buttons wrapped into an unreadable
+  // pile that overflowed the sheet on phones. Grouped by what you're doing, so
+  // the eye finds the row it needs, and the sheet itself scrolls when short.
+  const groups = [
+    { title: 'Quick', items: [
+      { ico: 'home', label: 'Home', fn: () => { closeModule(); hideCC(); } },
+      { ico: other, label: other === 'xbox' ? 'Xbox view' : 'PS view', fn: () => { applyConsole(other, { announce: true }); buildCC(); } },
+      { ico: sfx.isMuted() ? 'soundOff' : 'sound', label: sfx.isMuted() ? 'Sound off' : 'Sound on', fn: () => { sfx.setMuted(!sfx.isMuted()); if (!sfx.isMuted()) sfx.play('select'); buildCC(); } },
+      { ico: 'trophy', label: 'Trophies', fn: toggleTrophies },
+      { ico: 'soundOff', label: 'Lock', fn: lockApp },
+    ] },
+    { title: 'Background', items: [
+      { ico: 'sparkle', label: BG_LABEL[bgMode] || 'Bg', fn: () => { cycleBg(); sfx.play('select'); buildCC(); } },
+      { ico: 'sparkle', label: 'Theme bgs', title: 'Import all seven generated theme backgrounds', fn: setupAllThemeBgs },
+      { ico: 'sparkle', label: `Gallery (${gallery.items.length})`, fn: () => { const h = galleryHost(); if (h) { h.hidden = !h.hidden; if (!h.hidden) h.scrollIntoView({ block: 'nearest' }); } } },
+      { ico: 'controller', label: 'Clip 30s ⬆', fn: () => uploadBgVideo('clip') },
+      { ico: 'controller', label: 'Full video ⬆', fn: () => uploadBgVideo('full') },
+      { ico: 'sparkle', label: 'From URL', fn: importBgFromUrl },
+    ] },
+    { title: 'Account', items: [
+      // surface the underlying error as a hover/long-press title so a stuck sync
+      // is legible, not just the generic "Sync error" label
+      { ico: 'home', label: sync.status(), title: sync.lastError() || undefined, fn: syncAction },
+      { ico: 'sparkle', label: 'Backup', fn: backupData },
+      { ico: 'sparkle', label: 'Restore', fn: restoreData },
+      { ico: 'controller', label: 'Cloudflare', href: 'https://dash.cloudflare.com' },
+    ] },
   ];
   // only offer Install when the browser has actually handed us a prompt to fire
   if (deferredInstallPrompt) {
-    items.push({ ico: 'sparkle', label: 'Install app', fn: async () => {
+    groups[2].items.push({ ico: 'sparkle', label: 'Install app', fn: async () => {
       const e = deferredInstallPrompt;
       deferredInstallPrompt = null; // a prompt event can only be used once
       try { e.prompt(); await e.userChoice; } catch { /* dismissed */ }
@@ -951,14 +960,25 @@ function buildCC() {
     } });
   }
   ccActions.innerHTML = '';
-  items.forEach(it => {
-    const node = document.createElement(it.href ? 'a' : 'button');
-    node.className = 'cc-btn';
-    if (it.href) { node.href = it.href; node.target = '_blank'; node.rel = 'noopener'; node.style.textDecoration = 'none'; }
-    if (it.title) node.title = it.title; // e.g. the full sync error behind a "Sync error" label
-    node.innerHTML = `<span class="cc-ico">${ICONS[it.ico] || ''}</span><span class="cc-label">${esc(it.label)}</span>`;
-    if (it.fn) node.addEventListener('click', it.fn);
-    ccActions.append(node);
+  groups.forEach(group => {
+    const wrap = document.createElement('div');
+    wrap.className = 'cc-group';
+    const title = document.createElement('div');
+    title.className = 'cc-group-title';
+    title.textContent = group.title;
+    const row = document.createElement('div');
+    row.className = 'cc-group-row';
+    group.items.forEach(it => {
+      const node = document.createElement(it.href ? 'a' : 'button');
+      node.className = 'cc-btn';
+      if (it.href) { node.href = it.href; node.target = '_blank'; node.rel = 'noopener'; node.style.textDecoration = 'none'; }
+      if (it.title) node.title = it.title; // e.g. the full sync error behind a "Sync error" label
+      node.innerHTML = `<span class="cc-ico">${ICONS[it.ico] || ''}</span><span class="cc-label">${esc(it.label)}</span>`;
+      if (it.fn) node.addEventListener('click', it.fn);
+      row.append(node);
+    });
+    wrap.append(title, row);
+    ccActions.append(wrap);
   });
 
   // named theme row — the game skins, spelled out
