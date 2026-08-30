@@ -14,6 +14,16 @@ export const TILES = [
     actions: [{ label: 'Open', action: 'open' }],
   },
   {
+    id: 'ops',
+    title: 'Mission Control',
+    glyph: '🛰️',
+    accent: '#116273',
+    kind: 'module',
+    badge: 'LIVE',
+    desc: 'The live pulse of the shop and the church — open tickets, waiting leads, unpaid invoices, the IT queue, and this Sunday\'s plan, all in one place.',
+    actions: [{ label: 'Open', action: 'open' }],
+  },
+  {
     id: 'projects',
     title: 'GitHub Projects',
     glyph: '📁',
@@ -126,6 +136,16 @@ export const TILES = [
     kind: 'module',
     badge: 'SUN',
     desc: 'Run of show for Sunday with a camera preset per segment, the set list from the song bank, and a CCLI usage report.',
+    actions: [{ label: 'Open', action: 'open' }],
+  },
+  {
+    id: 'gaming',
+    title: 'Gaming',
+    glyph: '🎮',
+    accent: '#107c10',
+    kind: 'module',
+    badge: 'XB · PS',
+    desc: 'Your real Xbox and PlayStation — gamerscore, trophy level, and recently played, pulled live once you connect each account.',
     actions: [{ label: 'Open', action: 'open' }],
   },
   {

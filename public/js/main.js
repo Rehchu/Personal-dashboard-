@@ -25,9 +25,12 @@ import * as archive from './archive.js';
 import * as ptz from './ptz.js';
 import * as csvedit from './csvedit.js';
 import * as service from './service.js';
+import * as biz from './biz.js';
+import * as gaming from './gaming.js';
 
 const MODULES = {
   today: { title: 'Today', mount: today.mount },
+  ops: { title: 'Mission Control', mount: biz.mount },
   projects: { title: 'GitHub Projects', mount: github.mount },
   fitness: { title: 'Fitness', mount: fitness.mount },
   writing: { title: 'Book Writing', mount: writing.mount },
@@ -40,6 +43,7 @@ const MODULES = {
   ptz: { title: 'Church Cameras', mount: ptz.mount },
   csv: { title: 'Song Bank', mount: csvedit.mount },
   service: { title: 'Service Planner', mount: service.mount },
+  gaming: { title: 'Gaming', mount: gaming.mount },
 };
 
 const $ = sel => document.querySelector(sel);
@@ -683,10 +687,14 @@ $('#cc-btn').addEventListener('click', () => (ccenter.hidden ? showCC() : hideCC
 ccenter.addEventListener('click', e => { if (e.target === ccenter) hideCC(); });
 $('#profile-chip').addEventListener('click', () => (ccenter.hidden ? showCC() : hideCC()));
 
-// gamerscore-style points: 500 per trophy, shown on the profile chip
+// The profile chip carries the dashboard's own trophy points (500 each), and —
+// once the Gaming module has connected a console — the real gamerscore and
+// trophy level pulled from Xbox/PSN alongside them.
 function updateScore() {
   const n = Object.keys(load('trophies', {})).length;
-  $('#profile-score').textContent = n ? `G ${(n * 500).toLocaleString()}` : '';
+  const mine = n ? `G ${(n * 500).toLocaleString()}` : '';
+  const real = gaming.chipSummary();
+  $('#profile-score').textContent = [mine, real].filter(Boolean).join('  ·  ');
 }
 updateScore();
 window.addEventListener('pd:data-changed', updateScore);
@@ -777,10 +785,58 @@ function boot() {
   }, 1400);
 }
 
+/* ---------- Mission Control live badge ----------
+   The ops tile wears the count of things wanting attention (open shop tickets +
+   waiting leads + open IT tickets). Read from biz.js's cache first so it paints
+   instantly, then refreshed once from the bridges in the background. */
+function opsAttentionCount() {
+  const shop = load('biz.shop', null)?.data;
+  const it = load('biz.ariseit', null)?.data;
+  let n = 0;
+  if (shop && shop.configured !== false) n += (shop.tickets?.length || 0) + (shop.leads?.count || 0);
+  if (it && it.configured !== false) n += (it.open?.length || 0);
+  return n;
+}
+
+function refreshOpsBadge() {
+  const i = TILES.findIndex(t => t.id === 'ops');
+  if (i < 0 || !tileEls[i]) return;
+  const badge = tileEls[i].querySelector('.badge');
+  if (!badge) return;
+  const n = opsAttentionCount();
+  badge.textContent = n > 0 ? String(n) : 'LIVE';
+  badge.classList.toggle('badge-alert', n > 0);
+}
+
+async function pollOps() {
+  try {
+    for (const [path, key] of [['/api/biz/shop', 'biz.shop'], ['/api/biz/ariseit', 'biz.ariseit']]) {
+      const res = await fetch(path, { headers: { accept: 'application/json' } });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && !data._error) save(key, { at: Date.now(), data });
+      }
+    }
+  } catch { /* offline — the cached badge stands */ }
+  refreshOpsBadge();
+}
+
+// A module (e.g. the Today briefing) can ask to jump to another module.
+window.addEventListener('pd:open', e => {
+  const id = e.detail;
+  const idx = TILES.findIndex(t => t.id === id);
+  if (idx < 0 || TILES[idx].kind !== 'module') return;
+  if (!appview.hidden) closeModule();
+  setFocus(idx, false);
+  openModule(id);
+});
+
 /* ---------- init ---------- */
 sfx.init();
 applyConsole(consoleMode);
 renderRail();
+refreshOpsBadge();
+pollOps();
 boot();
 initAchievements(() => consoleMode);
 sync.init();

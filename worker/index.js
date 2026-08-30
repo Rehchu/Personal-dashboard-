@@ -5,6 +5,8 @@
 // cookies signed with a server-side secret kept in D1.
 
 import { parseDigestChallenge, digestAuthHeader } from './digest.js';
+import { handleBiz } from './biz.js';
+import { handleGaming } from './gaming.js';
 
 const COL_RE = /^[a-zA-Z0-9._-]{1,40}$/;
 const ARCHIVE_ID_RE = /^[a-z0-9][a-z0-9._-]{0,39}$/;
@@ -584,6 +586,24 @@ function ptzQuery(cmd, args = {}) {
   return null;
 }
 
+// The camera password and — worse — the reusable Cloudflare Access service
+// token ride on every request the Worker makes to a camera address. That token
+// also fronts arisehub/itportal, so it must never leave to an arbitrary host.
+// Like serveIcon's ICON_HOSTS, the camera endpoint is NOT an open proxy: only
+// the church tunnel domain and private/LAN addresses are reachable. Everything
+// else is rejected before any secret is attached.
+function cameraHostAllowed(host) {
+  const h = host.toLowerCase();
+  // the church cameras and any sibling behind the same tunnel domain
+  if (h === 'myfaithtech.com' || h.endsWith('.myfaithtech.com')) return true;
+  // a camera addressed directly on the LAN (the Worker can only reach these
+  // through a tunnel anyway, so this is permissive, not a new exposure)
+  if (h === 'localhost' || h.endsWith('.local')) return true;
+  if (/^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
+  return false;
+}
+
 // A camera address may carry a path prefix, because one tunnel hostname can
 // front several cameras (https://dyerhq.example.com/cam1). Anything the caller
 // puts there is kept as a prefix only — the endpoint itself is always ours.
@@ -595,8 +615,12 @@ function parseCameraBase(base) {
     return null;
   }
   if (target.protocol !== 'http:' && target.protocol !== 'https:') return null;
+  // credentials in the URL make fetch() throw; reject them with a clear reason
+  if (target.username || target.password) return null;
+  if (!cameraHostAllowed(target.hostname)) return null;
   const prefix = target.pathname.replace(/\/+$/, '');
-  if (prefix && !/^(\/[A-Za-z0-9._-]{1,40}){1,4}$/.test(prefix)) return null;
+  // reject dot-segments so a prefix cannot walk off its intended path
+  if (prefix && (!/^(\/[A-Za-z0-9._-]{1,40}){1,4}$/.test(prefix) || /(^|\/)\.\.(\/|$)/.test(prefix))) return null;
   return { target, prefix };
 }
 
@@ -609,15 +633,68 @@ const MAX_SNAPSHOT = 8 * 1024 * 1024;
 // Without it the Worker would receive the Access login page, not a camera — a
 // machine cannot satisfy an interactive login. It rides on every attempt,
 // including the retry, or the retry never reaches the camera at all.
-function accessHeaders(body) {
+//
+// The token is stored on the Worker (the `stored` argument, from the secrets
+// table) so the Client Secret never has to live in a browser or sync anywhere —
+// paste it once, every device uses it. A per-camera override sent in the request
+// body still wins, for the rare camera that needs its own.
+function accessHeaders(body, stored) {
+  const b = body?.access;
+  const creds = (b && typeof b.id === 'string' && b.id && typeof b.secret === 'string' && b.secret)
+    ? b
+    : stored;
   const headers = {};
-  const id = body?.access?.id;
-  const secret = body?.access?.secret;
-  if (typeof id === 'string' && id && typeof secret === 'string' && secret) {
-    headers['CF-Access-Client-Id'] = id;
-    headers['CF-Access-Client-Secret'] = secret;
+  if (creds?.id && creds?.secret) {
+    headers['CF-Access-Client-Id'] = creds.id;
+    headers['CF-Access-Client-Secret'] = creds.secret;
   }
   return headers;
+}
+
+// The shared camera Access token, kept in the same secrets table as the session
+// key. The id is not sensitive (it identifies the token, like a username); the
+// secret is write-only from the client's side — stored, never read back.
+async function getCamAccess(env) {
+  if (!env?.DB) return null;
+  const [idRow, secRow] = await Promise.all([
+    env.DB.prepare('SELECT v FROM secrets WHERE k = ?').bind('cam_access_id').first(),
+    env.DB.prepare('SELECT v FROM secrets WHERE k = ?').bind('cam_access_secret').first(),
+  ]);
+  const id = idRow?.v || '';
+  const secret = secRow?.v || '';
+  return (id && secret) ? { id, secret } : null;
+}
+
+// GET reports whether a token is stored and its (non-secret) id; POST stores the
+// id + secret, or clears both when sent empty. The secret is never returned.
+async function handlePtzAccess(request, env) {
+  if (request.method === 'GET') {
+    const [idRow, secRow] = await Promise.all([
+      env.DB.prepare('SELECT v FROM secrets WHERE k = ?').bind('cam_access_id').first(),
+      env.DB.prepare('SELECT v FROM secrets WHERE k = ?').bind('cam_access_secret').first(),
+    ]);
+    return json({ configured: !!(idRow?.v && secRow?.v), id: idRow?.v || '' });
+  }
+  if (request.method === 'POST') {
+    const body = await request.json().catch(() => null);
+    const id = typeof body?.id === 'string' ? body.id.trim() : '';
+    const secret = typeof body?.secret === 'string' ? body.secret.trim() : '';
+    if (id === '' && secret === '') {
+      await env.DB.batch([
+        env.DB.prepare('DELETE FROM secrets WHERE k = ?').bind('cam_access_id'),
+        env.DB.prepare('DELETE FROM secrets WHERE k = ?').bind('cam_access_secret'),
+      ]);
+      return json({ configured: false, id: '' });
+    }
+    if (!id || !secret) return json({ error: 'need both the Client ID and the Client Secret' }, 400);
+    if (id.length > 200 || secret.length > 400) return json({ error: 'value too long' }, 400);
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO secrets (k, v) VALUES ('cam_access_id', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v").bind(id),
+      env.DB.prepare("INSERT INTO secrets (k, v) VALUES ('cam_access_secret', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v").bind(secret),
+    ]);
+    return json({ configured: true, id }); // id echoed (not sensitive); secret never is
+  }
+  return json({ error: 'method not allowed' }, 405);
 }
 
 function cameraCreds(body) {
@@ -686,7 +763,7 @@ async function cameraFetch(url, { creds, extra, cacheKey }) {
   return attempt(auth);
 }
 
-async function handlePtzSnapshot(request) {
+async function handlePtzSnapshot(request, env) {
   const body = await request.json().catch(() => null);
   const parsed = parseCameraBase(body?.base);
   if (!parsed) return json({ error: 'camera address must be an http or https URL' }, 400);
@@ -699,7 +776,7 @@ async function handlePtzSnapshot(request) {
   }
   const candidates = asked ? [asked, ...SNAPSHOT_PATHS.filter(p => p !== asked)] : SNAPSHOT_PATHS;
 
-  const extra = accessHeaders(body);
+  const extra = accessHeaders(body, await getCamAccess(env));
   const creds = cameraCreds(body);
   const cacheKey = `${target.origin}${prefix}|${creds?.user || ''}`;
 
@@ -730,7 +807,7 @@ async function handlePtzSnapshot(request) {
   return json({ error: `no snapshot image on this camera (last status ${lastStatus})` }, 502);
 }
 
-async function handlePtz(request) {
+async function handlePtz(request, env) {
   const body = await request.json().catch(() => null);
   const cmd = body?.cmd;
   if (typeof cmd !== 'string') return json({ error: 'missing command' }, 400);
@@ -751,7 +828,7 @@ async function handlePtz(request) {
   try {
     const res = await cameraFetch(target, {
       creds,
-      extra: accessHeaders(body),
+      extra: accessHeaders(body, await getCamAccess(env)),
       cacheKey: `${target.origin}${prefix}|${creds?.user || ''}`,
     });
     if (!res.ok) {
@@ -981,10 +1058,41 @@ export default {
       }
     }
 
+    if (path === '/api/ptz/access') {
+      if (!authed) return json({ error: 'sign in first' }, 401);
+      try {
+        return await handlePtzAccess(request, env);
+      } catch {
+        return json({ error: 'access-token storage unavailable' }, 500);
+      }
+    }
+
     if (path === '/api/ptz' || path === '/api/ptz/snapshot') {
       if (!authed) return json({ error: 'sign in first' }, 401);
       if (request.method !== 'POST') return json({ error: 'method not allowed' }, 405);
-      return path === '/api/ptz' ? handlePtz(request) : handlePtzSnapshot(request);
+      return path === '/api/ptz' ? handlePtz(request, env) : handlePtzSnapshot(request, env);
+    }
+
+    // Business bridges (shop / church IT / AriseHub) and the gaming bridge
+    // (Xbox / PlayStation). Both sit behind the session check above and answer
+    // their own path space; a thrown bridge reads as "unreachable", never a 500
+    // that takes the shell down.
+    if (path.startsWith('/api/biz/')) {
+      if (!authed) return json({ error: 'sign in first' }, 401);
+      try {
+        return await handleBiz(url, request, env) || json({ error: 'not found' }, 404);
+      } catch {
+        return json({ error: 'unreachable' }, 502);
+      }
+    }
+
+    if (path.startsWith('/api/gaming/')) {
+      if (!authed) return json({ error: 'sign in first' }, 401);
+      try {
+        return await handleGaming(url, request, env) || json({ error: 'not found' }, 404);
+      } catch {
+        return json({ error: 'gaming bridge unavailable' }, 502);
+      }
     }
 
     if (path.startsWith('/api/')) return json({ error: 'not found' }, 404);

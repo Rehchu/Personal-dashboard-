@@ -109,6 +109,15 @@ function injectStyle() {
     .today-wx-emoji { font-size: 2.4rem; line-height: 1; }
     .today-wx-temp { font-family: var(--font-display); color: var(--ink); font-size: 1.6rem; }
     .today-verse { margin: 0 0 10px; padding-left: 12px; border-left: 3px solid var(--accent); color: var(--ink-2); font-style: italic; line-height: 1.55; }
+    #today-briefing { display: flex; flex-direction: column; gap: 8px; margin: 0 0 16px; }
+    #today-briefing:empty { display: none; }
+    .today-brief { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+      padding: 12px 14px; border-radius: 12px; cursor: pointer;
+      background: color-mix(in oklab, var(--accent) 12%, var(--surface-2));
+      border: 1px solid color-mix(in oklab, var(--accent) 30%, transparent);
+      color: var(--ink); font: 600 14px var(--font-body, system-ui); }
+    .today-brief:hover { background: color-mix(in oklab, var(--accent) 20%, var(--surface-2)); }
+    .today-brief-go { margin-left: auto; color: var(--accent); font-size: 20px; }
     @keyframes today-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
     @media (prefers-reduced-motion: reduce) { #today-greet { animation: none; } }`;
   document.head.append(style);
@@ -128,6 +137,7 @@ export function mount(root, tools) {
       <div class="today-date">${esc(bigDate)}</div>
     </div>
     <div class="stat-row" id="today-stats"></div>
+    <div id="today-briefing"></div>
     <div class="grid-2">
       <div class="panel" id="today-wx-panel">
         <h3>Weather</h3>
@@ -162,6 +172,36 @@ export function mount(root, tools) {
       [words === null ? '—' : words.toLocaleString(), 'words today'],
       [hb.total ? `${hb.done} / ${hb.total}` : '—', 'habits today'],
     ].map(([v, l]) => `<div class="stat-tile"><div class="stat-value">${v}</div><div class="stat-label">${l}</div></div>`).join('');
+  }
+
+  // Personal briefing lines drawn from data the dashboard already has cached:
+  // the shop's real workload and a nudge toward the dragon book on a zero day.
+  // Every line fails utterly silently — a missing cache shows nothing, never an
+  // error. Tapping one opens the relevant module.
+  function renderBriefing() {
+    const el = root.querySelector('#today-briefing');
+    if (!el) return;
+    const lines = [];
+
+    const shop = load('biz.shop', null)?.data;
+    if (shop && shop.configured !== false) {
+      const bits = [];
+      const leads = shop.leads?.count || 0;
+      const tix = shop.tickets?.length || 0;
+      if (leads) bits.push(`${leads} lead${leads === 1 ? '' : 's'} waiting`);
+      if (tix) bits.push(`${tix} ticket${tix === 1 ? '' : 's'} open`);
+      if (bits.length) lines.push({ ico: '🖥️', text: `At the shop: ${bits.join(' · ')}`, open: 'ops' });
+    }
+
+    const w = wordsToday();
+    if (w === 0) lines.push({ ico: '🐉', text: 'Dragons: 0 words today — even one sentence counts.', open: 'writing' });
+
+    if (!lines.length) { el.innerHTML = ''; return; }
+    el.innerHTML = lines.map(l =>
+      `<button class="today-brief" data-open="${l.open}"><span>${l.ico}</span> ${esc(l.text)} <span class="today-brief-go">›</span></button>`
+    ).join('');
+    el.querySelectorAll('[data-open]').forEach(b =>
+      b.addEventListener('click', () => window.dispatchEvent(new CustomEvent('pd:open', { detail: b.dataset.open }))));
   }
 
   function paintWeather(w) {
@@ -253,10 +293,11 @@ export function mount(root, tools) {
   const inbox = inboxList({ limit: 5 });
   root.querySelector('#today-capture').append(composer, inbox);
 
-  const onData = () => renderStats();
+  const onData = () => { renderStats(); renderBriefing(); };
   window.addEventListener('pd:data-changed', onData);
 
   renderStats();
+  renderBriefing();
   renderWeather();
   renderVerse();
 

@@ -2,7 +2,7 @@
 // /api/* is never cached (sync must always hit the network). Cross-origin
 // requests (fonts, CDN, GitHub) pass through untouched.
 
-const CACHE = 'dyerhq-v5';
+const CACHE = 'dyerhq-v7';
 const CORE = [
   '/', '/index.html', '/manifest.webmanifest',
   '/css/base.css', '/css/themes.css', '/css/fx.css', '/css/xbox.css', '/css/polish.css',
@@ -11,6 +11,11 @@ const CORE = [
   '/js/sfx.js', '/js/ambient.js', '/js/icons.js', '/js/achievements.js',
   '/js/activity.js', '/js/sync.js', '/js/capture.js', '/js/today.js',
   '/js/habits.js', '/js/dragons.js', '/js/archive.js', '/vendor/jszip.min.js',
+  // church + workshop modules and their helpers
+  '/js/ptz.js', '/js/csvedit.js', '/js/service.js', '/js/expenses.js',
+  '/js/videoclip.js', '/js/grok.js', '/js/openai.js', '/js/google.js',
+  // Mission Control + Gaming
+  '/js/biz.js', '/js/gaming.js',
   '/css/game/assassins.css', '/css/game/cyberpunk.css', '/css/game/gtav.css',
   '/css/game/minecraft.css', '/css/game/xboxhome.css', '/css/game/ps5home.css', '/css/mobile.css', '/js/storm.js',
 ];

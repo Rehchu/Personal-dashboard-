@@ -30,6 +30,19 @@
       "database_name": "lifehq-sync",
       "database_id": "cca6b146-1962-4c62-9354-a2571103744a",
       "migrations_dir": "migrations"
+    },
+    // Ctrl+Alt PC Repair's production database — the dashboard only ever
+    // SELECTs from it (see worker/biz.js); no migrations run against it
+    {
+      "binding": "SHOP_DB",
+      "database_name": "faithtech-db",
+      "database_id": "e362c920-8cb5-443b-986c-144bc0b6a39e"
+    },
+    // Arise IT portal's production database — same rule: read-only bridge
+    {
+      "binding": "ARISE_IT_DB",
+      "database_name": "arise_it_portal",
+      "database_id": "603344e7-bea4-42aa-9a09-527575b61566"
     }
   ]
 }
