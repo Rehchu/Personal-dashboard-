@@ -230,8 +230,9 @@ export function mount(root, tools) {
       current = cams.find(c => c.id === btn.dataset.cam);
       save('ptz.sel', current.id);
       renderList();
-      // the preview must follow the selection, not keep showing the old camera
-      if (live) { misses = 0; clearTimeout(timer); tick(); }
+      // the preview must follow the selection: a new generation cancels the old
+      // loop (and its in-flight frame) so only one camera is ever polled
+      if (live) { misses = 0; frameTimes = []; frameLoop(++liveGen); }
     }));
     host.querySelectorAll('[data-del]').forEach(btn => btn.addEventListener('click', () => {
       const cam = cams.find(c => c.id === btn.dataset.del);
@@ -425,17 +426,23 @@ export function mount(root, tools) {
   });
 
   /* ---------- live view ----------
-     The cameras stream RTSP, which no browser plays, so the preview polls the
-     camera's still image instead. It is about a frame a second — enough to aim
-     and frame a shot, which is what remote control actually needs. */
+     The cameras stream RTSP, which no browser plays, so the preview pulls the
+     camera's still image in a tight loop. The old version waited a fixed second
+     between frames AND could spawn a second loop on a camera switch — so it ran
+     at well under 1 fps and stuttered. Now: one loop only (guarded by a
+     generation counter so a switch cancels the old one), and the next frame is
+     fetched the instant the last one lands, so the rate is whatever the tunnel
+     round-trip allows — several fps — instead of a fixed slideshow. */
   const img = root.querySelector('#ptz-img');
   const viewMsg = root.querySelector('#ptz-view-msg');
   const liveBtn = root.querySelector('#ptz-live');
   const fpsNote = root.querySelector('#ptz-fps');
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
   let live = false;
-  let timer = 0;
+  let liveGen = 0;      // bumped to cancel any in-flight loop (switch / pause / unmount)
   let objectUrl = '';
   let misses = 0;
+  let frameTimes = [];  // recent frame timestamps, for a real fps readout
 
   function showMsg(text) {
     viewMsg.textContent = text;
@@ -444,65 +451,86 @@ export function mount(root, tools) {
 
   function stopLive(reason) {
     live = false;
-    clearTimeout(timer);
-    timer = 0;
+    liveGen += 1;       // any loop still awaiting a fetch sees this and bails
+    frameTimes = [];
     liveBtn.textContent = '▸ Live view';
     fpsNote.textContent = '';
     if (reason) showMsg(reason);
   }
 
-  async function tick() {
-    if (!live || !current) return;
-    // a hidden tab should not keep asking the camera for frames
-    if (document.hidden) { timer = setTimeout(tick, 1000); return; }
-    try {
-      const res = await fetch('/api/ptz/snapshot', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          base: current.base,
-          path: current.snapPath,
-          auth: authFor(current),
-          access: accessFor(current),
-        }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `snapshot failed (${res.status})`);
+  async function frameLoop(gen) {
+    while (live && gen === liveGen && current) {
+      // a hidden tab idles instead of hammering the camera; visibility resumes it
+      if (document.hidden) { await sleep(500); continue; }
+      const cam = current;               // a switch mid-fetch must not paint here
+      const t0 = performance.now();
+      try {
+        const res = await fetch('/api/ptz/snapshot', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            base: cam.base,
+            path: cam.snapPath,
+            auth: authFor(cam),
+            access: accessFor(cam),
+          }),
+        });
+        if (gen !== liveGen) return;      // superseded while the request was in flight
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || `snapshot failed (${res.status})`);
+        }
+        // remember which path answered so later frames skip the search
+        const found = res.headers.get('x-snapshot-path');
+        if (found && cam === current && found !== cam.snapPath) {
+          cam.snapPath = found;
+          save(CAMS_KEY, cams);
+        }
+        const blob = await res.blob();
+        if (gen !== liveGen || cam !== current) continue; // switched away — drop this frame
+        const url = URL.createObjectURL(blob);
+        img.src = url;
+        img.classList.add('on');
+        if (objectUrl) URL.revokeObjectURL(objectUrl); // free the frame we just replaced
+        objectUrl = url;
+        showMsg('');
+        misses = 0;
+        const now = performance.now();
+        frameTimes.push(now);
+        if (frameTimes.length > 12) frameTimes.shift();
+        const fps = frameTimes.length > 1
+          ? (frameTimes.length - 1) * 1000 / (now - frameTimes[0])
+          : 0;
+        fpsNote.textContent = `${(blob.size / 1024).toFixed(0)} KB · ${fps ? fps.toFixed(1) : '~1'} fps`;
+      } catch (err) {
+        if (gen !== liveGen) return;
+        misses += 1;
+        if (misses >= 4) { stopLive(`${err.message} — stopped after 4 tries`); return; }
+        showMsg(err.message);
+        frameTimes = [];
+        await sleep(2000);               // back off after a failure, then retry
+        continue;
       }
-      // remember which path answered so later frames skip the search
-      const found = res.headers.get('x-snapshot-path');
-      if (found && found !== current.snapPath) {
-        current.snapPath = found;
-        save(CAMS_KEY, cams);
-      }
-      const blob = await res.blob();
-      if (objectUrl) URL.revokeObjectURL(objectUrl); // or every frame leaks
-      objectUrl = URL.createObjectURL(blob);
-      img.src = objectUrl;
-      img.classList.add('on');
-      showMsg('');
-      misses = 0;
-      fpsNote.textContent = `${(blob.size / 1024).toFixed(0)} KB · ~1 fps`;
-    } catch (err) {
-      misses += 1;
-      if (misses >= 4) { stopLive(`${err.message} — stopped after 4 tries`); return; }
-      showMsg(err.message);
+      // no artificial gap — just a small floor so a very fast camera can't spin
+      // the loop hotter than ~10 fps (which would flood the tunnel for no gain)
+      const elapsed = performance.now() - t0;
+      if (elapsed < 100) await sleep(100 - elapsed);
     }
-    if (live) timer = setTimeout(tick, misses ? 3000 : 1000);
   }
 
   function startLive() {
     if (!current) { showMsg('Add a camera first'); return; }
     live = true;
     misses = 0;
+    frameTimes = [];
     liveBtn.textContent = '⏸ Pause';
     showMsg('Connecting…');
-    tick();
+    frameLoop(++liveGen);
   }
 
   liveBtn.addEventListener('click', () => (live ? stopLive('Paused') : startLive()));
-  const onVisible = () => { if (live && !document.hidden) { clearTimeout(timer); tick(); } };
+  // resuming or switching cameras starts a fresh generation; the old loop exits
+  const onVisible = () => { if (live && !document.hidden) frameLoop(++liveGen); };
   document.addEventListener('visibilitychange', onVisible);
 
   tools.querySelector('#ptz-token').addEventListener('click', () => {
