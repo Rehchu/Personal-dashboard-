@@ -7,6 +7,7 @@
 import { parseDigestChallenge, digestAuthHeader } from './digest.js';
 import { handleBiz } from './biz.js';
 import { handleGaming } from './gaming.js';
+import { handleBgImport } from './bgimport.js';
 
 const COL_RE = /^[a-zA-Z0-9._-]{1,40}$/;
 const ARCHIVE_ID_RE = /^[a-z0-9][a-z0-9._-]{0,39}$/;
@@ -273,6 +274,16 @@ const bgTarget = id => (BG_ID_RE.test(id) ? bgKey(id) : null);
 
 async function handleBgMedia(request, env, url, path) {
   const method = request.method;
+
+  // Pull a background straight from an allowlisted source (Higgsfield / CloudFront)
+  // into this same gallery. handleBgImport gets the gallery's storage helpers passed
+  // in so it writes through the exact same index path an upload uses, with no
+  // circular import back into this module.
+  if (path === '/api/media/bg/import' && method === 'POST') {
+    return handleBgImport(request, env, {
+      readBgIndex, writeBgIndex, newBgId, bgKey, cleanBgName, MAX_BACKGROUNDS,
+    });
+  }
 
   // the gallery itself, and which background is showing on every device
   if (path === '/api/media/bg' && method === 'GET') {

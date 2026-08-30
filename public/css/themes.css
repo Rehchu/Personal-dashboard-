@@ -254,3 +254,71 @@
     0 0 34px -4px color-mix(in oklab, var(--accent) 60%, transparent),
     inset 0 0 22px -8px color-mix(in oklab, var(--accent) 50%, transparent);
 }
+
+/* ---------------- PlayStation ----------------
+   PS5 dashboard: deep blue-black, bright PlayStation blue, clean and calm. */
+[data-theme="playstation"] {
+  --bg: #0a0e1a;
+  --surface: #121a2e;
+  --surface-2: #1b2540;
+  --ink: #f2f6ff;
+  --ink-2: #b7c3dd;
+  --ink-3: #7d89a6;
+  --accent: #1f6fe0;         /* white on this is ~4.6:1 */
+  --accent-2: #7db2ff;
+  --on-accent: #ffffff;
+  --chart: #4f96f2;          /* in-band blue, ≥3:1 on surface */
+  --ambient-a: rgba(31, 111, 224, 0.18);
+  --ambient-b: rgba(125, 178, 255, 0.06);
+  --tile-radius: 12px;
+  --panel-radius: 12px;
+  --font-display: "Rajdhani", system-ui, sans-serif;
+  --font-body: "Exo 2", system-ui, sans-serif;
+  --nb-paper: #0e1424;
+}
+[data-theme="playstation"] #theme-fx {
+  background: radial-gradient(120% 80% at 50% -10%, rgba(31, 111, 224, 0.14), transparent 60%);
+}
+[data-theme="playstation"] #brand-mark {
+  border-radius: 6px;
+  box-shadow: 0 0 16px rgba(31, 111, 224, 0.7);
+}
+[data-theme="playstation"] .tile.focused {
+  box-shadow:
+    0 0 0 2px color-mix(in oklab, var(--accent) 85%, transparent),
+    0 0 30px -6px color-mix(in oklab, var(--accent) 55%, transparent);
+}
+
+/* ---------------- Xbox One ----------------
+   Xbox dashboard: charcoal ground, bright Xbox green accent. */
+[data-theme="xboxone"] {
+  --bg: #0b0f0b;
+  --surface: #121a12;
+  --surface-2: #1a251a;
+  --ink: #eef6ee;
+  --ink-2: #bcccbc;
+  --ink-3: #7e907e;
+  --accent: #16a916;         /* near-black text on this is high-contrast */
+  --accent-2: #7ce07c;
+  --on-accent: #04160a;
+  --chart: #3fbf5a;          /* in-band green, ≥3:1 on surface */
+  --ambient-a: rgba(22, 169, 22, 0.16);
+  --ambient-b: rgba(124, 224, 124, 0.06);
+  --tile-radius: 8px;
+  --panel-radius: 8px;
+  --font-display: "Rajdhani", system-ui, sans-serif;
+  --font-body: "Exo 2", system-ui, sans-serif;
+  --nb-paper: #0e150e;
+}
+[data-theme="xboxone"] #theme-fx {
+  background: radial-gradient(120% 80% at 50% 110%, rgba(22, 169, 22, 0.14), transparent 60%);
+}
+[data-theme="xboxone"] #brand-mark {
+  border-radius: 50%;
+  box-shadow: 0 0 16px rgba(22, 169, 22, 0.75);
+}
+[data-theme="xboxone"] .tile.focused {
+  box-shadow:
+    0 0 0 2px color-mix(in oklab, var(--accent) 85%, transparent),
+    0 0 30px -6px color-mix(in oklab, var(--accent) 55%, transparent);
+}
