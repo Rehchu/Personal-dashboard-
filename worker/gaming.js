@@ -384,22 +384,30 @@ async function handleXboxMs(env) {
   const cached = await readCache(env, 'xbox').catch(() => null);
   if (cached && cached.age < CACHE_MS) return json(cached.data);
   try {
+    let note = '';
     const data = await withXbox(env, async auth => {
-      const [account, history] = await Promise.all([
-        msProfile(auth),
-        msTitles(auth).catch(() => null), // a profile with no history still shows
-      ]);
+      const account = await msProfile(auth);
+      // a profile with no history is still worth showing — but WHY there is no
+      // history gets recorded rather than swallowed, so an empty shelf is
+      // diagnosable instead of silent (the same `upstream` the key path surfaces)
+      const history = await msTitles(auth).catch(err => {
+        if (err?.reauth) throw err;
+        note = `titlehub — ${err?.message || 'unreachable'}`;
+        return null;
+      });
       // mode rides along so the card can offer the right way back out: a
       // Microsoft sign-in is disconnected, an OpenXBL key is replaced
       return { ...normalizeXbox(account, history), mode: 'ms' };
     });
     if (data.profile.gamertag || data.recent.length) {
       await writeCache(env, 'xbox', data).catch(() => {});
-      return json(data);
+      return json(note ? { ...data, upstream: note } : data);
     }
-    if (cached) return json({ ...cached.data, stale: true, error: 'Xbox Live sent nothing usable' });
-    return json({ configured: true, error: 'Xbox Live sent nothing usable' });
+    if (cached) return json({ ...cached.data, stale: true, error: 'Xbox Live sent nothing usable', upstream: note });
+    return json({ configured: true, mode: 'ms', error: 'Xbox Live sent nothing usable', upstream: note });
   } catch (err) {
+    // neither "no Xbox profile" nor "child account" is fixed by signing in again
+    if (err?.fatal) return json({ configured: true, mode: 'ms', error: err.message });
     if (err?.reauth) return json({ ...(cached ? { ...cached.data, stale: true } : {}), configured: true, error: 'reauth', mode: 'ms' });
     if (cached) return json({ ...cached.data, stale: true });
     return json({ configured: true, error: 'Xbox Live is unreachable right now' }, 502);
@@ -528,27 +536,62 @@ const MS_AUTHORIZE = 'https://login.microsoftonline.com/consumers/oauth2/v2.0/au
 const MS_TOKEN = 'https://login.microsoftonline.com/consumers/oauth2/v2.0/token';
 const XBL_AUTH = 'https://user.auth.xboxlive.com/user/authenticate';
 const XSTS_AUTH = 'https://xsts.auth.xboxlive.com/xsts/authorize';
-const XBOX_XSTS_CACHE = 'xbox_xsts';
+/* The live XSTS credential lives in `secrets`, not in the payload cache.
 
-// The URL the owner opens to sign in. They land on a blank page whose ADDRESS
-// carries ?code=… and paste that address back — the same paste-the-URL shape the
-// PSN setup already uses, and the reason no redirect URI needs registering.
-const msAuthorizeUrl = () =>
-  `${MS_AUTHORIZE}?client_id=${MS_CLIENT_ID}&response_type=code&approval_prompt=auto` +
-  `&scope=${encodeURIComponent(MS_SCOPES)}&redirect_uri=${encodeURIComponent(MS_REDIRECT)}`;
+   It is a bearer token granting full read of the owner's Xbox Live account. The
+   gaming_cache table exists to hold NORMALIZED PAYLOADS that get handed back to
+   the browser, so a credential sitting in it is one careless `return cached.data`
+   away from being served to the client. `secrets` is the table whose whole
+   contract is "never leaves the Worker" — that is where this belongs. */
+const XSTS_SECRET = 'xbl_xsts';
 
-// Pull the authorization code out of whatever the owner pasted: the whole
-// redirected URL, or just the code. Never accept a code from another host —
-// a URL from anywhere else is not a Microsoft redirect.
-function msCodeFrom(input) {
+async function readXstsCache(env) {
+  const raw = await readSecret(env, XSTS_SECRET);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+const writeXstsCache = (env, auth) => upsertSecret(env, XSTS_SECRET, JSON.stringify(auth)).run();
+
+// The URL the owner opens to sign in, carrying a one-time `state` nonce this
+// bridge minted. They land on a blank page whose ADDRESS carries ?code=… and
+// paste that address back — the same paste-the-URL shape the PSN setup uses.
+const msAuthorizeUrl = state =>
+  `${MS_AUTHORIZE}?client_id=${MS_CLIENT_ID}&response_type=code&prompt=select_account` +
+  `&scope=${encodeURIComponent(MS_SCOPES)}&redirect_uri=${encodeURIComponent(MS_REDIRECT)}` +
+  `&state=${encodeURIComponent(state)}`;
+
+/* Pull the authorization code out of the address the owner pasted.
+
+   This ONLY accepts a full https://login.live.com/… URL carrying the exact
+   `state` this bridge issued. It used to also accept a bare code, and that
+   branch quietly defeated the host check on the line below it: a code lifted
+   from anywhere could be pasted in and would be exchanged and stored. The host
+   check is only worth having if there is no way around it.
+
+   Trailing dots are stripped because "login.live.com." resolves the same but
+   fails a === comparison; userinfo ("https://login.live.com@evil.com/") is
+   handled for free, since URL parses that host as evil.com. */
+function msCodeFrom(input, expectState) {
   const raw = String(input || '').trim();
-  if (!raw) return '';
-  if (/^[\w.-]{6,2048}$/.test(raw) && !raw.includes('://')) return raw; // a bare code
+  if (!raw || raw.length > 8192) return { code: '', why: 'paste the whole address of the page you landed on' };
   let u;
-  try { u = new URL(raw); } catch { return ''; }
-  if (u.hostname.toLowerCase() !== 'login.live.com') return '';
+  try { u = new URL(raw); } catch { return { code: '', why: 'that does not look like a web address' }; }
+  if (u.protocol !== 'https:') return { code: '', why: 'that address is not https' };
+  const host = u.hostname.toLowerCase().replace(/\.$/, '');
+  if (host !== 'login.live.com') return { code: '', why: 'that address is not the Microsoft sign-in page' };
+  if (u.searchParams.get('error')) {
+    return { code: '', why: str(u.searchParams.get('error_description')) || 'Microsoft reported a sign-in error' };
+  }
+  // the nonce ties this paste to the sign-in this bridge started
+  if (!expectState || u.searchParams.get('state') !== expectState) {
+    return { code: '', why: 'that sign-in did not start here — open the sign-in page again and retry' };
+  }
   const code = u.searchParams.get('code') || '';
-  return /^[\w.-]{6,2048}$/.test(code) ? code : '';
+  if (!code) return { code: '', why: 'that address has no ?code= in it' };
+  // deliberately wide: MSA codes carry . ~ + / = - as well as word characters,
+  // and a valid code silently rejected here is indistinguishable from a failure
+  if (!/^[\w.~+/=-]{6,4096}$/.test(code)) return { code: '', why: 'the code in that address looks malformed' };
+  return { code, why: '' };
 }
 
 async function msTokenRequest(params) {
@@ -600,13 +643,17 @@ async function xblExchange(accessToken) {
     // 2148916233 = the Microsoft account has no Xbox profile yet; 2148916238 =
     // a child account that must be added to a family. Both are the owner's to
     // fix and neither is worth retrying.
-    const code = str(xsts?.XErr || '');
-    const why = code === '2148916233'
+    // XErr arrives as a JSON NUMBER — str() returns '' for a number, so building
+    // this from str() made both friendly messages unreachable.
+    const code = String(xsts?.XErr ?? '');
+    const known = code === '2148916233'
       ? 'that Microsoft account has no Xbox profile — sign in at xbox.com once to create one'
       : code === '2148916238'
         ? 'that account is a child account and needs adding to a family group first'
-        : `Xbox Live declined the token (${xstsRes.status})`;
-    throw Object.assign(new Error(why), { reauth: true });
+        : '';
+    // neither of those is fixed by signing in again, so don't invite a retry
+    throw Object.assign(new Error(known || `Xbox Live declined the token (${xstsRes.status})`),
+      known ? { fatal: true } : { reauth: true });
   }
   const claim = xsts?.DisplayClaims?.xui?.[0] || {};
   const uhs = str(claim.uhs);
@@ -624,30 +671,32 @@ async function xblExchange(accessToken) {
 // the stored refresh token. Mirrors withPsnAccess's shape below.
 async function xboxAuth(env, force = false) {
   if (!force) {
-    const cached = await readCache(env, XBOX_XSTS_CACHE).catch(() => null);
-    const c = cached?.data;
+    const c = await readXstsCache(env);
     if (c?.token && c?.uhs && Number(c.exp) - 60000 > Date.now()) return c;
   }
   const refresh = await readSecret(env, 'xbl_ms_refresh');
   if (!refresh) throw Object.assign(new Error('not signed in with Microsoft'), { reauth: true });
   const tok = await msTokenRequest({ grant_type: 'refresh_token', refresh_token: refresh });
-  // Microsoft rotates the refresh token; storing the new one is what keeps the
-  // ~90-day window rolling instead of expiring on the original
+  // Microsoft ROTATES the refresh token: the old one is spent, so if the new one
+  // does not land the connection is dead with no way back. This write is not
+  // best-effort — a failure here must stop the request, because a failed request
+  // is retryable and a lost refresh token is not.
   if (tok.refresh_token && tok.refresh_token !== refresh) {
-    await upsertSecret(env, 'xbl_ms_refresh', tok.refresh_token).run().catch(() => {});
+    await upsertSecret(env, 'xbl_ms_refresh', tok.refresh_token).run();
   }
   const auth = await xblExchange(tok.access_token);
-  await writeCache(env, XBOX_XSTS_CACHE, auth).catch(() => {});
+  await writeXstsCache(env, auth);
   return auth;
 }
 
-async function fetchXboxLive(url, auth, contract = '2') {
+async function fetchXboxLive(url, auth, contract = '2', extra = {}) {
   const res = await fetch(url, {
     headers: {
       authorization: `XBL3.0 x=${auth.uhs};${auth.token}`,
       'x-xbl-contract-version': contract,
       'accept-language': 'en-US',
       accept: 'application/json',
+      ...extra,
     },
     signal: AbortSignal.timeout(FETCH_TIMEOUT),
   });
@@ -672,10 +721,26 @@ async function withXbox(env, fn) {
 
 const PROFILE_SETTINGS = 'Gamertag,ModernGamertag,Gamerscore,GameDisplayPicRaw,AppDisplayPicRaw';
 
+// titlehub wants to know who is asking; the reference implementation sends these
+// on every call and there is no reason to differ.
+const TITLEHUB_HEADERS = {
+  'x-xbl-client-name': 'XboxApp',
+  'x-xbl-client-type': 'UWA',
+  'x-xbl-client-version': '39.39.22001.0',
+};
+
 // Xbox Live's own shapes happen to be the ones OpenXBL proxies, so normalizeXbox
 // and normalizeXboxLibrary are reused verbatim rather than written twice.
+//
+// Contract versions are per-endpoint and deliberate, not a shared default:
+//   profile      3 — ModernGamertag is a gamertag-2.0 setting the contract-2
+//                    schema does not define; 3 is what actually returns it
+//   achievements 4 — contract 2 has no `rarity`, and normalizeAchievements reads
+//                    rarity.currentPercentage. On 2 every achievement would come
+//                    back rarity:0 while the OpenXBL path shows real numbers. 4
+//                    is a superset: same progressState/progression/mediaAssets.
 const msProfile = auth =>
-  fetchXboxLive(`https://profile.xboxlive.com/users/me/profile/settings?settings=${PROFILE_SETTINGS}`, auth);
+  fetchXboxLive(`https://profile.xboxlive.com/users/me/profile/settings?settings=${PROFILE_SETTINGS}`, auth, '3');
 
 // The profile is read as /users/me, but titles and achievements are addressed by
 // XUID. An absent one would build "xuid()" and come back a bewildering 404, so
@@ -687,15 +752,18 @@ function requireXuid(auth) {
   return auth.xuid;
 }
 
+// maxItems is explicit: without it titlehub returns one service-chosen page, and
+// the library panel promises "every title Xbox has history for" — a silent single
+// page would quietly make that a lie.
 const msTitles = auth =>
   fetchXboxLive(
-    `https://titlehub.xboxlive.com/users/xuid(${requireXuid(auth)})/titles/titlehistory/decoration/achievement,scid`,
-    auth);
+    `https://titlehub.xboxlive.com/users/xuid(${requireXuid(auth)})/titles/titlehistory/decoration/achievement,scid?maxItems=500`,
+    auth, '2', TITLEHUB_HEADERS);
 
 const msAchievements = (auth, titleId) =>
   fetchXboxLive(
     `https://achievements.xboxlive.com/users/xuid(${requireXuid(auth)})/achievements?titleId=${encodeURIComponent(titleId)}&maxItems=1000`,
-    auth);
+    auth, '4');
 
 // Which way in is live. Microsoft wins when both exist: it is the one without a
 // rate limit, and the one the owner signed into most recently.
@@ -705,35 +773,59 @@ async function xboxMode(env) {
   return 'none';
 }
 
-// POST /api/gaming/xbox/msauth — GET returns the sign-in URL, POST finishes it.
+// Every Xbox payload this account produced, including the per-title achievement
+// rows. Enumerating keys missed those and left the disconnected account's data
+// in D1 forever, so the namespace goes in one statement.
+const dropXboxCaches = env =>
+  env.DB.prepare("DELETE FROM gaming_cache WHERE k IN ('xbox','xbox_games','xbox_cooldown') OR k LIKE 'xbox_a_%'").run();
+
+// GET /api/gaming/xbox/msauth  -> the sign-in URL, with a fresh one-time state
+// POST                         -> finish the sign-in, or clear it
 async function handleXboxMsAuth(request, env) {
-  if (request.method === 'GET') return json({ url: msAuthorizeUrl() });
+  if (request.method === 'GET') {
+    // the nonce ties the paste that comes back to the sign-in started here
+    const state = crypto.randomUUID();
+    await upsertSecret(env, 'xbl_ms_state', state).run();
+    return json({ url: msAuthorizeUrl(state) });
+  }
   if (request.method === 'POST') {
-    const body = await request.json().catch(() => null);
-    // "" clears the sign-in — the way back out, and what a Disconnect sends
+    // an unbounded body should not reach JSON.parse
+    const text = await request.text();
+    if (text.length > 16384) return json({ error: 'that request was too large' }, 413);
+    let body = null;
+    try { body = JSON.parse(text); } catch { /* handled below */ }
+
+    // the way back out, and what Disconnect sends
     if (body && body.clear === true) {
-      await env.DB.batch([dropSecret(env, 'xbl_ms_refresh')]);
-      await dropCache(env, XBOX_XSTS_CACHE).catch(() => {});
-      await dropCache(env, 'xbox').catch(() => {});
-      await dropCache(env, 'xbox_games').catch(() => {});
+      await ensureCacheTable(env);
+      // one batch: either the whole disconnect lands or the caller sees a failure
+      await env.DB.batch([
+        dropSecret(env, 'xbl_ms_refresh'),
+        dropSecret(env, XSTS_SECRET),
+        dropSecret(env, 'xbl_ms_state'),
+      ]);
+      await dropXboxCaches(env);
       return json({ ok: true, signedIn: false });
     }
-    const code = msCodeFrom(body?.url ?? body?.code);
-    if (!code) return json({ error: 'paste the whole address of the page you landed on (it contains ?code=…)' }, 400);
+
+    const expect = await readSecret(env, 'xbl_ms_state');
+    const { code, why } = msCodeFrom(body?.url, expect);
+    if (!code) return json({ error: why || 'paste the whole address of the page you landed on' }, 400);
     try {
       const tok = await msTokenRequest({ grant_type: 'authorization_code', code });
       if (!tok.refresh_token) return json({ error: 'Microsoft did not return a refresh token — try signing in again' }, 502);
-      // prove the whole chain works before storing anything: a refresh token
-      // that cannot reach Xbox Live is worse than none, because the card would
-      // then show "signed in" and never load
+      // Prove the whole chain works BEFORE storing anything. A refresh token that
+      // cannot reach Xbox Live is worse than none: the card would say "signed in"
+      // and never load, which is the failure mode this whole path exists to escape.
       const auth = await xblExchange(tok.access_token);
-      const profile = await msProfile(auth).catch(() => null);
-      await env.DB.batch([upsertSecret(env, 'xbl_ms_refresh', tok.refresh_token)]);
-      await writeCache(env, XBOX_XSTS_CACHE, auth).catch(() => {});
-      // a fresh sign-in invalidates whatever the old path had cached
-      await dropCache(env, 'xbox').catch(() => {});
-      await dropCache(env, 'xbox_games').catch(() => {});
-      await dropCache(env, COOLDOWN_KEY).catch(() => {});
+      const profile = await msProfile(auth);
+      await ensureCacheTable(env);
+      await env.DB.batch([
+        upsertSecret(env, 'xbl_ms_refresh', tok.refresh_token),
+        upsertSecret(env, XSTS_SECRET, JSON.stringify(auth)),
+        dropSecret(env, 'xbl_ms_state'), // single use
+      ]);
+      await dropXboxCaches(env); // whatever the old path cached belongs to the old path
       const user = Array.isArray(profile?.profileUsers) ? profile.profileUsers[0] : null;
       return json({ ok: true, signedIn: true, gamertag: xblSetting(user, ['Gamertag', 'ModernGamertag']) });
     } catch (err) {
