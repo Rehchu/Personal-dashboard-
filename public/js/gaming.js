@@ -126,10 +126,15 @@ function xboxCard(d) {
 
   const p = d.profile || {};
   const recent = d.recent || [];
-  const banner = d.error
-    ? `<div class="gm-banner">Xbox Live didn't answer${d._stale || d.stale ? ' — showing the last snapshot' : ''}.${
-      d.upstream ? `<br><span style="opacity:.8;font-size:11.5px">${esc(String(d.upstream).slice(0, 200))}</span>` : ''}</div>`
-    : '';
+  // a throttle is not a breakage — say so plainly, and don't invite a Refresh
+  // that would only spend more of the quota that ran out
+  const banner = d.rateLimited
+    ? `<div class="gm-banner">⏳ ${esc(d.error || 'Xbox Live is rate-limiting this key.')}${
+      d._stale || d.stale ? ' Showing the last snapshot.' : ''}</div>`
+    : d.error
+      ? `<div class="gm-banner">Xbox Live didn't answer${d._stale || d.stale ? ' — showing the last snapshot' : ''}.${
+        d.upstream ? `<br><span style="opacity:.8;font-size:11.5px">${esc(String(d.upstream).slice(0, 200))}</span>` : ''}</div>`
+      : '';
   const games = recent.length ? recent.map(g => {
     const pct = g.total ? Math.round((num(g.earned) / num(g.total)) * 100) : 0;
     return `<div class="gm-game">
@@ -196,6 +201,11 @@ function psnCard(d) {
 export function mount(root, tools) {
   injectStyle();
   let alive = true;
+  // #appview-body is ONE element every module mounts into, so a listener left
+  // bound here outlives this tile and fires under the next one. Everything this
+  // module binds goes through this signal, and unmount aborts it.
+  const ac = new AbortController();
+  const { signal } = ac;
   let xbox = load(CACHE.xbox, null)?.data || null;
   let psn = load(CACHE.psn, null)?.data || null;
 
@@ -244,7 +254,7 @@ export function mount(root, tools) {
           showToast('Could not save that key');
           btn.disabled = false; btn.textContent = 'Try again';
         }
-      });
+      }, { signal });
     });
   }
 
@@ -262,6 +272,9 @@ export function mount(root, tools) {
   }
 
   async function setBg(url, name) {
+    // never let a non-URL reach the importer — that is a bug on this side, and
+    // the toast for it reads like the art was at fault
+    if (typeof url !== 'string' || !/^https:\/\//.test(url)) return;
     try {
       const res = await fetch('/api/media/bg/import', {
         method: 'POST',
@@ -271,6 +284,9 @@ export function mount(root, tools) {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || '');
       showToast('Added to your backgrounds — and set as the active one');
+      // the shell read its gallery at boot; tell it to pick the new one up now
+      // rather than on the next reload
+      window.dispatchEvent(new CustomEvent('pd:bg-imported', { detail: { id: body.id } }));
     } catch (err) {
       showToast(`Couldn't import that art${err.message ? ` — ${err.message}` : ''}`);
     }
@@ -339,18 +355,29 @@ export function mount(root, tools) {
       </div>${rows}</div></div>`;
   }
 
+  // Every hit below is matched by CLASS as well as data-attribute, and only
+  // inside this tile. A bare [data-bg] climbs the tree past the tile and lands
+  // on <html data-bg="video|storm|off"> — applyBg() puts it there — so it
+  // matched every click on the page and fired the importer with "video".
+  const own = el => el && root.contains(el) ? el : null;
   root.addEventListener('click', e => {
-    const bg = e.target.closest('[data-bg]');
-    if (bg) { e.stopPropagation(); setBg(decodeURIComponent(bg.dataset.bg), bg.dataset.bgname); return; }
-    const lib = e.target.closest('[data-lib]');
+    const bg = own(e.target.closest('button.gm-bgbtn[data-bg]'));
+    if (bg) {
+      e.stopPropagation();
+      let url = '';
+      try { url = decodeURIComponent(bg.dataset.bg || ''); } catch { url = ''; }
+      setBg(url, bg.dataset.bgname);
+      return;
+    }
+    const lib = own(e.target.closest('button[data-lib]'));
     if (lib) { renderLib(lib.dataset.lib); return; }
-    if (e.target.closest('[data-back]')) { paint(); return; }
-    const row = e.target.closest('[data-game]');
+    if (own(e.target.closest('button[data-back]'))) { paint(); return; }
+    const row = own(e.target.closest('.gm-row[data-game]'));
     if (row) {
       const g = libCache[row.dataset.console]?.games?.[Number(row.dataset.game)];
       if (g) renderGame(row.dataset.console, g);
     }
-  });
+  }, { signal });
 
   async function loadAll() {
     paint(); // paint cache first
@@ -364,10 +391,10 @@ export function mount(root, tools) {
     window.dispatchEvent(new Event('pd:data-changed')); // refresh the profile chip
   }
 
-  refreshBtn.addEventListener('click', () => loadAll());
+  refreshBtn.addEventListener('click', () => loadAll(), { signal });
   loadAll();
 
-  return function unmount() { alive = false; };
+  return function unmount() { alive = false; ac.abort(); };
 }
 
 // Compact profile-chip line: gamerscore + trophy level, from the cached

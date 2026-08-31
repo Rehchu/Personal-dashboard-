@@ -217,19 +217,22 @@ export function mount(root, tools) {
   const offline = root.querySelector('#town-offline');
 
   // ---- the living map ----
-  // A little game world, Smallville-style: districts on a canvas, buildings in
-  // them, and each agent as a sprite that actually WALKS — across town when the
-  // engine moves them, and wandering about their district in between. State
-  // arrives every 5s; everything between polls is animated locally.
+  // A little game world, Smallville-style: one open field of a village with a
+  // building for every district, and each agent as a sprite that actually
+  // WALKS — over to their district when the engine moves them, and free-roaming
+  // the whole village in between, drawn home by a bias toward their own patch.
+  // State arrives every 5s; everything between polls is animated locally.
   const canvas = root.querySelector('#town-canvas');
   const ctx = canvas.getContext('2d');
   const art = {};
   for (const kind of Object.keys(TOWN_ART_SRC)) loadTownArt(kind).then(img => { if (img) art[kind] = img; });
 
-  const CELL_H = 210;
-  let districts = {};      // loc key -> {x,y,w,h,label,key}
+  const CELL_H = 210;      // only spaces the district POINTS out; nothing is penned in it
+  let districts = {};      // loc key -> {x,y,label,key,clearing} — x/y is where its building stands
   let placedStructs = [];  // structures with computed x/y
-  let decor = [];          // grass tufts and flowers, fixed per layout
+  // where the nth structure of a district sits, relative to that district's point
+  const STRUCT_OFF = [[-84, 30], [84, 30], [-106, 62], [106, 62], [-44, 78], [44, 78], [-128, 4], [128, 4]];
+  let decor = [];          // grass tufts and flowers, scattered over the whole field
   const sprites = new Map();
   const bubblesShown = new Set();
   let puffs = [];      // short-lived particles: chimney smoke, walking dust
@@ -260,26 +263,58 @@ export function mount(root, tools) {
     ctx.drawImage(img, cx - w / 2, bottom - h, w, h);
   }
 
-  // deterministic scatter — the same tuft grows in the same spot every frame
+  // deterministic scatter — the same tuft grows in the same spot every frame,
+  // now over the WHOLE field instead of inside a plot
   function makeDecor() {
     decor = [];
-    for (const [key, d] of Object.entries(districts)) {
-      for (let i = 0; i < 9; i++) {
-        const h = hashStr(`${key}:${i}`);
-        decor.push({
-          x: d.x + 12 + h % Math.max(1, d.w - 24),
-          y: d.y + 34 + (h >> 7) % Math.max(1, d.h - 46),
-          kind: i < 6 ? 'tuft' : 'flower',
-          tint: ['#ffd94a', '#ff8bb3', '#fdfdf4'][h % 3],
-        });
-      }
+    const { width: W, height: H } = canvas;
+    const n = Math.max(24, Math.round(W * H / 2200));
+    for (let i = 0; i < n; i++) {
+      const h = hashStr(`grass:${i}`);
+      decor.push({
+        x: 6 + h % Math.max(1, W - 12),
+        y: 6 + (h >>> 7) % Math.max(1, H - 12),
+        kind: i % 3 === 2 ? 'flower' : 'tuft',
+        tint: ['#ffd94a', '#ff8bb3', '#fdfdf4'][h % 3],
+      });
     }
   }
 
-  const randIn = d => ({
-    x: d.x + 24 + Math.random() * (d.w - 48),
-    y: d.y + 64 + Math.random() * (d.h - 92),
+  // a soft clearing of slightly brighter grass around a district's point — an
+  // irregular blob with no edges, so the ground still reads as one field
+  function makeClearing(key, cx, cy) {
+    const pts = [];
+    const n = 14;
+    for (let i = 0; i < n; i++) {
+      const h = hashStr(`clearing:${key}:${i}`);
+      const a = (i / n) * Math.PI * 2;
+      const r = 88 + h % 38;
+      pts.push({ x: cx + Math.cos(a) * r, y: cy + 8 + Math.sin(a) * r * 0.62 });
+    }
+    return pts;
+  }
+
+  // villagers roam the whole canvas; a margin keeps them (and their name
+  // plates and bubbles) off the very edge
+  const FIELD = 26;
+  const onField = (x, y) => ({
+    x: Math.max(FIELD, Math.min(canvas.width - FIELD, x)),
+    y: Math.max(FIELD + 22, Math.min(canvas.height - FIELD, y)),
   });
+
+  // FREE ROAM. A district is a point, never a pen, so a target may be anywhere
+  // in the village — but with a home bias: 65% a short amble around their own
+  // district, 20% a ramble into the neighbouring blocks, 15% clear across town.
+  // homeOnly (a fresh arrival) always lands in the short-amble ring.
+  function roamTarget(d, homeOnly = false) {
+    const roll = homeOnly ? 0 : Math.random();
+    if (d && roll < 0.85) {
+      const rad = roll < 0.65 ? 26 + Math.random() * 62 : 90 + Math.random() * 150;
+      const a = Math.random() * Math.PI * 2;
+      return onField(d.x + Math.cos(a) * rad, d.y + 18 + Math.sin(a) * rad * 0.7);
+    }
+    return onField(Math.random() * canvas.width, Math.random() * canvas.height);
+  }
 
   function syncWorld(s) {
     // room decor rides along with every state push — a viewer standing inside
@@ -293,11 +328,11 @@ export function mount(root, tools) {
     if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
     districts = {};
     keys.forEach((k, i) => {
-      districts[k] = {
-        key: k,
-        x: (i % cols) * (W / cols) + 6, y: Math.floor(i / cols) * CELL_H + 6,
-        w: W / cols - 12, h: CELL_H - 12, label: s.map[k],
-      };
+      // the grid only spaces the district points out — x/y is the spot its
+      // building's feet stand on, and that's all a district is now
+      const cx = (i % cols) * (W / cols) + W / cols / 2;
+      const cy = Math.floor(i / cols) * CELL_H + 118;
+      districts[k] = { key: k, x: cx, y: cy, label: s.map[k], clearing: makeClearing(k, cx, cy) };
     });
     makeDecor();
 
@@ -307,13 +342,14 @@ export function mount(root, tools) {
       me.x = W / 2 + 34; me.y = H / 2 + 22; me.tx = me.x; me.ty = me.y;
     }
 
-    // agent-built structures line the bottom of their district's plot; the
-    // district's own business building holds the top-center spot
+    // agent-built structures cluster around their district's point, off to the
+    // sides and below so they never sit on the district's own building
     const perLoc = {};
     placedStructs = (s.structures || []).map(st => {
       const d = districts[st.loc] || districts[keys[0]];
       const i = (perLoc[st.loc] = (perLoc[st.loc] || 0) + 1) - 1;
-      return { ...st, x: d.x + 40 + (i % 4) * 62, y: d.y + d.h - 44 - Math.floor(i / 4) * 18 };
+      const [ox, oy] = STRUCT_OFF[i % STRUCT_OFF.length];
+      return { ...st, x: d.x + ox, y: d.y + oy + Math.floor(i / STRUCT_OFF.length) * 22 };
     });
 
     const seen = new Set();
@@ -322,12 +358,12 @@ export function mount(root, tools) {
       let sp = sprites.get(a.id);
       const d = districts[a.loc] || districts[keys[0]];
       if (!sp) {
-        const p = randIn(d);
+        const p = roamTarget(d, true);
         sp = { x: p.x, y: p.y, tx: p.x, ty: p.y, loc: a.loc, wanderAt: 0, bubble: null, bubbleUntil: 0 };
         sprites.set(a.id, sp);
       } else if (sp.loc !== a.loc) {
         sp.loc = a.loc;                    // walk across town to the new district
-        const p = randIn(d);
+        const p = roamTarget(d, true);     // heading for its vicinity, not a box
         sp.tx = p.x; sp.ty = p.y;
       }
       sp.name = a.name;
@@ -396,8 +432,8 @@ export function mount(root, tools) {
         sp.moving = false;
         sp.wanderAt = now + 1200 + Math.random() * 3500;   // linger, then wander
       } else if (now > sp.wanderAt) {
-        const d = districts[sp.loc];
-        if (d) { const p = randIn(d); sp.tx = p.x; sp.ty = p.y; }
+        const p = roamTarget(districts[sp.loc]);   // anywhere in the village, home-biased
+        sp.tx = p.x; sp.ty = p.y;
         sp.wanderAt = now + 1200 + Math.random() * 3500;
       }
       // little dust kicks behind a walking villager
@@ -436,14 +472,14 @@ export function mount(root, tools) {
     const kd = districts.kitchen;
     if (kd && now - lastSmoke > 750) {
       lastSmoke = now;
-      puffs.push({ kind: 'smoke', x: kd.x + kd.w / 2 + 20 + (Math.random() * 6 - 3), y: kd.y + 22, born: now });
+      puffs.push({ kind: 'smoke', x: kd.x + 20 + (Math.random() * 6 - 3), y: kd.y - 90, born: now });
     }
     puffs = puffs.filter(p => now - p.born < (p.kind === 'smoke' ? 2400 : 550));
     if (inside) drawRoom(now, t); else draw(now, t);
   }
 
-  // farm-sim daylight scene: grass field, dirt paths meeting at the plaza,
-  // pixel buildings on their plots, and the townsfolk strolling in front
+  // farm-sim daylight scene: one open grass field, dirt paths meeting at the
+  // plaza, pixel buildings dotted about it, and the townsfolk strolling anywhere
   function label(text, x, y, size = 11) {
     ctx.font = `700 ${size}px system-ui`;
     ctx.textAlign = 'center';
@@ -460,22 +496,27 @@ export function mount(root, tools) {
     ctx.fillStyle = '#74b64e';
     ctx.fillRect(0, 0, W, H);
 
-    // plots — a slightly brighter green with a soft edge
+    // no plots — just a worn, slightly brighter clearing around each building,
+    // curved through its blob points so the field has no edges to trap anyone
+    ctx.fillStyle = '#7bbb53';
     for (const d of Object.values(districts)) {
-      ctx.fillStyle = '#7fbf58';
-      ctx.strokeStyle = 'rgba(0,0,0,0.10)';
+      const p = d.clearing;
       ctx.beginPath();
-      ctx.roundRect(d.x, d.y, d.w, d.h, 12);
-      ctx.fill(); ctx.stroke();
+      ctx.moveTo((p[p.length - 1].x + p[0].x) / 2, (p[p.length - 1].y + p[0].y) / 2);
+      for (let i = 0; i < p.length; i++) {
+        const nx = p[(i + 1) % p.length];
+        ctx.quadraticCurveTo(p[i].x, p[i].y, (p[i].x + nx.x) / 2, (p[i].y + nx.y) / 2);
+      }
+      ctx.fill();
     }
 
-    // dirt paths from every plot to the town center
+    // dirt paths from every district to the town center
     ctx.strokeStyle = '#d9b380';
     ctx.lineWidth = 16;
     ctx.lineCap = 'round';
     for (const d of Object.values(districts)) {
       ctx.beginPath();
-      ctx.moveTo(d.x + d.w / 2, d.y + d.h / 2);
+      ctx.moveTo(d.x, d.y + 10);
       ctx.lineTo(W / 2, H / 2);
       ctx.stroke();
     }
@@ -511,44 +552,60 @@ export function mount(root, tools) {
       }
     }
 
-    // each district's own business building, then its label
+    // ONE depth-sorted pass over everything that stands on the ground. Now that
+    // villagers roam the whole field instead of a plot, they walk BEHIND the
+    // buildings as often as in front of them — so a building can't have its own
+    // earlier pass any more or every walker would stroll over its roof. Each
+    // entry sorts on the y its feet touch, and draws when its turn comes.
+    const scene = [];
+
+    // each district's own business building on its point
     for (const d of Object.values(districts)) {
-      const img = art[d.key];
-      const cx = d.x + d.w / 2;
-      if (img) {
-        drawSprite(img, cx, d.y + 112, 100, 128);
-      } else {
-        ctx.font = '40px system-ui';
-        ctx.textAlign = 'center';
-        ctx.fillText('🏛️', cx, d.y + 66);
-      }
-      label(d.label.toUpperCase(), cx, d.y + d.h - 10, 10);
+      scene.push({ y: d.y, draw: () => {
+        const img = art[d.key];
+        if (img) {
+          drawSprite(img, d.x, d.y, 100, 128);
+        } else {
+          ctx.font = '40px system-ui';
+          ctx.textAlign = 'center';
+          ctx.fillText('🏛️', d.x, d.y - 46);
+        }
+      } });
     }
 
     // structures the agents put up (or are still putting up)
     for (const st of placedStructs) {
-      const done = (Number(st.progress) || 0) >= 100;
-      const img = done && art[st.kind];
-      if (img) {
-        drawSprite(img, st.x, st.y + 14, 56, 64);
-      } else {
-        ctx.font = '24px system-ui';
-        ctx.textAlign = 'center';
-        ctx.globalAlpha = done ? 1 : 0.6;
-        ctx.fillText(done ? (KIND_ICO[st.kind] || '🏘️') : '🏗️', st.x, st.y + 4);
-        ctx.globalAlpha = 1;
-      }
-      if (!done) {
-        const p = Math.max(0, Math.min(100, Number(st.progress) || 0));
-        ctx.fillStyle = 'rgba(0,0,0,0.35)';
-        ctx.fillRect(st.x - 24, st.y + 10, 48, 5);
-        ctx.fillStyle = '#e8a33d';
-        ctx.fillRect(st.x - 24, st.y + 10, 48 * p / 100, 5);
-      }
-      label(String(st.name || '').slice(0, 14), st.x, st.y + 26, 9);
+      scene.push({ y: st.y + 14, draw: () => {
+        const done = (Number(st.progress) || 0) >= 100;
+        const img = done && art[st.kind];
+        if (img) {
+          drawSprite(img, st.x, st.y + 14, 56, 64);
+        } else {
+          ctx.font = '24px system-ui';
+          ctx.textAlign = 'center';
+          ctx.globalAlpha = done ? 1 : 0.6;
+          ctx.fillText(done ? (KIND_ICO[st.kind] || '🏘️') : '🏗️', st.x, st.y + 4);
+          ctx.globalAlpha = 1;
+        }
+        if (!done) {
+          const p = Math.max(0, Math.min(100, Number(st.progress) || 0));
+          ctx.fillStyle = 'rgba(0,0,0,0.35)';
+          ctx.fillRect(st.x - 24, st.y + 10, 48, 5);
+          ctx.fillStyle = '#e8a33d';
+          ctx.fillRect(st.x - 24, st.y + 10, 48 * p / 100, 5);
+        }
+      } });
     }
 
-    // particles under the people: smoke drifts up, dust settles
+    // townsfolk (and the owner), sorting among the buildings on the same axis
+    const walkers = [...sprites.values(), ...(Number.isFinite(me.x) ? [me] : [])];
+    for (const sp of walkers) scene.push({ y: sp.y, draw: () => drawWalker(sp, now, t) });
+
+    scene.sort((a, b) => a.y - b.y);
+    for (const e of scene) e.draw();
+
+    // particles over the rooftops: smoke rises out of the kitchen chimney and
+    // must not be hidden by the roof it comes out of
     for (const p of puffs) {
       const age = (now - p.born) / (p.kind === 'smoke' ? 2400 : 550);
       if (p.kind === 'smoke') {
@@ -564,49 +621,12 @@ export function mount(root, tools) {
       }
     }
 
-    // townsfolk (and the owner), back-to-front so nearer ones overlap farther ones
-    const walkers = [...sprites.values(), ...(Number.isFinite(me.x) ? [me] : [])].sort((a, b) => a.y - b.y);
+    // Names, signs, hearts and speech last, over the whole scene. They are
+    // labels ABOUT the world rather than things standing in it, so a villager
+    // walking past a shop must never cut its sign in half.
+    for (const d of Object.values(districts)) label(d.label.toUpperCase(), d.x, d.y + 14, 10);
+    for (const st of placedStructs) label(String(st.name || '').slice(0, 14), st.x, st.y + 26, 9);
     for (const sp of walkers) {
-      // a real walk: step rhythm in the bounce, a waddle in the shoulders,
-      // slow breathing when standing still
-      const step = Math.sin(t / 85);
-      const bob = sp.moving ? Math.abs(Math.cos(t / 85)) * 2.8 : Math.sin(t / 650 + sp.hue) * 0.8;
-      const tilt = sp.moving ? step * 0.085 : Math.sin(t / 900 + sp.hue) * 0.015;
-      ctx.fillStyle = 'rgba(0,0,0,0.25)';
-      ctx.beginPath();
-      ctx.ellipse(sp.x, sp.y + 12, sp.moving ? 9 + Math.abs(step) * 2 : 10, 3.5, 0, 0, Math.PI * 2);
-      ctx.fill();
-      // four-way walk: the front sheet coming toward you, the back sheet
-      // going away, the side sheet (flipped for left) otherwise; idle faces
-      // front. Directions without a sheet fall back to the side sprite.
-      let img = sp.artKey && art[sp.artKey];
-      let flip = sp.dir === -1;
-      if (sp.artKey && !sp.isHire) {
-        const axis = sp.moving ? sp.axis : 'down';
-        if (axis === 'down' && art[`${sp.artKey}_front`]) { img = art[`${sp.artKey}_front`]; flip = false; }
-        else if (axis === 'up' && art[`${sp.artKey}_back`]) { img = art[`${sp.artKey}_back`]; flip = false; }
-      }
-      if (img) {
-        ctx.save();
-        ctx.translate(sp.x, sp.y + 12);        // pivot at the feet
-        ctx.rotate(tilt);
-        if (flip) ctx.scale(-1, 1);            // side sprites face right natively
-        // hires share one sprite — a per-person hue shift keeps them distinct
-        // hue-rotate is silently ignored where 2D-canvas filters are missing
-        // (older Safari); those browsers fall back to identical untinted hires
-        if (sp.isHire && 'filter' in ctx) ctx.filter = `hue-rotate(${sp.hue}deg)`;
-        drawSprite(img, 0, -bob, 46, 42);
-        if (sp.isHire) ctx.filter = 'none';
-        ctx.restore();
-      } else {
-        ctx.fillStyle = sp.isMe ? '#8a5bd6' : `hsl(${sp.hue} 45% 38%)`;
-        ctx.beginPath();
-        ctx.arc(sp.x, sp.y + bob, 11, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.font = '13px system-ui';
-        ctx.textAlign = 'center';
-        ctx.fillText(sp.face, sp.x, sp.y + bob + 4);
-      }
       label(sp.name || '', sp.x, sp.y + 28);
       if (sp.heartUntil && now < sp.heartUntil) {
         const rise = (1 - (sp.heartUntil - now) / 3200) * 10;
@@ -627,6 +647,50 @@ export function mount(root, tools) {
         ctx.textAlign = 'left';
         ctx.fillText(sp.bubble, bx + 8, sp.y - 29, tw - 16);
       }
+    }
+  }
+
+  // one villager, drawn where they stand — called from the depth-sorted pass
+  function drawWalker(sp, now, t) {
+    // a real walk: step rhythm in the bounce, a waddle in the shoulders,
+    // slow breathing when standing still
+    const step = Math.sin(t / 85);
+    const bob = sp.moving ? Math.abs(Math.cos(t / 85)) * 2.8 : Math.sin(t / 650 + sp.hue) * 0.8;
+    const tilt = sp.moving ? step * 0.085 : Math.sin(t / 900 + sp.hue) * 0.015;
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(sp.x, sp.y + 12, sp.moving ? 9 + Math.abs(step) * 2 : 10, 3.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // four-way walk: the front sheet coming toward you, the back sheet
+    // going away, the side sheet (flipped for left) otherwise; idle faces
+    // front. Directions without a sheet fall back to the side sprite.
+    let img = sp.artKey && art[sp.artKey];
+    let flip = sp.dir === -1;
+    if (sp.artKey && !sp.isHire) {
+      const axis = sp.moving ? sp.axis : 'down';
+      if (axis === 'down' && art[`${sp.artKey}_front`]) { img = art[`${sp.artKey}_front`]; flip = false; }
+      else if (axis === 'up' && art[`${sp.artKey}_back`]) { img = art[`${sp.artKey}_back`]; flip = false; }
+    }
+    if (img) {
+      ctx.save();
+      ctx.translate(sp.x, sp.y + 12);        // pivot at the feet
+      ctx.rotate(tilt);
+      if (flip) ctx.scale(-1, 1);            // side sprites face right natively
+      // hires share one sprite — a per-person hue shift keeps them distinct
+      // hue-rotate is silently ignored where 2D-canvas filters are missing
+      // (older Safari); those browsers fall back to identical untinted hires
+      if (sp.isHire && 'filter' in ctx) ctx.filter = `hue-rotate(${sp.hue}deg)`;
+      drawSprite(img, 0, -bob, 46, 42);
+      if (sp.isHire) ctx.filter = 'none';
+      ctx.restore();
+    } else {
+      ctx.fillStyle = sp.isMe ? '#8a5bd6' : `hsl(${sp.hue} 45% 38%)`;
+      ctx.beginPath();
+      ctx.arc(sp.x, sp.y + bob, 11, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.font = '13px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText(sp.face, sp.x, sp.y + bob + 4);
     }
   }
 
@@ -908,12 +972,11 @@ export function mount(root, tools) {
     // out) near the click? walk to a door point just below it, enter on arrival
     let hit = null, hitD = Infinity;
     for (const d of Object.values(districts)) {
-      const bx = d.x + d.w / 2, by = d.y + 70;
-      const dd = Math.hypot(x - bx, y - by);
+      const dd = Math.hypot(x - d.x, y - (d.y - 42));   // the building's middle
       if (dd < 52 && dd < hitD) {
         hitD = dd;
         hit = { type: 'district', key: d.key, name: d.label, owner: 'Dyer Town',
-          loc: d.key, door: { x: bx, y: d.y + 124 } };
+          loc: d.key, door: { x: d.x, y: d.y + 12 } };
       }
     }
     for (const st of placedStructs) {

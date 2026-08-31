@@ -118,8 +118,10 @@ async function handleKeys(request, env) {
     }
     const v = body.xbl_key.trim();
     stmts.push(v ? upsertSecret(env, 'xbl_key', v) : dropSecret(env, 'xbl_key'));
-    // whichever way the key changed, the cached data belongs to the old one
+    // whichever way the key changed, the cached data belongs to the old one —
+    // and so does the penalty box, since the quota is counted per key
     await dropCache(env, 'xbox').catch(() => {});
+    await dropCache(env, COOLDOWN_KEY).catch(() => {});
   }
 
   if ('psn_npsso' in body) {
@@ -150,16 +152,71 @@ async function handleKeys(request, env) {
 // keep whichever actually returns something usable.
 const XBL_HOSTS = ['https://xbl.io/api/v2', 'https://api.xbl.io/v2'];
 
+// The free tier allows 60 calls per 300s, counted per KEY — not per host. When
+// it is blown, OpenXBL answers **HTTP 200** with the limit as the BODY:
+//   {"content":{"currentRequests":70,"maxRequests":60,
+//    "periodInSeconds":300,"limitType":"Rate"},"code":429}
+// so `!res.ok` sails straight past it and the empty body reads as "no profile".
+// Worse, walking on to the second host spends another call against the same
+// blown quota — the retry was digging the hole deeper. Detect it in the body,
+// mark the error, and let every caller STOP rather than retry.
+class XblRateLimited extends Error {
+  constructor(seconds) {
+    super('rate limit reached');
+    this.rateLimited = true;
+    this.retryAfterMs = Math.min(Math.max(Number(seconds) || 300, 60), 3600) * 1000;
+  }
+}
+
+const rateLimitOf = body => {
+  const c = body?.content;
+  if (Number(body?.code) === 429 || c?.limitType === 'Rate') {
+    return Number(c?.periodInSeconds) || 300;
+  }
+  return 0;
+};
+
 async function fetchXbl(pathname, key, base = XBL_HOSTS[0]) {
   const res = await fetch(`${base}${pathname}`, {
     headers: { 'X-Authorization': key, Accept: 'application/json' },
     signal: AbortSignal.timeout(FETCH_TIMEOUT),
   });
+  if (res.status === 429) {
+    try { await res.body?.cancel(); } catch { /* noop */ }
+    throw new XblRateLimited(Number(res.headers.get('retry-after')) || 300);
+  }
   if (!res.ok) {
     try { await res.body?.cancel(); } catch { /* noop */ }
     throw new Error(`OpenXBL returned ${res.status}`);
   }
-  return res.json();
+  const body = await res.json();
+  const period = rateLimitOf(body);
+  if (period) throw new XblRateLimited(period);
+  return body;
+}
+
+// A blown quota is remembered, so the NEXT tile open does not spend four more
+// calls discovering the same thing. Kept in the same D1 table as the payloads:
+// one row, holding the timestamp the penalty box opens again.
+const COOLDOWN_KEY = 'xbox_cooldown';
+
+async function xblCoolingDown(env) {
+  const row = await readCache(env, COOLDOWN_KEY).catch(() => null);
+  const until = Number(row?.data?.until) || 0;
+  return until > Date.now() ? until : 0;
+}
+
+const startCooldown = (env, err) =>
+  writeCache(env, COOLDOWN_KEY, { until: Date.now() + (err?.retryAfterMs || 300000) })
+    .catch(() => { /* the request still answers without it */ });
+
+// The one shape every Xbox route returns while throttled: the last good
+// snapshot when there is one, and always a message that names the real cause.
+function throttled(cached, until) {
+  const mins = Math.max(1, Math.ceil((until - Date.now()) / 60000));
+  const error = `Xbox Live is rate-limiting this key — retrying in about ${mins} minute${mins === 1 ? '' : 's'}`;
+  if (cached) return json({ ...cached.data, stale: true, rateLimited: true, error });
+  return json({ configured: true, rateLimited: true, error });
 }
 
 // Profile fields live in a settings array of {id, value} pairs, and OpenXBL
@@ -229,16 +286,31 @@ async function handleXboxGames(env) {
   if (!key) return json({ configured: false });
   const cached = await readCache(env, 'xbox_games').catch(() => null);
   if (cached && cached.age < CACHE_MS) return json(cached.data);
+
+  const cooling = await xblCoolingDown(env);
+  if (cooling) return throttled(cached, cooling);
+
   try {
     let data = null;
     for (const base of XBL_HOSTS) {
-      const d = normalizeXboxLibrary(await fetchXbl('/player/titleHistory', key, base).catch(() => null));
+      let body;
+      try {
+        body = await fetchXbl('/player/titleHistory', key, base);
+      } catch (err) {
+        if (err?.rateLimited) throw err; // never spend the second host on a blown quota
+        continue;
+      }
+      const d = normalizeXboxLibrary(body);
       if (d.games.length) { data = d; break; }
     }
     if (!data) throw new Error('no titles from either host');
     await writeCache(env, 'xbox_games', data).catch(() => { /* fresh data still goes out */ });
     return json(data);
-  } catch {
+  } catch (err) {
+    if (err?.rateLimited) {
+      await startCooldown(env, err);
+      return throttled(cached, Date.now() + err.retryAfterMs);
+    }
     if (cached) return json({ ...cached.data, stale: true });
     return json({ configured: true, error: 'Xbox Live is unreachable right now' }, 502);
   }
@@ -253,6 +325,9 @@ async function handleXboxAchievements(env, url) {
   const cacheKey = `xbox_a_${titleId}`;
   const cached = await readCache(env, cacheKey).catch(() => null);
   if (cached && cached.age < CACHE_MS) return json(cached.data);
+
+  const cooling = await xblCoolingDown(env);
+  if (cooling) return throttled(cached, cooling);
 
   try {
     const body = await fetchXbl(`/achievements/title/${titleId}`, key);
@@ -271,7 +346,11 @@ async function handleXboxAchievements(env, url) {
     };
     await writeCache(env, cacheKey, data).catch(() => { /* fresh data still goes out */ });
     return json(data);
-  } catch {
+  } catch (err) {
+    if (err?.rateLimited) {
+      await startCooldown(env, err);
+      return throttled(cached, Date.now() + err.retryAfterMs);
+    }
     if (cached) return json({ ...cached.data, stale: true });
     return json({ configured: true, error: 'Xbox Live is unreachable right now' }, 502);
   }
@@ -284,15 +363,22 @@ async function handleXbox(env) {
   const cached = await readCache(env, 'xbox').catch(() => null);
   if (cached && cached.age < CACHE_MS) return json(cached.data);
 
+  // still in the penalty box — spend no calls at all
+  const cooling = await xblCoolingDown(env);
+  if (cooling) return throttled(cached, cooling);
+
   // whichever host answers with a real profile wins; an empty answer is a
   // FAILURE, never something to cache over good data
   let note = '';
   for (const base of XBL_HOSTS) {
     try {
-      const [account, history] = await Promise.all([
-        fetchXbl('/account', key, base),
-        fetchXbl('/player/titleHistory', key, base),
-      ]);
+      // sequential, not Promise.all: two in flight is two against the quota
+      // even when the first one already came back rate-limited
+      const account = await fetchXbl('/account', key, base);
+      const history = await fetchXbl('/player/titleHistory', key, base).catch(err => {
+        if (err?.rateLimited) throw err;
+        return null; // a profile with no history is still worth showing
+      });
       const data = normalizeXbox(account, history);
       if (data.profile.gamertag || data.recent.length) {
         await writeCache(env, 'xbox', data).catch(() => { /* fresh data still goes out */ });
@@ -300,6 +386,12 @@ async function handleXbox(env) {
       }
       note = `${base} answered, but with no profile — ${JSON.stringify(account).slice(0, 180)}`;
     } catch (err) {
+      // the quota is per key, so the other host shares it: trying it next is
+      // what took this account from 60 to 70 requests. Stop here.
+      if (err?.rateLimited) {
+        await startCooldown(env, err);
+        return throttled(cached, Date.now() + err.retryAfterMs);
+      }
       note = `${base} — ${err?.message || 'unreachable'}`;
     }
   }
