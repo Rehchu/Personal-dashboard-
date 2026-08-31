@@ -65,6 +65,21 @@ function injectStyle() {
     .gm-setup button { padding:10px 18px; border-radius:10px; border:0; background:var(--accent); color:#fff; font-weight:700; cursor:pointer; }
     .gm-note { font-size:12.5px; color:var(--ink-3); margin:10px 0 0; }
     .gm-banner { padding:9px 14px; border-radius:10px; background:color-mix(in oklab,#e0913a 22%,var(--surface-2)); color:var(--ink); font-size:12.5px; margin-bottom:12px; }
+    .gm-more { margin-top:12px; }
+    .gm-lib-btn, .gm-back { padding:7px 13px; border-radius:9px; border:1px solid var(--line,rgba(255,255,255,.15));
+      background:var(--surface-3,rgba(255,255,255,.06)); color:var(--ink); font-size:12.5px; font-weight:600; cursor:pointer; }
+    .gm-row { cursor:pointer; }
+    .gm-row:hover .nm { color:var(--accent); }
+    .gm-ach { display:flex; align-items:flex-start; gap:11px; padding:9px 0; border-top:1px solid var(--line,rgba(255,255,255,.07)); }
+    .gm-ach.locked { opacity:.45; }
+    .gm-ach .ic { width:44px; height:44px; border-radius:8px; object-fit:cover; flex:none; background:var(--surface-3,rgba(255,255,255,.06)); }
+    .gm-ach .nm { color:var(--ink); font-weight:600; font-size:13.5px; }
+    .gm-ach .dt { color:var(--ink-2); font-size:12.5px; margin-top:2px; line-height:1.4; }
+    .gm-ach .meta { color:var(--ink-3); font-size:11.5px; margin-top:3px; }
+    .gm-bgbtn { margin-left:auto; flex:none; padding:5px 9px; border-radius:8px; border:1px solid var(--line,rgba(255,255,255,.15));
+      background:transparent; color:var(--ink-2); font-size:12px; cursor:pointer; }
+    .gm-bgbtn:hover { color:var(--accent); border-color:var(--accent); }
+    .gm-trophy-type { font-size:14px; margin-right:4px; }
     @media (prefers-reduced-motion: no-preference){ .gm-card { animation:gm-in .35s ease both; } @keyframes gm-in { from { opacity:0; transform:translateY(6px);} } }`;
   document.head.append(style);
 }
@@ -100,8 +115,8 @@ function psnSetup() {
         <a href="https://ca.account.sony.com/api/v1/ssocookie" target="_blank" rel="noopener">ca.account.sony.com/api/v1/ssocookie</a>.</li>
       <li>Copy the 64-character <b>npsso</b> value and paste it below.</li>
     </ol>
-    <input type="password" id="gm-psn" placeholder="NPSSO token" autocomplete="off" spellcheck="false">
-    <button data-save="psn_npsso" data-input="gm-psn">Connect PlayStation</button>
+    <input type="password" id="gm-npsso" placeholder="NPSSO token" autocomplete="off" spellcheck="false">
+    <button data-save="psn_npsso" data-input="gm-npsso">Connect PlayStation</button>
   </div>`;
 }
 
@@ -130,7 +145,9 @@ function xboxCard(d) {
       <div class="who"><div class="tag">${esc(p.gamertag || 'Xbox')}</div>
         <div class="sub">${num(p.gamerscore).toLocaleString()} G</div></div>
     </div>
-    <div class="gm-body">${banner}${games}</div>
+    <div class="gm-body">${banner}${games}
+      <div class="gm-more"><button class="gm-lib-btn" data-lib="xbox">📚 Full library & achievements</button></div>
+    </div>
   </div>`;
 }
 
@@ -167,7 +184,9 @@ function psnCard(d) {
       <div class="who"><div class="tag">Trophy Level ${num(s.level)}</div>
         <div class="sub">${num(s.platinum)} platinum${num(s.platinum) === 1 ? '' : 's'}</div></div>
     </div>
-    <div class="gm-body">${banner}${tiers}${games}${reauth ? psnSetup() : ''}</div>
+    <div class="gm-body">${banner}${tiers}${games}
+      <div class="gm-more"><button class="gm-lib-btn" data-lib="psn">📚 Full library & trophies</button></div>
+      ${reauth ? psnSetup() : ''}</div>
   </div>`;
 }
 
@@ -202,7 +221,10 @@ export function mount(root, tools) {
     root.querySelectorAll('[data-save]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const field = btn.dataset.save;
-        const input = root.querySelector('#' + btn.dataset.input);
+        // the input that belongs to THIS form — never trust bare ids alone,
+        // a container id collision here once ate every pasted PSN key
+        const input = btn.closest('.gm-setup')?.querySelector('input')
+          || root.querySelector('#' + btn.dataset.input);
         const val = (input?.value || '').trim();
         if (!val) { showToast('Paste a key first'); return; }
         btn.disabled = true; btn.textContent = 'Connecting…';
@@ -222,6 +244,110 @@ export function mount(root, tools) {
       });
     });
   }
+
+  // ---- the full shelf: library view, then one game's achievements/trophies.
+  // Any cover or unlocked-achievement icon can become a dashboard background —
+  // the Worker's importer pulls it into the gallery and selects it. ----
+  const TROPHY_ICO = { platinum: '💠', gold: '🥇', silver: '🥈', bronze: '🥉' };
+  const colFor = c => (c === 'xbox' ? xboxEl : psnEl);
+  const libCache = {};
+
+  function bgButton(url, name) {
+    const safe = typeof url === 'string' && /^https:\/\//.test(url) ? url : '';
+    if (!safe) return '';
+    return `<button class="gm-bgbtn" data-bg="${esc(encodeURIComponent(safe))}" data-bgname="${esc(name || 'Game art')}" title="Make this a dashboard background">🖼</button>`;
+  }
+
+  async function setBg(url, name) {
+    try {
+      const res = await fetch('/api/media/bg/import', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ url, name }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || '');
+      showToast('Added to your backgrounds — and set as the active one');
+    } catch (err) {
+      showToast(`Couldn't import that art${err.message ? ` — ${err.message}` : ''}`);
+    }
+  }
+
+  async function renderLib(c) {
+    const el = colFor(c);
+    el.innerHTML = '<div class="gm-card"><div class="gm-body"><p class="gm-note">Loading the shelf…</p></div></div>';
+    const d = libCache[c] || await pull(`/api/gaming/${c}/games`);
+    if (!alive) return;
+    if (!d?.games?.length) {
+      el.innerHTML = `<div class="gm-card"><div class="gm-body">
+        <p class="gm-note">${esc(d?.hint || d?.error || 'Nothing on the shelf yet.')}</p>
+        <div class="gm-more"><button class="gm-back" data-back="1">← Back</button></div></div></div>`;
+      return;
+    }
+    libCache[c] = d;
+    const rows = d.games.map((g, i) => `
+      <div class="gm-game gm-row" data-game="${i}" data-console="${c}">
+        ${boxArt(g.art, c === 'xbox' ? '🎮' : '🏆')}
+        <div class="info">
+          <div class="nm">${esc(g.name)}</div>
+          <div class="pr">${c === 'xbox'
+            ? `${num(g.earned)}/${num(g.total)} achievements · ${num(g.score)}G`
+            : `${num(g.progress)}% · ${num(g.earned?.platinum)}💠 ${num(g.earned?.gold)}🥇 ${num(g.earned?.silver)}🥈 ${num(g.earned?.bronze)}🥉`}</div>
+        </div>
+        ${bgButton(g.art, g.name)}
+      </div>`).join('');
+    el.innerHTML = `<div class="gm-card"><div class="gm-body">
+      <div class="gm-more" style="margin:0 0 10px;display:flex;justify-content:space-between;align-items:center">
+        <button class="gm-back" data-back="1">← Back</button>
+        <span class="gm-note" style="margin:0">${d.games.length} titles${d.stale || d._stale ? ' · snapshot' : ''}</span>
+      </div>${rows}</div></div>`;
+  }
+
+  async function renderGame(c, g) {
+    const el = colFor(c);
+    el.innerHTML = `<div class="gm-card"><div class="gm-body"><p class="gm-note">Opening ${esc(g.name)}…</p></div></div>`;
+    const d = await pull(c === 'xbox'
+      ? `/api/gaming/xbox/achievements?titleId=${encodeURIComponent(g.id)}`
+      : `/api/gaming/psn/trophies?id=${encodeURIComponent(g.id)}&platform=${encodeURIComponent(g.platform || '')}`);
+    if (!alive) return;
+    const list = (c === 'xbox' ? d?.achievements : d?.trophies) || [];
+    const rows = list.length ? list.map(a => {
+      const got = a.unlocked || a.earned;
+      return `
+      <div class="gm-ach${got ? '' : ' locked'}">
+        ${/^https:\/\//.test(a.icon || '') ? `<img class="ic" src="${esc(a.icon)}" alt="" loading="lazy" onerror="this.remove()">` : '<div class="ic"></div>'}
+        <div class="info" style="min-width:0;flex:1">
+          <div class="nm">${c === 'psn' ? `<span class="gm-trophy-type">${TROPHY_ICO[a.type] || '🏆'}</span>` : ''}${esc(a.name || '???')}</div>
+          ${a.detail ? `<div class="dt">${esc(a.detail)}</div>` : ''}
+          <div class="meta">${got
+            ? `✓ unlocked${a.unlockedAt || a.earnedAt ? ` · ${new Date(a.unlockedAt || a.earnedAt).toLocaleDateString()}` : ''}`
+            : 'locked'}${a.rarity ? ` · ${a.rarity}% of players` : ''}${a.score ? ` · ${num(a.score)}G` : ''}</div>
+        </div>
+        ${got ? bgButton(a.icon, a.name) : ''}
+      </div>`;
+    }).join('')
+      : `<p class="gm-note">${esc(d?.hint || d?.error || 'Nothing to show for this title.')}</p>`;
+    const done = list.filter(a => a.unlocked || a.earned).length;
+    el.innerHTML = `<div class="gm-card"><div class="gm-body">
+      <div class="gm-more" style="margin:0 0 10px;display:flex;gap:8px;align-items:center">
+        <button class="gm-back" data-lib="${c}">← Library</button>
+        <span class="gm-note" style="margin:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(g.name)} · ${done}/${list.length}</span>
+        ${bgButton(g.art, g.name)}
+      </div>${rows}</div></div>`;
+  }
+
+  root.addEventListener('click', e => {
+    const bg = e.target.closest('[data-bg]');
+    if (bg) { e.stopPropagation(); setBg(decodeURIComponent(bg.dataset.bg), bg.dataset.bgname); return; }
+    const lib = e.target.closest('[data-lib]');
+    if (lib) { renderLib(lib.dataset.lib); return; }
+    if (e.target.closest('[data-back]')) { paint(); return; }
+    const row = e.target.closest('[data-game]');
+    if (row) {
+      const g = libCache[row.dataset.console]?.games?.[Number(row.dataset.game)];
+      if (g) renderGame(row.dataset.console, g);
+    }
+  });
 
   async function loadAll() {
     paint(); // paint cache first

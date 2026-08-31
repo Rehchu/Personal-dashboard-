@@ -193,6 +193,79 @@ function normalizeXbox(account, history) {
   return { configured: true, profile, recent };
 }
 
+// The full shelf, not just the recent twelve: every title Xbox has history
+// for, newest-played first, with the ids the achievements view needs.
+function normalizeXboxLibrary(history) {
+  const titles = Array.isArray(history?.titles) ? history.titles : [];
+  return {
+    configured: true,
+    games: titles
+      .filter(t => t && typeof t.name === 'string')
+      .map(t => {
+        const ach = (t.achievement && typeof t.achievement === 'object') ? t.achievement : {};
+        return {
+          id: str(t.titleId),
+          name: t.name,
+          art: str(t.displayImage),
+          lastPlayed: str(t.titleHistory?.lastTimePlayed) || str(t.lastTimePlayed) || null,
+          earned: num(ach.currentAchievements),
+          total: num(ach.totalAchievements),
+          score: num(ach.currentGamerscore),
+          maxScore: num(ach.totalGamerscore),
+        };
+      })
+      .sort((a, b) => String(b.lastPlayed || '').localeCompare(String(a.lastPlayed || ''))),
+  };
+}
+
+async function handleXboxGames(env) {
+  const key = await readSecret(env, 'xbl_key');
+  if (!key) return json({ configured: false });
+  const cached = await readCache(env, 'xbox_games').catch(() => null);
+  if (cached && cached.age < CACHE_MS) return json(cached.data);
+  try {
+    const data = normalizeXboxLibrary(await fetchXbl('/player/titleHistory', key));
+    await writeCache(env, 'xbox_games', data).catch(() => { /* fresh data still goes out */ });
+    return json(data);
+  } catch {
+    if (cached) return json({ ...cached.data, stale: true });
+    return json({ configured: true, error: 'Xbox Live is unreachable right now' }, 502);
+  }
+}
+
+async function handleXboxAchievements(env, url) {
+  const key = await readSecret(env, 'xbl_key');
+  if (!key) return json({ configured: false });
+  const titleId = str(url.searchParams.get('titleId'));
+  if (!/^\d{1,15}$/.test(titleId)) return json({ error: 'bad titleId' }, 400);
+
+  const cacheKey = `xbox_a_${titleId}`;
+  const cached = await readCache(env, cacheKey).catch(() => null);
+  if (cached && cached.age < CACHE_MS) return json(cached.data);
+
+  try {
+    const body = await fetchXbl(`/achievements/title/${titleId}`, key);
+    const list = Array.isArray(body?.achievements) ? body.achievements : [];
+    const data = {
+      configured: true,
+      achievements: list.map(a => ({
+        name: str(a?.name),
+        detail: str(a?.description) || str(a?.lockedDescription),
+        icon: str(Array.isArray(a?.mediaAssets) ? a.mediaAssets[0]?.url : ''),
+        score: num(Array.isArray(a?.rewards) ? a.rewards.find(r => r?.type === 'Gamerscore')?.value : 0),
+        unlocked: a?.progressState === 'Achieved',
+        unlockedAt: str(a?.progression?.timeUnlocked) || null,
+        rarity: num(a?.rarity?.currentPercentage),
+      })).sort((a, b) => Number(b.unlocked) - Number(a.unlocked)),
+    };
+    await writeCache(env, cacheKey, data).catch(() => { /* fresh data still goes out */ });
+    return json(data);
+  } catch {
+    if (cached) return json({ ...cached.data, stale: true });
+    return json({ configured: true, error: 'Xbox Live is unreachable right now' }, 502);
+  }
+}
+
 async function handleXbox(env) {
   const key = await readSecret(env, 'xbl_key');
   if (!key) return json({ configured: false });
@@ -389,6 +462,100 @@ async function handlePsn(env) {
   }
 }
 
+// Run a PSN pull with the stored access token, retrying once through a forced
+// refresh on a 401 — the same dance handlePsn does, shared by the new views.
+async function withPsnAccess(env, npsso, fn) {
+  let access = await psnAccessToken(env, npsso);
+  try {
+    return await fn(access);
+  } catch (err) {
+    if (err?.status !== 401) throw err;
+    access = await psnAccessToken(env, npsso, true);
+    return fn(access);
+  }
+}
+
+async function handlePsnGames(env) {
+  const npsso = await readSecret(env, 'psn_npsso');
+  if (!npsso) return json({ configured: false });
+  const cached = await readCache(env, 'psn_games').catch(() => null);
+  if (cached && cached.age < CACHE_MS) return json(cached.data);
+  try {
+    const body = await withPsnAccess(env, npsso, tok =>
+      fetchPsn('/users/me/trophyTitles?limit=200', tok));
+    const titles = Array.isArray(body?.trophyTitles) ? body.trophyTitles : [];
+    const data = {
+      configured: true,
+      games: titles
+        .filter(t => t && typeof t.trophyTitleName === 'string')
+        .map(t => ({
+          id: str(t.npCommunicationId),
+          platform: str(t.trophyTitlePlatform),
+          name: t.trophyTitleName,
+          art: str(t.trophyTitleIconUrl),
+          progress: num(t.progress),
+          earned: psnTrophyCounts(t.earnedTrophies),
+          defined: psnTrophyCounts(t.definedTrophies),
+        })),
+    };
+    await writeCache(env, 'psn_games', data).catch(() => { /* fresh data still goes out */ });
+    return json(data);
+  } catch (err) {
+    if (err?.reauth || err?.status === 401) {
+      return json({ configured: true, error: 'reauth', hint: 'paste a fresh NPSSO' });
+    }
+    if (cached) return json({ ...cached.data, stale: true });
+    return json({ configured: true, error: 'PlayStation Network is unreachable right now' }, 502);
+  }
+}
+
+async function handlePsnTrophies(env, url) {
+  const npsso = await readSecret(env, 'psn_npsso');
+  if (!npsso) return json({ configured: false });
+  const id = str(url.searchParams.get('id'));
+  const platform = str(url.searchParams.get('platform'));
+  if (!/^[A-Z0-9_]{6,24}$/.test(id)) return json({ error: 'bad id' }, 400);
+  // PS5-era titles speak the default service; everything older needs the
+  // legacy npServiceName=trophy suffix on both calls
+  const svc = /PS5/i.test(platform) ? '' : '?npServiceName=trophy';
+
+  const cacheKey = `psn_t_${id}`;
+  const cached = await readCache(env, cacheKey).catch(() => null);
+  if (cached && cached.age < CACHE_MS) return json(cached.data);
+
+  try {
+    const [defs, mine] = await withPsnAccess(env, npsso, tok => Promise.all([
+      fetchPsn(`/npCommunicationIds/${id}/trophyGroups/all/trophies${svc}`, tok),
+      fetchPsn(`/users/me/npCommunicationIds/${id}/trophyGroups/all/trophies${svc}`, tok),
+    ]));
+    const byId = new Map();
+    for (const t of Array.isArray(mine?.trophies) ? mine.trophies : []) byId.set(num(t?.trophyId), t);
+    const data = {
+      configured: true,
+      trophies: (Array.isArray(defs?.trophies) ? defs.trophies : []).map(t => {
+        const own = byId.get(num(t?.trophyId)) || {};
+        return {
+          name: str(t?.trophyName),
+          detail: str(t?.trophyDetail),
+          icon: str(t?.trophyIconUrl),
+          type: str(t?.trophyType),
+          earned: !!own.earned,
+          earnedAt: str(own.earnedDateTime) || null,
+          rarity: Number.isFinite(Number(own.trophyEarnedRate)) ? Number(own.trophyEarnedRate) : null,
+        };
+      }).sort((a, b) => Number(b.earned) - Number(a.earned)),
+    };
+    await writeCache(env, cacheKey, data).catch(() => { /* fresh data still goes out */ });
+    return json(data);
+  } catch (err) {
+    if (err?.reauth || err?.status === 401) {
+      return json({ configured: true, error: 'reauth', hint: 'paste a fresh NPSSO' });
+    }
+    if (cached) return json({ ...cached.data, stale: true });
+    return json({ configured: true, error: 'PlayStation Network is unreachable right now' }, 502);
+  }
+}
+
 /* ---------- entry ---------- */
 
 export async function handleGaming(url, request, env) {
@@ -403,6 +570,22 @@ export async function handleGaming(url, request, env) {
     if (path === '/api/gaming/psn') {
       if (request.method !== 'GET') return json({ error: 'method not allowed' }, 405);
       return await handlePsn(env);
+    }
+    if (path === '/api/gaming/xbox/games') {
+      if (request.method !== 'GET') return json({ error: 'method not allowed' }, 405);
+      return await handleXboxGames(env);
+    }
+    if (path === '/api/gaming/xbox/achievements') {
+      if (request.method !== 'GET') return json({ error: 'method not allowed' }, 405);
+      return await handleXboxAchievements(env, url);
+    }
+    if (path === '/api/gaming/psn/games') {
+      if (request.method !== 'GET') return json({ error: 'method not allowed' }, 405);
+      return await handlePsnGames(env);
+    }
+    if (path === '/api/gaming/psn/trophies') {
+      if (request.method !== 'GET') return json({ error: 'method not allowed' }, 405);
+      return await handlePsnTrophies(env, url);
     }
     return json({ error: 'not found' }, 404);
   } catch (err) {

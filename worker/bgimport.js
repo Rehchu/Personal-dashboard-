@@ -28,6 +28,12 @@ function importHostAllowed(host) {
   const h = host.toLowerCase();
   if (h === 'd8j0ntlcm91z4.cloudfront.net') return true;
   if (h === 'higgsfield.ai' || h.endsWith('.higgsfield.ai')) return true;
+  // console art, so a game cover or an unlocked achievement can become a
+  // background: Microsoft's store/Live image CDNs and Sony's trophy CDNs
+  if (h === 'store-images.s-microsoft.com') return true;
+  if (h.endsWith('.xboxlive.com')) return true;
+  if (h === 'image.api.playstation.com') return true;
+  if (h.endsWith('.playstation.net')) return true;
   return false;
 }
 
