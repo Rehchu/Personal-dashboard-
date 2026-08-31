@@ -91,17 +91,21 @@ function boxArt(url, fallback) {
     onerror="this.outerHTML='<div class=\\'gm-box fallback\\' aria-hidden=\\'true\\'>${fallback}</div>'">`;
 }
 
-function xboxSetup() {
+// `again` retitles the form for someone who already had a key: the steps are
+// identical, but "Connect Xbox" reads wrong when you are replacing a dead key.
+function xboxSetup(again = false) {
   return `<div class="gm-setup">
-    <p>Show your real gamerscore and recently-played games. You'll need a free
-       OpenXBL key — it reads your Xbox profile without storing your password.</p>
+    <p>${again
+      ? 'Paste a fresh OpenXBL key. The old one is still stored until you save this.'
+      : `Show your real gamerscore and recently-played games. You'll need a free
+       OpenXBL key — it reads your Xbox profile without storing your password.`}</p>
     <ol>
       <li>Go to <a href="https://xbl.io" target="_blank" rel="noopener">xbl.io</a> and sign in with your Microsoft account.</li>
       <li>Open the <b>API Keys</b> page and copy your key.</li>
       <li>Paste it below — it's stored on the Worker, never in the browser.</li>
     </ol>
     <input type="password" id="gm-xbl" placeholder="OpenXBL API key" autocomplete="off" spellcheck="false">
-    <button data-save="xbl_key" data-input="gm-xbl">Connect Xbox</button>
+    <button data-save="xbl_key" data-input="gm-xbl">${again ? 'Save new key' : 'Connect Xbox'}</button>
   </div>`;
 }
 
@@ -126,16 +130,21 @@ function xboxCard(d) {
 
   const p = d.profile || {};
   const recent = d.recent || [];
+  // OpenXBL refused the key — the one failure the owner can actually fix, so
+  // the form comes back, exactly as PSN does for an expired NPSSO
+  const reauth = d.error === 'reauth';
   // a throttle is not a breakage — say so plainly, and don't invite a Refresh
   // that would only spend more of the quota that ran out. Anything else falls
-  // through to main's diagnostic banner, which is kept as it was.
-  const banner = d.rateLimited
-    ? `<div class="gm-banner">⏳ ${esc(d.error || 'Xbox Live is rate-limiting this key.')}${
-      d._stale || d.stale ? ' Showing the last snapshot.' : ''}</div>`
-    : d.error
-      ? `<div class="gm-banner">Xbox Live didn't answer${d._stale || d.stale ? ' — showing the last snapshot' : ''}.${
-        d.upstream ? `<br><span style="opacity:.8;font-size:11.5px">${esc(String(d.upstream).slice(0, 200))}</span>` : ''}</div>`
-      : '';
+  // through to the diagnostic banner.
+  const banner = reauth
+    ? `<div class="gm-banner">Xbox Live wouldn't accept that key. Paste a fresh one below.</div>`
+    : d.rateLimited
+      ? `<div class="gm-banner">⏳ ${esc(d.error || 'Xbox Live is rate-limiting this key.')}${
+        d._stale || d.stale ? ' Showing the last snapshot.' : ''}</div>`
+      : d.error
+        ? `<div class="gm-banner">Xbox Live didn't answer${d._stale || d.stale ? ' — showing the last snapshot' : ''}.${
+          d.upstream ? `<br><span style="opacity:.8;font-size:11.5px">${esc(String(d.upstream).slice(0, 200))}</span>` : ''}</div>`
+        : '';
   const games = recent.length ? recent.map(g => {
     const pct = g.total ? Math.round((num(g.earned) / num(g.total)) * 100) : 0;
     return `<div class="gm-game">
@@ -155,8 +164,11 @@ function xboxCard(d) {
         <div class="sub">${num(p.gamerscore).toLocaleString()} G</div></div>
     </div>
     <div class="gm-body">${banner}${games}
-      <div class="gm-more"><button class="gm-lib-btn" data-lib="xbox">📚 Full library & achievements</button></div>
-    </div>
+      <div class="gm-more" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="gm-lib-btn" data-lib="xbox">📚 Full library &amp; achievements</button>
+        ${reauth ? '' : '<button class="gm-back" data-rekey="xbox">Change key</button>'}
+      </div>
+      ${reauth ? xboxSetup(true) : ''}</div>
   </div>`;
 }
 
@@ -194,7 +206,10 @@ function psnCard(d) {
         <div class="sub">${num(s.platinum)} platinum${num(s.platinum) === 1 ? '' : 's'}</div></div>
     </div>
     <div class="gm-body">${banner}${tiers}${games}
-      <div class="gm-more"><button class="gm-lib-btn" data-lib="psn">📚 Full library & trophies</button></div>
+      <div class="gm-more" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="gm-lib-btn" data-lib="psn">📚 Full library &amp; trophies</button>
+        ${reauth ? '' : '<button class="gm-back" data-rekey="psn">Change token</button>'}
+      </div>
       ${reauth ? psnSetup() : ''}</div>
   </div>`;
 }
@@ -368,6 +383,15 @@ export function mount(root, tools) {
       let url = '';
       try { url = decodeURIComponent(bg.dataset.bg || ''); } catch { url = ''; }
       setBg(url, bg.dataset.bgname);
+      return;
+    }
+    // "Change key" — without this there is NO way back to the key form once a
+    // key is stored, so a dead or wrong key locks the tile permanently
+    const rekey = own(e.target.closest('button[data-rekey]'));
+    if (rekey) {
+      colFor(rekey.dataset.rekey).innerHTML =
+        `<div class="gm-card">${rekey.dataset.rekey === 'xbox' ? xboxSetup(true) : psnSetup()}</div>`;
+      wireSetup();
       return;
     }
     const lib = own(e.target.closest('button[data-lib]'));

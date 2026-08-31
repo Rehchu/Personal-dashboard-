@@ -185,6 +185,15 @@ async function fetchXbl(pathname, key, base = XBL_HOSTS[0]) {
     try { await res.body?.cancel(); } catch { /* noop */ }
     throw new XblRateLimited(Number(res.headers.get('retry-after')) || 300);
   }
+  // A key OpenXBL refuses is not a transient outage — it is the one failure the
+  // owner can actually DO something about, so it gets its own kind and the card
+  // offers the key form back. Same shape PSN's expired-NPSSO path already uses.
+  if (res.status === 401 || res.status === 403) {
+    try { await res.body?.cancel(); } catch { /* noop */ }
+    const err = new Error(`OpenXBL rejected the key (${res.status})`);
+    err.reauth = true;
+    throw err;
+  }
   if (!res.ok) {
     try { await res.body?.cancel(); } catch { /* noop */ }
     throw new Error(`OpenXBL returned ${res.status}`);
@@ -391,6 +400,11 @@ async function handleXbox(env) {
       if (err?.rateLimited) {
         await startCooldown(env, err);
         return throttled(cached, Date.now() + err.retryAfterMs);
+      }
+      // a rejected key is rejected on both hosts — asking the second one only
+      // wastes a call and delays telling the owner the one thing they can fix
+      if (err?.reauth) {
+        return json({ ...(cached ? { ...cached.data, stale: true } : {}), configured: true, error: 'reauth' });
       }
       note = `${base} — ${err?.message || 'unreachable'}`;
     }
