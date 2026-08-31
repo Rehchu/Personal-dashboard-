@@ -295,6 +295,21 @@ export function mount(root, tools) {
           sp.bubbleUntil = performance.now() + 6500;
         }
       }
+      // friendship, visibly: a talker walks over to whoever they're talking to,
+      // and a helping hand puts hearts over both heads
+      const talk = /^to ([^:]{1,24}):/.exec(e.text || '');
+      const help = /^lends (.{1,24}?) a hand/.exec(e.text || '');
+      const otherName = (talk?.[1] || help?.[1] || '').trim();
+      if (otherName) {
+        const speaker = [...sprites.values()].find(s => s.name === e.name);
+        const friend = [...sprites.values()].find(s => s.name === otherName);
+        if (speaker && friend) {
+          speaker.tx = friend.x + (speaker.x < friend.x ? -26 : 26);
+          speaker.ty = friend.y + 4;
+          speaker.wanderAt = performance.now() + 6000;   // stay with them a moment
+          if (help) speaker.heartUntil = friend.heartUntil = performance.now() + 3200;
+        }
+      }
     }
     if (bubblesShown.size > 400) bubblesShown.clear();
     mapReady = true;
@@ -493,6 +508,12 @@ export function mount(root, tools) {
         ctx.fillText(sp.face, sp.x, sp.y + bob + 4);
       }
       label(sp.name || '', sp.x, sp.y + 28);
+      if (sp.heartUntil && now < sp.heartUntil) {
+        const rise = (1 - (sp.heartUntil - now) / 3200) * 10;
+        ctx.font = '12px system-ui';
+        ctx.textAlign = 'center';
+        ctx.fillText('💛', sp.x + 13, sp.y - 34 - rise);
+      }
       if (sp.bubble && now < sp.bubbleUntil) {
         ctx.font = '11px system-ui';
         const tw = Math.min(220, ctx.measureText(sp.bubble).width + 16);
@@ -546,6 +567,7 @@ export function mount(root, tools) {
       const t = a.tally || {};
       const line = [
         t.deepSessions ? `${t.deepSessions} workshop session${t.deepSessions === 1 ? '' : 's'}` : '',
+        t.assists ? `${t.assists} assist${t.assists === 1 ? '' : 's'}` : '',
         t.buildsFinished ? `${t.buildsFinished} build${t.buildsFinished === 1 ? '' : 's'} finished` : '',
         t.shifts ? `${t.shifts} shift${t.shifts === 1 ? '' : 's'}` : '',
         t.jobsTaken ? `${t.jobsTaken} job${t.jobsTaken === 1 ? '' : 's'} taken` : '',
