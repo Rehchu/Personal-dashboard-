@@ -229,6 +229,12 @@ export function mount(root, tools) {
   let lastSmoke = 0;
   let mapReady = false;
   let raf = 0;
+  // going indoors: click a building and the owner walks to its door, then the
+  // view steps inside. Rooms are decorated by the engine (state.interiors,
+  // keyed by district key or 's'+structureId); old engines just get bare rooms.
+  let interiors = {};      // building key -> {wall,floor,vibe,items,by,tick}
+  let pendingEnter = null; // the building we're walking toward, until we arrive
+  let inside = null;       // set = the view is IN that building, not on the map
 
   // the owner walks the town too — a purely client-side avatar (the engine
   // never hears about it); where you stood last is remembered per device
@@ -269,6 +275,9 @@ export function mount(root, tools) {
   });
 
   function syncWorld(s) {
+    // room decor rides along with every state push — a viewer standing inside
+    // sees redecoration live, and never gets kicked out by the 5s refresh
+    interiors = s.interiors || {};
     const keys = Object.keys(s.map || {});
     if (!keys.length) { mapReady = false; return; }
     const cols = keys.length > 4 ? 3 : 2;
@@ -409,6 +418,12 @@ export function mount(root, tools) {
         me.moving = false;
         save('town.me', { x: Math.round(me.x), y: Math.round(me.y) });
       }
+      // reached the door of the building we were headed for? step inside
+      if (pendingEnter && !inside
+        && Math.hypot(me.x - pendingEnter.door.x, me.y - pendingEnter.door.y) < 14) {
+        inside = pendingEnter;
+        pendingEnter = null;
+      }
     }
     // the Test Kitchen's chimney smokes while the town is awake
     const kd = districts.kitchen;
@@ -417,7 +432,7 @@ export function mount(root, tools) {
       puffs.push({ kind: 'smoke', x: kd.x + kd.w / 2 + 20 + (Math.random() * 6 - 3), y: kd.y + 22, born: now });
     }
     puffs = puffs.filter(p => now - p.born < (p.kind === 'smoke' ? 2400 : 550));
-    draw(now, t);
+    if (inside) drawRoom(now, t); else draw(now, t);
   }
 
   // farm-sim daylight scene: grass field, dirt paths meeting at the plaza,
@@ -607,32 +622,317 @@ export function mount(root, tools) {
       }
     }
   }
+
+  // ---- inside a building ----
+  // same chunky-pixel language as the map: a wall band up top, a checkered
+  // floor below, the engine's furniture on a 12×8 grid, and whoever's home
+  const leaveChip = () => ({ x: 10, y: 10, w: 84, h: 26 });
+  function roomDoorRect() {
+    const { width: W, height: H } = canvas;
+    return { x: W / 2 - 26, y: H - 66, w: 52, h: 60 };
+  }
+
+  // one small fillRect sketch per palette kind — 4-10 rects reads perfectly at
+  // this scale. item.c tints where a tint makes sense; wall pieces (poster,
+  // banner, window) ignore their y and hang on the wall band instead.
+  function drawItem(item, gx, gy, now) {
+    // an invalid color string is a silent no-op on fillStyle (the PREVIOUS
+    // color would leak through) — accept only real hex, else use each default
+    const c = (typeof item.c === 'string' && /^#[0-9a-f]{3,8}$/i.test(item.c)) ? item.c : '';
+    switch (item.kind) {
+      case 'rug':
+        ctx.fillStyle = c || '#c96a5a'; ctx.fillRect(gx - 34, gy - 16, 68, 32);
+        ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fillRect(gx - 26, gy - 10, 52, 20);
+        ctx.fillStyle = c || '#c96a5a'; ctx.fillRect(gx - 18, gy - 6, 36, 12);
+        break;
+      case 'table':
+        ctx.fillStyle = '#6b4a2f'; ctx.fillRect(gx - 24, gy - 4, 5, 16); ctx.fillRect(gx + 19, gy - 4, 5, 16);
+        ctx.fillStyle = c || '#8a6540'; ctx.fillRect(gx - 28, gy - 12, 56, 10);
+        ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(gx - 28, gy - 12, 56, 3);
+        break;
+      case 'chair':
+        ctx.fillStyle = c || '#8a6540';
+        ctx.fillRect(gx - 8, gy - 24, 5, 22);                                  // backrest
+        ctx.fillRect(gx - 8, gy - 6, 18, 6);                                   // seat
+        ctx.fillStyle = '#5d3f28';
+        ctx.fillRect(gx - 8, gy, 4, 10); ctx.fillRect(gx + 6, gy, 4, 10);      // legs
+        break;
+      case 'bed':
+        ctx.fillStyle = '#6b4a2f'; ctx.fillRect(gx - 30, gy - 14, 60, 30);     // frame
+        ctx.fillStyle = '#f2ead8'; ctx.fillRect(gx - 27, gy - 11, 54, 22);     // mattress
+        ctx.fillStyle = c || '#5a7fc9'; ctx.fillRect(gx - 27, gy - 2, 54, 13); // blanket
+        ctx.fillStyle = '#fdfdf4'; ctx.fillRect(gx - 24, gy - 9, 14, 7);       // pillow
+        break;
+      case 'bookshelf':
+        ctx.fillStyle = '#6b4a2f'; ctx.fillRect(gx - 18, gy - 42, 36, 48);
+        ctx.fillStyle = '#4c3520'; ctx.fillRect(gx - 15, gy - 38, 30, 12); ctx.fillRect(gx - 15, gy - 22, 30, 12);
+        ctx.fillStyle = c || '#c96a5a'; ctx.fillRect(gx - 13, gy - 36, 6, 10); ctx.fillRect(gx - 1, gy - 20, 6, 10);
+        ctx.fillStyle = '#5a8f5a'; ctx.fillRect(gx - 5, gy - 36, 6, 10);
+        ctx.fillStyle = '#5a7fc9'; ctx.fillRect(gx + 3, gy - 36, 6, 10); ctx.fillRect(gx - 11, gy - 20, 6, 10);
+        break;
+      case 'plant':
+        ctx.fillStyle = c || '#b3562e'; ctx.fillRect(gx - 7, gy - 6, 14, 10);  // pot
+        ctx.fillStyle = '#3f7d33'; ctx.fillRect(gx - 2, gy - 18, 4, 12);       // stem
+        ctx.fillStyle = '#57a344';
+        ctx.fillRect(gx - 10, gy - 26, 9, 9); ctx.fillRect(gx + 2, gy - 24, 9, 9); ctx.fillRect(gx - 4, gy - 31, 9, 9);
+        break;
+      case 'lamp': {
+        const g = ctx.createRadialGradient(gx, gy - 26, 4, gx, gy - 26, 40);   // soft glow
+        g.addColorStop(0, 'rgba(255,236,160,0.45)');
+        g.addColorStop(1, 'rgba(255,236,160,0)');
+        ctx.fillStyle = g; ctx.fillRect(gx - 40, gy - 66, 80, 80);
+        ctx.fillStyle = '#5d5d5d'; ctx.fillRect(gx - 7, gy + 2, 14, 4); ctx.fillRect(gx - 2, gy - 22, 4, 24);
+        ctx.fillStyle = c || '#e8c86a'; ctx.fillRect(gx - 10, gy - 32, 20, 12);
+        break;
+      }
+      case 'poster':
+        ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(gx - 20, gy - 14, 44, 32);
+        ctx.fillStyle = c || '#fdfdf4'; ctx.fillRect(gx - 22, gy - 16, 44, 32);
+        ctx.fillStyle = 'rgba(0,0,0,0.15)'; ctx.fillRect(gx - 22, gy - 16, 44, 3);
+        if (item.text) label(String(item.text).slice(0, 12), gx, gy + 4, 9);
+        break;
+      case 'counter':
+        ctx.fillStyle = '#5d3f28'; ctx.fillRect(gx - 32, gy - 6, 64, 18);      // front
+        ctx.fillStyle = c || '#9a774c'; ctx.fillRect(gx - 34, gy - 12, 68, 8); // top
+        ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(gx - 34, gy - 12, 68, 2);
+        break;
+      case 'tv':
+        ctx.fillStyle = '#2b2b2b'; ctx.fillRect(gx - 20, gy - 26, 40, 26);
+        ctx.fillStyle = c || '#3f6f8f'; ctx.fillRect(gx - 17, gy - 23, 34, 20);
+        ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fillRect(gx - 15, gy - 21, 8, 6);
+        ctx.fillStyle = '#2b2b2b'; ctx.fillRect(gx - 4, gy, 8, 4); ctx.fillRect(gx - 10, gy + 4, 20, 3);
+        break;
+      case 'fireplace': {
+        ctx.fillStyle = c || '#8d8d8d'; ctx.fillRect(gx - 24, gy - 30, 48, 40);
+        ctx.fillStyle = '#4c4c4c'; ctx.fillRect(gx - 26, gy - 34, 52, 6);      // mantel
+        ctx.fillStyle = '#241b14'; ctx.fillRect(gx - 14, gy - 18, 28, 24);     // firebox
+        const f = Math.abs(Math.sin(now / 130 + gx)) * 6;                      // flicker
+        ctx.fillStyle = '#e8642e'; ctx.fillRect(gx - 8, gy - 4 - f, 16, 8 + f);
+        ctx.fillStyle = '#f2b13a'; ctx.fillRect(gx - 4, gy - 1 - f * 0.6, 8, 5 + f * 0.6);
+        break;
+      }
+      case 'crate':
+        ctx.fillStyle = c || '#9a774c'; ctx.fillRect(gx - 13, gy - 20, 26, 26);
+        ctx.fillStyle = '#6b4a2f';
+        ctx.fillRect(gx - 13, gy - 20, 26, 3); ctx.fillRect(gx - 13, gy + 3, 26, 3);
+        ctx.fillRect(gx - 13, gy - 20, 3, 26); ctx.fillRect(gx + 10, gy - 20, 3, 26);
+        ctx.fillStyle = 'rgba(0,0,0,0.15)'; ctx.fillRect(gx - 10, gy - 9, 20, 3);
+        break;
+      case 'banner':
+        ctx.fillStyle = '#6b4a2f'; ctx.fillRect(gx - 26, gy - 20, 52, 4);      // rod
+        ctx.fillStyle = c || '#b0483f'; ctx.fillRect(gx - 22, gy - 16, 44, 26);
+        ctx.fillRect(gx - 22, gy + 10, 14, 6); ctx.fillRect(gx + 8, gy + 10, 14, 6);
+        if (item.text) label(String(item.text).slice(0, 10), gx, gy, 9);
+        break;
+      case 'trophy':
+        ctx.fillStyle = '#e0b23a';
+        ctx.fillRect(gx - 8, gy - 22, 16, 12);                                 // cup
+        ctx.fillRect(gx - 12, gy - 20, 4, 6); ctx.fillRect(gx + 8, gy - 20, 4, 6);
+        ctx.fillRect(gx - 2, gy - 10, 4, 6);                                   // stem
+        ctx.fillStyle = '#8a6540'; ctx.fillRect(gx - 8, gy - 4, 16, 5);        // base
+        ctx.fillStyle = `rgba(255,255,255,${0.45 + Math.sin(now / 260) * 0.35})`;
+        ctx.fillRect(gx - 5, gy - 20, 3, 5);                                   // gleam
+        break;
+      case 'window':
+        ctx.fillStyle = '#fdfdf4'; ctx.fillRect(gx - 18, gy - 20, 36, 40);
+        ctx.fillStyle = '#8fd0e8'; ctx.fillRect(gx - 15, gy - 17, 30, 34);     // sky
+        ctx.fillStyle = '#fdfdf4'; ctx.fillRect(gx - 2, gy - 17, 4, 34); ctx.fillRect(gx - 15, gy - 2, 30, 4);
+        break;
+      case 'kettle':
+        ctx.fillStyle = c || '#6f7f8a';
+        ctx.fillRect(gx - 8, gy - 10, 16, 12);                                 // body
+        ctx.fillRect(gx - 13, gy - 8, 5, 4);                                   // spout
+        ctx.fillRect(gx - 3, gy - 14, 6, 4);                                   // lid
+        ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(gx - 4, gy - 18, 8, 3);
+        ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fillRect(gx - 6, gy - 8, 3, 6);
+        break;
+    }
+  }
+
+  // a villager standing indoors: their front-facing sheet when it's loaded,
+  // their base sprite otherwise, the tinted circle as the last resort
+  function drawOccupant(sp, ox, oy, t) {
+    const bob = Math.sin(t / 650 + (sp.hue || 0)) * 1.2;
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(ox, oy + 12, 10, 3.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    const img = sp.artKey && (art[`${sp.artKey}_front`] || art[sp.artKey]);
+    if (img) {
+      if (sp.isHire && 'filter' in ctx) ctx.filter = `hue-rotate(${sp.hue}deg)`;
+      drawSprite(img, ox, oy + 12 - bob, 46, 42);
+      if (sp.isHire) ctx.filter = 'none';
+    } else {
+      ctx.fillStyle = sp.isMe ? '#8a5bd6' : `hsl(${sp.hue} 45% 38%)`;
+      ctx.beginPath();
+      ctx.arc(ox, oy + bob, 11, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.font = '13px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText(sp.face || '🙂', ox, oy + bob + 4);
+    }
+    label(sp.name || '', ox, oy + 28);
+  }
+
+  function drawRoom(now, t) {
+    const { width: W, height: H } = canvas;
+    ctx.imageSmoothingEnabled = false;   // same crisp pixels indoors
+    const it = interiors[inside.key];
+    const wall = it?.wall || '#b9a68d';
+    const floor = it?.floor || '#96826a';
+    const wallH = Math.max(64, Math.floor(H / 3));
+
+    // wall band with a darker baseboard, then the checkered floor
+    ctx.fillStyle = wall;
+    ctx.fillRect(0, 0, W, wallH);
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.fillRect(0, wallH - 7, W, 7);
+    ctx.fillStyle = floor;
+    ctx.fillRect(0, wallH, W, H - wallH);
+    ctx.fillStyle = 'rgba(0,0,0,0.05)';
+    const tile = 30;
+    for (let cy = wallH; cy < H; cy += tile) {
+      for (let cx = ((cy - wallH) / tile) % 2 ? tile : 0; cx < W; cx += tile * 2) {
+        ctx.fillRect(cx, cy, tile, Math.min(tile, H - cy));
+      }
+    }
+
+    // the way out, bottom-center — clicking it (or the chip, or Escape) leaves
+    const dr = roomDoorRect();
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(dr.x - 5, dr.y - 5, dr.w + 10, dr.h + 5);
+    ctx.fillStyle = '#6b4a2f';
+    ctx.fillRect(dr.x, dr.y, dr.w, dr.h);
+    ctx.fillStyle = '#8a6540';
+    ctx.fillRect(dr.x + 4, dr.y + 4, dr.w - 8, dr.h - 4);
+    ctx.fillStyle = '#e8d9a0';
+    ctx.fillRect(dr.x + dr.w - 12, dr.y + dr.h / 2 - 2, 4, 4);
+
+    // the vibe the decorator set — or the nudge that nobody has yet
+    const caption = it?.vibe ? String(it.vibe).slice(0, 64) : (it ? '' : 'Nobody’s decorated this place yet.');
+    if (caption) label(caption, W / 2, 22, 11);
+
+    // the plaque: whose place this is
+    const pw = 240;
+    ctx.fillStyle = '#7a5a38';
+    ctx.fillRect(W / 2 - pw / 2, wallH - 48, pw, 34);
+    ctx.fillStyle = '#9a774c';
+    ctx.fillRect(W / 2 - pw / 2 + 3, wallH - 45, pw - 6, 28);
+    label(String(inside.name || '').slice(0, 26), W / 2, wallH - 33, 12);
+    // a structure's owner field is an agent ID — show their current name
+    const ownerSp = inside.type === 'struct' ? sprites.get(inside.owner) : null;
+    const ownerName = inside.type === 'struct' ? (ownerSp?.name || '') : String(inside.owner || '');
+    if (ownerName) label(ownerName.slice(0, 26), W / 2, wallH - 20, 9);
+
+    // furniture on the 12×8 grid mapped over the floor (rugs first, so
+    // everything else sits on top); wall pieces hang on the band up top
+    const fx = 40, fw = W - 80;
+    const fy = wallH + 12, fh = Math.max(40, H - wallH - 84);
+    const onWall = k => k === 'poster' || k === 'banner' || k === 'window';
+    const items = (Array.isArray(it?.items) ? it.items.filter(o => o && typeof o === 'object') : []).slice()
+      .sort((a, b) => (a.kind === 'rug' ? 0 : 1) - (b.kind === 'rug' ? 0 : 1));
+    for (const item of items) {
+      const gx = fx + (Math.max(0, Math.min(11, Number(item.x) || 0)) + 0.5) * (fw / 12);
+      const gy = onWall(item.kind)
+        ? wallH * 0.5
+        : fy + (Math.max(0, Math.min(7, Number(item.y) || 0)) + 0.5) * (fh / 8);
+      drawItem(item, gx, gy, now);
+    }
+
+    // who's home: everyone whose loc is this district (a structure gets just
+    // its owner, if they're around) — and you, by the door you came in through
+    const occ = inside.type === 'struct'
+      ? (ownerSp && ownerSp.loc === inside.loc ? [ownerSp] : [])
+      : [...sprites.values()].filter(sp => sp.loc === inside.key);
+    occ.forEach((sp, i) => {
+      const ox = fx + ((i + 1) / (occ.length + 1)) * fw;
+      const oy = fy + fh * (0.45 + (i % 2) * 0.22);
+      drawOccupant(sp, ox, oy, t);
+    });
+    drawOccupant(me, dr.x - 36, dr.y + 24, t);
+
+    // the way back to town, drawn last so nothing covers it
+    const chip = leaveChip();
+    ctx.fillStyle = 'rgba(253,253,244,0.92)';
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.roundRect(chip.x, chip.y, chip.w, chip.h, 8);
+    ctx.fill(); ctx.stroke();
+    label('⬅ leave', chip.x + chip.w / 2, chip.y + 17, 11);
+  }
   raf = requestAnimationFrame(frame);
 
   // click (or tap) to walk the owner there — the canvas is CSS-scaled, so map
   // pointer coords back into its internal pixels first. Clicking close to a
   // villager means "go talk to them": walk over AND aim the chat box at them.
+  // Clicking a building means "go in": walk to its door, then step inside.
   canvas.addEventListener('click', e => {
     if (!mapReady) return;
     const rect = canvas.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
     const x = (e.clientX - rect.left) * (canvas.width / rect.width);
     const y = (e.clientY - rect.top) * (canvas.height / rect.height);
-    let nearId = null, nearSp = null, nearD = 26;
+    // indoors, the only clickables are the ways out: the chip and the door
+    if (inside) {
+      const chip = leaveChip();
+      const dr = roomDoorRect();
+      if ((x >= chip.x && x <= chip.x + chip.w && y >= chip.y && y <= chip.y + chip.h)
+        || (x >= dr.x - 8 && x <= dr.x + dr.w + 8 && y >= dr.y - 8)) {
+        inside = null;                     // back to town, right where we stood
+      }
+      return;
+    }
+    let nearId = null, nearSp = null, nearD = 30;
     for (const [id, sp] of sprites) {
-      const d = Math.hypot(sp.x - x, sp.y - y);
+      if (Math.abs(sp.x - x) > 21 || y < sp.y - 40 || y > sp.y + 16) continue; // drawn body only
+      const d = Math.hypot(sp.x - x, (sp.y - 14) - y); // distance to the torso
       if (d < nearD) { nearD = d; nearId = id; nearSp = sp; }
     }
     if (nearSp) {
+      pendingEnter = null;
       me.tx = nearSp.x + (me.x < nearSp.x ? -22 : 22);
       me.ty = nearSp.y + 4;
       const who = root.querySelector('#town-who');
       if ([...who.options].some(o => o.value === nearId)) who.value = nearId;
       root.querySelector('#town-say').focus();
-    } else {
-      me.tx = x; me.ty = y;
+      return;
     }
+    // a business building (or a FINISHED structure — scaffolding keeps you
+    // out) near the click? walk to a door point just below it, enter on arrival
+    let hit = null, hitD = Infinity;
+    for (const d of Object.values(districts)) {
+      const bx = d.x + d.w / 2, by = d.y + 70;
+      const dd = Math.hypot(x - bx, y - by);
+      if (dd < 52 && dd < hitD) {
+        hitD = dd;
+        hit = { type: 'district', key: d.key, name: d.label, owner: 'Dyer Town',
+          loc: d.key, door: { x: bx, y: d.y + 124 } };
+      }
+    }
+    for (const st of placedStructs) {
+      if ((Number(st.progress) || 0) < 100) continue;
+      const dd = Math.hypot(x - st.x, y - st.y);
+      if (dd < 30 && dd < hitD) {
+        hitD = dd;
+        hit = { type: 'struct', key: st.id != null ? `s${st.id}` : `s:${st.loc}:${st.name || ''}`,
+          name: st.name || st.kind,
+          owner: st.owner || '', loc: st.loc, door: { x: st.x, y: st.y + 30 } };  // owner is the agent ID
+      }
+    }
+    if (hit) {
+      pendingEnter = hit;
+      me.tx = hit.door.x; me.ty = hit.door.y;
+      return;
+    }
+    pendingEnter = null;
+    me.tx = x; me.ty = y;
   });
+
+  // Escape steps back outside too
+  const onKeydown = e => {
+    if (e.key === 'Escape' && inside) { inside = null; pendingEnter = null; }
+  };
+  window.addEventListener('keydown', onKeydown);
 
   function paintOffline(updatedAt) {
     grid.hidden = true;
@@ -863,5 +1163,6 @@ export function mount(root, tools) {
     alive = false;
     clearInterval(timer);
     cancelAnimationFrame(raf);
+    window.removeEventListener('keydown', onKeydown);
   };
 }
