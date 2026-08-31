@@ -1011,9 +1011,12 @@ export function mount(root, tools) {
     offline.innerHTML = `
       <div class="big">🏙️</div>
       <p><strong>The town is asleep.</strong></p>
-      <p class="muted">Dyer Town runs on your Mac — start it there (<code>npm start</code> in the
-      agent-town folder, with DASH_URL and TOWN_KEY set) and it appears here live.</p>
-      ${when ? `<p class="muted">Last seen ${esc(when)}.</p>` : ''}`;
+      <p class="muted">Dyer Town runs on your own PC — start it there
+      (<code>run-town.bat</code>, or <code>npm start</code> in the agent-town folder)
+      and it appears here live.</p>
+      ${when ? `<p class="muted">Last seen ${esc(when)}.</p>` : ''}
+      <p class="muted">If it IS running, give it a few seconds — the town checks in
+      about every 15 seconds.</p>`;
   }
 
   function paint(d) {
