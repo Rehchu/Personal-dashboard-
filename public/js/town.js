@@ -33,6 +33,9 @@ const TOWN_ART_SRC = {
   char_apex: `${HF}hf_20260831_013239_abf91edf-2bcb-4a70-9b62-7c03e148ca53.png`,
   char_draco: `${HF}hf_20260831_013239_8a9d6aa4-6a6b-4670-b994-19bb5a374f57.png`,
   char_spork: `${HF}hf_20260831_013239_bb6be375-b53c-4910-b17e-4f4f115ff3a0.png`,
+  // one shared sprite for in-world hires (hue-shifted per person) and the owner
+  char_hire: `${HF}hf_20260831_042858_d9ce3a7a-9a7b-4556-a6ed-9cb8765f2d0b.png`,
+  char_boss: `${HF}hf_20260831_042858_a435ece7-0026-4234-b9fb-afb52907c232.png`,
 };
 
 async function loadTownArt(kind) {
@@ -144,7 +147,14 @@ function injectStyle() {
     .town-chat-row select, .town-chat-row input { padding:8px 10px; font-size:15px; }
     .town-chat-row input { flex:1; min-width:0; }
     .town-off { text-align:center; padding:30px 16px; color:var(--ink-2); }
-    .town-off .big { font-size:2.4rem; }`;
+    .town-off .big { font-size:2.4rem; }
+    #town-morale { display:inline-flex; align-items:center; gap:6px; margin-left:8px;
+      font-weight:400; font-size:11px; color:var(--ink-3); vertical-align:middle; }
+    #town-morale[hidden] { display:none; }
+    #town-morale .bar { width:120px; height:8px; border-radius:5px; overflow:hidden;
+      background:color-mix(in oklab,var(--ink-3) 24%,transparent);
+      border:1px solid color-mix(in oklab,var(--ink-3) 28%,transparent); }
+    #town-morale .fill { display:block; height:100%; border-radius:5px; }`;
   document.head.append(style);
 }
 
@@ -162,7 +172,7 @@ export function mount(root, tools) {
   root.innerHTML = `
     <div id="town-grid">
       <div>
-        <div class="panel"><h3>The town <span id="town-wx" style="font-weight:400;font-size:12px;color:var(--ink-3)"></span></h3><canvas id="town-canvas"></canvas></div>
+        <div class="panel"><h3>The town <span id="town-wx" style="font-weight:400;font-size:12px;color:var(--ink-3)"></span><span id="town-morale" hidden><span class="lbl"></span><span class="bar"><span class="fill"></span></span></span></h3><canvas id="town-canvas"></canvas></div>
         <div class="panel" style="margin-top:16px"><h3>Live feed</h3><div class="town-feed" id="town-feed"></div></div>
       </div>
       <div>
@@ -170,11 +180,13 @@ export function mount(root, tools) {
         <div class="panel" style="margin-top:16px"><h3>Townsfolk</h3><div id="town-agents"></div></div>
         <div class="panel" style="margin-top:16px"><h3>Work reports</h3><div id="town-reports"></div></div>
         <div class="panel" style="margin-top:16px"><h3>🏛️ Town charter</h3><div id="town-laws"></div></div>
+        <div class="panel" id="town-notes-panel" style="margin-top:16px" hidden><h3>🗒️ Notes desk</h3><div id="town-notes"></div></div>
         <div class="panel" style="margin-top:16px"><h3>Talk to someone</h3>
           <div class="town-chat-row">
             <select id="town-who"></select>
             <input id="town-say" placeholder="Say something…" autocomplete="off" maxlength="500">
             <button class="btn small" id="town-send">Send</button>
+            <button class="btn small" id="town-meet" title="📣 Call a town meeting — everyone gathers and answers">📣</button>
           </div>
           <div class="town-chatlog" id="town-chatlog"></div>
         </div>
@@ -205,6 +217,15 @@ export function mount(root, tools) {
   let lastSmoke = 0;
   let mapReady = false;
   let raf = 0;
+
+  // the owner walks the town too — a purely client-side avatar (the engine
+  // never hears about it); where you stood last is remembered per device
+  const me = (() => {
+    const p = load('town.me', null);
+    const x = Number(p?.x), y = Number(p?.y);
+    return { name: 'You', artKey: 'char_boss', face: '👑', hue: 42, isMe: true,
+      x, y, tx: x, ty: y, moving: false };
+  })();
 
   // bottom-center anchored, aspect preserved — art pieces are cropped to their
   // true pixels now, so each scales to fit its slot instead of a fixed square
@@ -252,6 +273,12 @@ export function mount(root, tools) {
     });
     makeDecor();
 
+    // the owner spawns by the plaza fountain — first visit, or a saved spot
+    // that no longer fits the map
+    if (!Number.isFinite(me.x) || !Number.isFinite(me.y) || me.x < 0 || me.x > W || me.y < 0 || me.y > H) {
+      me.x = W / 2 + 34; me.y = H / 2 + 22; me.tx = me.x; me.ty = me.y;
+    }
+
     // agent-built structures line the bottom of their district's plot; the
     // district's own business building holds the top-center spot
     const perLoc = {};
@@ -278,7 +305,10 @@ export function mount(root, tools) {
       sp.name = a.name;
       sp.face = AGENT_FACES[hashStr(a.id) % AGENT_FACES.length];
       sp.hue = hashStr(a.name || a.id) % 360;
-      sp.artKey = `char_${a.id}` in TOWN_ART_SRC ? `char_${a.id}` : null;
+      // in-world hires share one sprite, hue-shifted per person at draw time
+      sp.isHire = String(a.id).startsWith('hire_');
+      sp.artKey = sp.isHire ? 'char_hire'
+        : `char_${a.id}` in TOWN_ART_SRC ? `char_${a.id}` : null;
     }
     for (const id of sprites.keys()) if (!seen.has(id)) sprites.delete(id);
 
@@ -345,6 +375,26 @@ export function mount(root, tools) {
       if (sp.moving && now - (sp.lastDust || 0) > 170) {
         sp.lastDust = now;
         puffs.push({ kind: 'dust', x: sp.x - (sp.dir || 1) * 7 + (Math.random() * 6 - 3), y: sp.y + 10, born: now });
+      }
+    }
+    // the owner strolls like everyone else, minus the wandering — walk where
+    // clicked, then stand; the spot is saved once the walk ends
+    if (Number.isFinite(me.x)) {
+      const dx = me.tx - me.x, dy = me.ty - me.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > 2) {
+        const speed = 55;
+        me.x += (dx / dist) * speed * dt;
+        me.y += (dy / dist) * speed * dt;
+        me.moving = true;
+        if (Math.abs(dx) > 2) me.dir = dx < 0 ? -1 : 1;
+        if (now - (me.lastDust || 0) > 170) {
+          me.lastDust = now;
+          puffs.push({ kind: 'dust', x: me.x - (me.dir || 1) * 7 + (Math.random() * 6 - 3), y: me.y + 10, born: now });
+        }
+      } else if (me.moving) {
+        me.moving = false;
+        save('town.me', { x: Math.round(me.x), y: Math.round(me.y) });
       }
     }
     // the Test Kitchen's chimney smokes while the town is awake
@@ -479,8 +529,8 @@ export function mount(root, tools) {
       }
     }
 
-    // townsfolk, back-to-front so nearer ones overlap farther ones
-    const walkers = [...sprites.values()].sort((a, b) => a.y - b.y);
+    // townsfolk (and the owner), back-to-front so nearer ones overlap farther ones
+    const walkers = [...sprites.values(), ...(Number.isFinite(me.x) ? [me] : [])].sort((a, b) => a.y - b.y);
     for (const sp of walkers) {
       // a real walk: step rhythm in the bounce, a waddle in the shoulders,
       // slow breathing when standing still
@@ -497,10 +547,15 @@ export function mount(root, tools) {
         ctx.translate(sp.x, sp.y + 12);        // pivot at the feet
         ctx.rotate(tilt);
         if (sp.dir === -1) ctx.scale(-1, 1);   // sprites face right natively
+        // hires share one sprite — a per-person hue shift keeps them distinct
+        // hue-rotate is silently ignored where 2D-canvas filters are missing
+        // (older Safari); those browsers fall back to identical untinted hires
+        if (sp.isHire && 'filter' in ctx) ctx.filter = `hue-rotate(${sp.hue}deg)`;
         drawSprite(img, 0, -bob, 46, 42);
+        if (sp.isHire) ctx.filter = 'none';
         ctx.restore();
       } else {
-        ctx.fillStyle = `hsl(${sp.hue} 45% 38%)`;
+        ctx.fillStyle = sp.isMe ? '#8a5bd6' : `hsl(${sp.hue} 45% 38%)`;
         ctx.beginPath();
         ctx.arc(sp.x, sp.y + bob, 11, 0, Math.PI * 2);
         ctx.fill();
@@ -532,6 +587,31 @@ export function mount(root, tools) {
   }
   raf = requestAnimationFrame(frame);
 
+  // click (or tap) to walk the owner there — the canvas is CSS-scaled, so map
+  // pointer coords back into its internal pixels first. Clicking close to a
+  // villager means "go talk to them": walk over AND aim the chat box at them.
+  canvas.addEventListener('click', e => {
+    if (!mapReady) return;
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+    let nearId = null, nearSp = null, nearD = 26;
+    for (const [id, sp] of sprites) {
+      const d = Math.hypot(sp.x - x, sp.y - y);
+      if (d < nearD) { nearD = d; nearId = id; nearSp = sp; }
+    }
+    if (nearSp) {
+      me.tx = nearSp.x + (me.x < nearSp.x ? -22 : 22);
+      me.ty = nearSp.y + 4;
+      const who = root.querySelector('#town-who');
+      if ([...who.options].some(o => o.value === nearId)) who.value = nearId;
+      root.querySelector('#town-say').focus();
+    } else {
+      me.tx = x; me.ty = y;
+    }
+  });
+
   function paintOffline(updatedAt) {
     grid.hidden = true;
     offline.hidden = false;
@@ -553,6 +633,20 @@ export function mount(root, tools) {
     syncWorld(s);
 
     root.querySelector('#town-wx').textContent = s.weather ? `· ${s.weather}` : '';
+
+    // town morale, when the engine reports it (older engines don't — no meter then)
+    const moraleEl = root.querySelector('#town-morale');
+    const morale = s.morale == null ? NaN : Number(s.morale);
+    if (Number.isFinite(morale)) {
+      const m = Math.max(0, Math.min(100, morale));
+      moraleEl.hidden = false;
+      moraleEl.querySelector('.lbl').textContent = `morale ${Math.round(m)}`;
+      const fill = moraleEl.querySelector('.fill');
+      fill.style.width = `${m}%`;
+      fill.style.background = m >= 65 ? '#57b86a' : m >= 35 ? '#e0b23a' : '#ff8a92';
+    } else {
+      moraleEl.hidden = true;
+    }
 
     root.querySelector('#town-agents').innerHTML = (s.agents || []).map(a => {
       const ev = a.eval && a.eval.note
@@ -579,6 +673,18 @@ export function mount(root, tools) {
       ].join('')
       : '<p class="muted" style="margin:0">No laws yet — the town runs on goodwill.</p>';
 
+    // the notes desk: what the townsfolk have written up about each other —
+    // only engines that file notes get a desk at all
+    const notesPanel = root.querySelector('#town-notes-panel');
+    if (Array.isArray(s.notes)) {
+      notesPanel.hidden = false;
+      root.querySelector('#town-notes').innerHTML = s.notes.length
+        ? s.notes.slice(-6).reverse().map(n => `<div class="town-ev"><span class="t">t${Number(n.tick) || 0}</span><b>${esc(n.by || '?')}</b> on ${esc(n.about || '?')}: “${esc(n.text || '')}”</div>`).join('')
+        : '<p class="muted" style="margin:0">No notes filed yet.</p>';
+    } else {
+      notesPanel.hidden = true;
+    }
+
     root.querySelector('#town-feed').innerHTML = (s.feed || []).map(e => `
       <div class="town-ev"><span class="t">t${Number(e.tick) || 0}</span><b>${esc(e.name)}</b> ${esc(e.text)}</div>`).join('');
 
@@ -592,6 +698,7 @@ export function mount(root, tools) {
         t.shifts ? `${t.shifts} shift${t.shifts === 1 ? '' : 's'}` : '',
         t.jobsTaken ? `${t.jobsTaken} job${t.jobsTaken === 1 ? '' : 's'} taken` : '',
         t.hires ? `${t.hires} hire${t.hires === 1 ? '' : 's'}` : '',
+        t.notesFiled ? `${t.notesFiled} note${t.notesFiled === 1 ? '' : 's'} filed` : '',
         t.earned ? `+${t.earned}c earned` : '',
         t.spent ? `−${t.spent}c spent` : '',
       ].filter(Boolean).join(' · ') || 'no work on record yet';
@@ -665,17 +772,19 @@ export function mount(root, tools) {
 
   // send a message, then poll for the agent's answer — the Mac replies between
   // ticks, so a few seconds of patience with a visible "…" bubble
-  async function sendChat() {
-    const agentId = root.querySelector('#town-who').value;
+  async function sendChat(toAll = false) {
+    const agentId = toAll ? 'all' : root.querySelector('#town-who').value;
     const input = root.querySelector('#town-say');
     const message = input.value.trim();
     if (!agentId || !message) return;
     input.value = '';
     const log = root.querySelector('#town-chatlog');
-    log.insertAdjacentHTML('beforeend', `<div class="town-msg me">${esc(message)}</div>`);
+    log.insertAdjacentHTML('beforeend',
+      `<div class="town-msg me">${toAll ? '📣 ' : ''}${esc(message)}</div>`);
     const bubble = document.createElement('div');
     bubble.className = 'town-msg them';
-    bubble.textContent = '…';
+    bubble.style.whiteSpace = 'pre-line'; // a meeting reply is one line per villager
+    bubble.textContent = toAll ? 'the town is gathering at the plaza…' : '…';
     log.append(bubble);
     log.scrollTop = log.scrollHeight;
     try {
@@ -686,7 +795,9 @@ export function mount(root, tools) {
       });
       const { id } = await res.json();
       if (!res.ok || !id) throw new Error();
-      for (let i = 0; i < 20 && alive; i++) {           // up to ~60s of polling
+      // a meeting takes as long as the whole town answering — poll patiently
+      const polls = toAll ? 80 : 20;
+      for (let i = 0; i < polls && alive; i++) {
         await new Promise(r => setTimeout(r, 3000));
         const poll = await fetch(`/api/town/chat/${id}`).then(r => r.json()).catch(() => null);
         if (poll?.reply) { bubble.textContent = poll.reply; log.scrollTop = log.scrollHeight; return; }
@@ -699,7 +810,12 @@ export function mount(root, tools) {
   }
 
   refreshBtn.addEventListener('click', refresh);
-  root.querySelector('#town-send').addEventListener('click', sendChat);
+  root.querySelector('#town-meet').addEventListener('click', () => {
+    const input = root.querySelector('#town-say');
+    if (!input.value.trim()) { input.placeholder = 'Type what to ask the whole town, then 📣'; input.focus(); return; }
+    sendChat(true);
+  });
+  root.querySelector('#town-send').addEventListener('click', () => sendChat());
   root.querySelector('#town-say').addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
 
   refresh();
