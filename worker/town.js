@@ -22,7 +22,14 @@ const MAX_MSG = 500;
 // Building art for the animated map. Generated once on Higgsfield, pulled by
 // the Worker (this container of code never proxies arbitrary hosts — same
 // allowlist discipline as bgimport.js) and kept in R2 under fixed keys.
-const ART_KINDS = new Set(['house', 'shop', 'landmark']);
+const ART_KINDS = new Set([
+  // structures the agents build
+  'house', 'shop', 'landmark',
+  // the districts' own businesses
+  'repairshop', 'chapel', 'gym', 'library', 'kitchen', 'plaza',
+  // the townsfolk themselves
+  'char_ctrl', 'char_arise', 'char_apex', 'char_draco', 'char_spork',
+]);
 const MAX_ART = 8 * 1024 * 1024;   // a 1k PNG is ~1–2 MB
 function artHostAllowed(host) {
   const h = host.toLowerCase();
@@ -92,9 +99,10 @@ export async function handleTown(url, request, env, { authed, syncKeyOk }) {
     return json({ reply: row.reply ?? null, repliedAt: row.replied_at ?? null });
   }
 
-  const artMatch = path.match(/^\/api\/town\/art\/(house|shop|landmark)$/);
+  const artMatch = path.match(/^\/api\/town\/art\/([a-z0-9_]{1,20})$/);
   if (artMatch && request.method === 'GET') {
     if (!authed) return json({ error: 'sign in first' }, 401);
+    if (!ART_KINDS.has(artMatch[1])) return json({ error: 'unknown art kind' }, 404);
     const obj = await env.MEDIA.get(`town/art/${artMatch[1]}`);
     if (!obj) return json({ error: 'no art yet' }, 404);
     return new Response(obj.body, {

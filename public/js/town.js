@@ -9,13 +9,30 @@ import { load, save, esc, showToast } from './store.js';
 
 const KIND_ICO = { house: '🏠', shop: '🏪', landmark: '🗼' };
 
-// Building art, generated on Higgsfield. The Worker pulls each file server-side
-// into R2 the first time a signed-in browser asks for it (this module posts the
+// Pixel art, generated on Higgsfield in one farm-sim style pass: a building
+// for every district business, the three structures agents can build, and a
+// walking sprite per townsperson. The Worker pulls each file server-side into
+// R2 the first time a signed-in browser asks for it (this module posts the
 // source URL; the Worker's allowlist vets it), then serves it from R2 forever.
+const HF = 'https://d8j0ntlcm91z4.cloudfront.net/user_3IckDDDwJI3D408OKE8QdQYJgqc/';
 const TOWN_ART_SRC = {
-  house: 'https://d8j0ntlcm91z4.cloudfront.net/user_3IckDDDwJI3D408OKE8QdQYJgqc/hf_20260830_183122_ea85b24e-4253-47c4-ba5e-aebc8877285f.png',
-  shop: 'https://d8j0ntlcm91z4.cloudfront.net/user_3IckDDDwJI3D408OKE8QdQYJgqc/hf_20260830_183122_caac7e17-d1ca-42d5-b360-f4e4ffab20bd.png',
-  landmark: 'https://d8j0ntlcm91z4.cloudfront.net/user_3IckDDDwJI3D408OKE8QdQYJgqc/hf_20260830_183122_d78f1a17-0477-466c-a549-c501105b297a.png',
+  // agent-built structures
+  house: `${HF}hf_20260831_013159_667a3d7f-6a3b-492e-a088-a981a010ea68.png`,
+  shop: `${HF}hf_20260831_013159_2da96ad1-1d68-4870-bcaa-2e1a99fd80c6.png`,
+  landmark: `${HF}hf_20260831_013158_5b30c53c-8df7-4742-a7ea-396c67a8dc91.png`,
+  // the districts' businesses
+  repairshop: `${HF}hf_20260831_013158_59eb17e2-6933-4648-9781-6ec14de54f78.png`,
+  chapel: `${HF}hf_20260831_013159_2f94bb47-59ba-4b43-8203-ae01cc5aab0f.png`,
+  gym: `${HF}hf_20260831_013158_ac9cab29-ee51-4a02-b699-62428c6b7cc1.png`,
+  library: `${HF}hf_20260831_013159_462038e3-a9a3-45ac-ab06-1480ca77ff1d.png`,
+  kitchen: `${HF}hf_20260831_013159_141466af-243d-4e88-8fe7-b17bcc1338cf.png`,
+  plaza: `${HF}hf_20260831_013159_032b5a18-f94f-40bc-b493-af14758b0083.png`,
+  // the townsfolk
+  char_ctrl: `${HF}hf_20260831_013238_a909536b-cada-4a2f-89f5-bb2e68b0230b.png`,
+  char_arise: `${HF}hf_20260831_013239_a1061fe4-347c-4a41-b7f0-810bd50e9575.png`,
+  char_apex: `${HF}hf_20260831_013239_abf91edf-2bcb-4a70-9b62-7c03e148ca53.png`,
+  char_draco: `${HF}hf_20260831_013239_8a9d6aa4-6a6b-4670-b994-19bb5a374f57.png`,
+  char_spork: `${HF}hf_20260831_013239_bb6be375-b53c-4910-b17e-4f4f115ff3a0.png`,
 };
 
 async function loadTownArt(kind) {
@@ -50,7 +67,8 @@ function injectStyle() {
     #town-grid { display:grid; grid-template-columns: 1.3fr 1fr; gap:16px; align-items:start; }
     @media (max-width: 860px){ #town-grid { grid-template-columns:1fr; } }
     #town-canvas { display:block; width:100%; border-radius:12px;
-      background:#101a16; border:1px solid color-mix(in oklab,var(--ink-3) 28%,transparent); }
+      background:#74b64e; border:1px solid color-mix(in oklab,var(--ink-3) 28%,transparent);
+      image-rendering:pixelated; }
     .town-feed { max-height:300px; overflow:auto; }
     .town-ev { padding:6px 0; border-top:1px solid color-mix(in oklab,var(--ink-3) 18%,transparent); font-size:13.5px; color:var(--ink-2); }
     .town-ev:first-child { border-top:0; }
@@ -120,13 +138,30 @@ export function mount(root, tools) {
   const art = {};
   for (const kind of Object.keys(TOWN_ART_SRC)) loadTownArt(kind).then(img => { if (img) art[kind] = img; });
 
-  const CELL_H = 200;
-  let districts = {};      // loc key -> {x,y,w,h,label}
+  const CELL_H = 210;
+  let districts = {};      // loc key -> {x,y,w,h,label,key}
   let placedStructs = [];  // structures with computed x/y
+  let decor = [];          // grass tufts and flowers, fixed per layout
   const sprites = new Map();
   const bubblesShown = new Set();
   let mapReady = false;
   let raf = 0;
+
+  // deterministic scatter — the same tuft grows in the same spot every frame
+  function makeDecor() {
+    decor = [];
+    for (const [key, d] of Object.entries(districts)) {
+      for (let i = 0; i < 9; i++) {
+        const h = hashStr(`${key}:${i}`);
+        decor.push({
+          x: d.x + 12 + h % Math.max(1, d.w - 24),
+          y: d.y + 34 + (h >> 7) % Math.max(1, d.h - 46),
+          kind: i < 6 ? 'tuft' : 'flower',
+          tint: ['#ffd94a', '#ff8bb3', '#fdfdf4'][h % 3],
+        });
+      }
+    }
+  }
 
   const randIn = d => ({
     x: d.x + 24 + Math.random() * (d.w - 48),
@@ -143,16 +178,20 @@ export function mount(root, tools) {
     districts = {};
     keys.forEach((k, i) => {
       districts[k] = {
+        key: k,
         x: (i % cols) * (W / cols) + 6, y: Math.floor(i / cols) * CELL_H + 6,
         w: W / cols - 12, h: CELL_H - 12, label: s.map[k],
       };
     });
+    makeDecor();
 
+    // agent-built structures line the bottom of their district's plot; the
+    // district's own business building holds the top-center spot
     const perLoc = {};
     placedStructs = (s.structures || []).map(st => {
       const d = districts[st.loc] || districts[keys[0]];
       const i = (perLoc[st.loc] = (perLoc[st.loc] || 0) + 1) - 1;
-      return { ...st, x: d.x + 46 + (i % 3) * 86, y: d.y + 52 + Math.floor(i / 3) * 12 };
+      return { ...st, x: d.x + 40 + (i % 4) * 62, y: d.y + d.h - 44 - Math.floor(i / 4) * 18 };
     });
 
     const seen = new Set();
@@ -172,6 +211,7 @@ export function mount(root, tools) {
       sp.name = a.name;
       sp.face = AGENT_FACES[hashStr(a.id) % AGENT_FACES.length];
       sp.hue = hashStr(a.name || a.id) % 360;
+      sp.artKey = `char_${a.id}` in TOWN_ART_SRC ? `char_${a.id}` : null;
     }
     for (const id of sprites.keys()) if (!seen.has(id)) sprites.delete(id);
 
@@ -210,6 +250,7 @@ export function mount(root, tools) {
         sp.x += (dx / dist) * speed * dt;
         sp.y += (dy / dist) * speed * dt;
         sp.moving = true;
+        if (Math.abs(dx) > 2) sp.dir = dx < 0 ? -1 : 1;    // face where you walk
       } else if (sp.moving || !sp.wanderAt) {
         sp.moving = false;
         sp.wanderAt = now + 1200 + Math.random() * 3500;   // linger, then wander
@@ -222,73 +263,136 @@ export function mount(root, tools) {
     draw(now, t);
   }
 
+  // farm-sim daylight scene: grass field, dirt paths meeting at the plaza,
+  // pixel buildings on their plots, and the townsfolk strolling in front
+  function label(text, x, y, size = 11) {
+    ctx.font = `700 ${size}px system-ui`;
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(253,253,244,0.85)';
+    ctx.strokeText(text, x, y);
+    ctx.fillStyle = '#33281a';
+    ctx.fillText(text, x, y);
+  }
+
   function draw(now, t) {
     const { width: W, height: H } = canvas;
-    ctx.clearRect(0, 0, W, H);
+    ctx.imageSmoothingEnabled = false;   // crisp chunky pixels when scaling
+    ctx.fillStyle = '#74b64e';
+    ctx.fillRect(0, 0, W, H);
+
+    // plots — a slightly brighter green with a soft edge
     for (const d of Object.values(districts)) {
-      ctx.fillStyle = '#16241d';
-      ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+      ctx.fillStyle = '#7fbf58';
+      ctx.strokeStyle = 'rgba(0,0,0,0.10)';
       ctx.beginPath();
-      ctx.roundRect(d.x, d.y, d.w, d.h, 14);
+      ctx.roundRect(d.x, d.y, d.w, d.h, 12);
       ctx.fill(); ctx.stroke();
-      ctx.fillStyle = 'rgba(255,255,255,0.42)';
-      ctx.font = '600 12px system-ui';
-      ctx.textAlign = 'left';
-      ctx.fillText(d.label.toUpperCase(), d.x + 14, d.y + 22);
     }
+
+    // dirt paths from every plot to the town center
+    ctx.strokeStyle = '#d9b380';
+    ctx.lineWidth = 16;
+    ctx.lineCap = 'round';
+    for (const d of Object.values(districts)) {
+      ctx.beginPath();
+      ctx.moveTo(d.x + d.w / 2, d.y + d.h / 2);
+      ctx.lineTo(W / 2, H / 2);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#d9b380';
+    ctx.beginPath();
+    ctx.arc(W / 2, H / 2, 26, 0, Math.PI * 2);
+    ctx.fill();
+
+    // grass tufts and flowers
+    for (const g of decor) {
+      if (g.kind === 'tuft') {
+        ctx.fillStyle = '#5da33c';
+        ctx.fillRect(g.x, g.y, 3, 5);
+        ctx.fillRect(g.x + 4, g.y + 2, 3, 4);
+      } else {
+        ctx.fillStyle = g.tint;
+        ctx.fillRect(g.x, g.y, 4, 4);
+        ctx.fillStyle = '#5da33c';
+        ctx.fillRect(g.x + 1, g.y + 4, 2, 3);
+      }
+    }
+
+    // each district's own business building, then its label
+    for (const d of Object.values(districts)) {
+      const img = art[d.key];
+      const cx = d.x + d.w / 2;
+      if (img) {
+        ctx.drawImage(img, cx - 46, d.y + 14, 92, 92);
+      } else {
+        ctx.font = '40px system-ui';
+        ctx.textAlign = 'center';
+        ctx.fillText('🏛️', cx, d.y + 66);
+      }
+      label(d.label.toUpperCase(), cx, d.y + d.h - 10, 10);
+    }
+
+    // structures the agents put up (or are still putting up)
     for (const st of placedStructs) {
       const done = (Number(st.progress) || 0) >= 100;
       const img = done && art[st.kind];
       if (img) {
-        ctx.drawImage(img, st.x - 34, st.y - 34, 68, 68);
+        ctx.drawImage(img, st.x - 27, st.y - 40, 54, 54);
       } else {
-        ctx.font = '26px system-ui';
+        ctx.font = '24px system-ui';
         ctx.textAlign = 'center';
-        ctx.globalAlpha = done ? 1 : 0.55;
-        ctx.fillText(done ? (KIND_ICO[st.kind] || '🏘️') : '🏗️', st.x, st.y + 8);
+        ctx.globalAlpha = done ? 1 : 0.6;
+        ctx.fillText(done ? (KIND_ICO[st.kind] || '🏘️') : '🏗️', st.x, st.y + 4);
         ctx.globalAlpha = 1;
       }
       if (!done) {
         const p = Math.max(0, Math.min(100, Number(st.progress) || 0));
-        ctx.fillStyle = 'rgba(0,0,0,0.45)';
-        ctx.fillRect(st.x - 26, st.y + 16, 52, 5);
-        ctx.fillStyle = '#e0b23a';
-        ctx.fillRect(st.x - 26, st.y + 16, 52 * p / 100, 5);
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+        ctx.fillRect(st.x - 24, st.y + 10, 48, 5);
+        ctx.fillStyle = '#e8a33d';
+        ctx.fillRect(st.x - 24, st.y + 10, 48 * p / 100, 5);
       }
-      ctx.fillStyle = 'rgba(255,255,255,0.55)';
-      ctx.font = '10px system-ui';
-      ctx.textAlign = 'center';
-      ctx.fillText(String(st.name || '').slice(0, 16), st.x, st.y + 34);
+      label(String(st.name || '').slice(0, 14), st.x, st.y + 26, 9);
     }
+
+    // townsfolk, back-to-front so nearer ones overlap farther ones
     const walkers = [...sprites.values()].sort((a, b) => a.y - b.y);
     for (const sp of walkers) {
-      const bob = sp.moving ? Math.sin(t / 90) * 2.2 : 0;
-      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      const bob = sp.moving ? Math.sin(t / 90) * 2 : 0;
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
       ctx.beginPath();
-      ctx.ellipse(sp.x, sp.y + 12, 9, 3.5, 0, 0, Math.PI * 2);
+      ctx.ellipse(sp.x, sp.y + 12, 10, 3.5, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = `hsl(${sp.hue} 45% 38%)`;
-      ctx.beginPath();
-      ctx.arc(sp.x, sp.y + bob, 11, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.font = '13px system-ui';
-      ctx.textAlign = 'center';
-      ctx.fillText(sp.face, sp.x, sp.y + bob + 4);
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.font = '600 11px system-ui';
-      ctx.fillText(sp.name || '', sp.x, sp.y + 28);
+      const img = sp.artKey && art[sp.artKey];
+      if (img) {
+        ctx.save();
+        ctx.translate(sp.x, sp.y + bob);
+        if (sp.dir === -1) ctx.scale(-1, 1);   // sprites face right natively
+        ctx.drawImage(img, -24, -36, 48, 48);
+        ctx.restore();
+      } else {
+        ctx.fillStyle = `hsl(${sp.hue} 45% 38%)`;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y + bob, 11, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.font = '13px system-ui';
+        ctx.textAlign = 'center';
+        ctx.fillText(sp.face, sp.x, sp.y + bob + 4);
+      }
+      label(sp.name || '', sp.x, sp.y + 28);
       if (sp.bubble && now < sp.bubbleUntil) {
         ctx.font = '11px system-ui';
         const tw = Math.min(220, ctx.measureText(sp.bubble).width + 16);
         const bx = Math.max(4, Math.min(canvas.width - tw - 4, sp.x - tw / 2));
-        ctx.fillStyle = 'rgba(20,28,24,0.92)';
-        ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+        ctx.fillStyle = 'rgba(253,253,244,0.95)';
+        ctx.strokeStyle = 'rgba(0,0,0,0.25)';
         ctx.beginPath();
-        ctx.roundRect(bx, sp.y - 42, tw, 22, 8);
+        ctx.roundRect(bx, sp.y - 44, tw, 22, 8);
         ctx.fill(); ctx.stroke();
-        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.fillStyle = '#33281a';
         ctx.textAlign = 'left';
-        ctx.fillText(sp.bubble, bx + 8, sp.y - 27, tw - 16);
+        ctx.fillText(sp.bubble, bx + 8, sp.y - 29, tw - 16);
       }
     }
   }
