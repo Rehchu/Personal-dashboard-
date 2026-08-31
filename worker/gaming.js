@@ -513,27 +513,45 @@ async function handleXbox(env) {
    at 60 calls per 300s. This path talks to Microsoft and Xbox Live itself:
    no middleman, no phone verification, no cap.
 
-   CLIENT_ID below is Microsoft's own public Xbox client id — the one the Xbox
-   app uses. It identifies the app, never the account, exactly like the PSN
-   mobile client id above it; the account is the sign-in the owner does. So
-   there is no Azure app to register.
+   SIGN-IN IS THE DEVICE CODE FLOW, and that is not a style choice.
 
-   The chain, four calls:
-     1. code  -> Microsoft access + refresh token   (login.microsoftonline.com)
-     2. access-> XBL user token                     (user.auth.xboxlive.com)
-     3. XBL   -> XSTS token + user hash + XUID      (xsts.auth.xboxlive.com)
+   This first shipped as "sign in, land on a blank page, copy that page's
+   address back" — the pattern the PSN setup uses. Microsoft has deliberately
+   broken that pattern: the landing page's own script rewrites its address to
+   `?removed=true`, deleting the authorization code from anywhere a human could
+   copy it. Their warning page says why — "Microsoft will never ask you to copy
+   or share this URL" — because a person pasting a live auth code somewhere is
+   indistinguishable from the phishing flow they are defending against. No
+   parameter fixes it; the whole shape is what they refuse.
+
+   Device code has no redirect at all, so there is nothing to scrub: the owner
+   reads a short code off this dashboard and types it at microsoft.com/link.
+   It also removes the in-app-browser question entirely — the sign-in does not
+   have to happen in the same browser, or on the same device.
+
+   THE CLIENT ID IS THE OWNER'S OWN, not a well-known one. The legacy Xbox app
+   id (000000004C12AE6F) is only used in the wild against the LEGACY
+   login.live.com endpoints with scope service::user.auth.xboxlive.com::MBI_SSL;
+   pairing it with the modern AAD endpoint and the XboxLive.signin scope is a
+   combination nothing supports, and it is refused outright by the device code
+   endpoint (AADSTS700016 — it is not an object in the consumers directory).
+   So the owner registers a free app of their own and pastes its id in, the same
+   way they would paste any other key here. Setup steps live in the tile.
+
+   The chain, once signed in:
+     1. device code -> Microsoft access + refresh token (login.microsoftonline.com)
+     2. access      -> XBL user token                   (user.auth.xboxlive.com)
+     3. XBL         -> XSTS token + user hash + XUID    (xsts.auth.xboxlive.com)
      4. call Xbox Live as  Authorization: XBL3.0 x=<uhs>;<xsts>
 
    Steps 2-4 are redone from the stored refresh token whenever the cached XSTS
-   expires, so the owner signs in once and the refresh token (~90 days) carries
-   it from there. Only the refresh token is persisted as a secret; the XSTS
-   token is short-lived and lives in the same cache table as the payloads. */
+   expires, so the owner signs in once and the refresh token carries it. */
 
-const MS_CLIENT_ID = '000000004C12AE6F';
-const MS_REDIRECT = 'https://login.live.com/oauth20_desktop.srf';
 const MS_SCOPES = 'XboxLive.signin offline_access';
-const MS_AUTHORIZE = 'https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize';
+const MS_DEVICECODE = 'https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode';
 const MS_TOKEN = 'https://login.microsoftonline.com/consumers/oauth2/v2.0/token';
+// an Entra Application (client) ID: a plain GUID
+const isClientId = v => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v || '').trim());
 const XBL_AUTH = 'https://user.auth.xboxlive.com/user/authenticate';
 const XSTS_AUTH = 'https://xsts.auth.xboxlive.com/xsts/authorize';
 /* The live XSTS credential lives in `secrets`, not in the payload cache.
@@ -552,83 +570,49 @@ async function readXstsCache(env) {
 }
 const writeXstsCache = (env, auth) => upsertSecret(env, XSTS_SECRET, JSON.stringify(auth)).run();
 
-// The URL the owner opens to sign in, carrying a one-time `state` nonce this
-// bridge minted. They land on a blank page whose ADDRESS carries ?code=… and
-// paste that address back — the same paste-the-URL shape the PSN setup uses.
-// No `prompt` parameter on purpose. `prompt=select_account` forces the account
-// chooser on every attempt, and that chooser is its own failure surface: backing
-// out of it or dismissing a tile redirects to oauth20_desktop.srf?removed=true —
-// no code, no state, a dead end. With no prompt, an existing session goes
-// straight through and a signed-out one gets an ordinary sign-in page.
-const msAuthorizeUrl = state =>
-  `${MS_AUTHORIZE}?client_id=${MS_CLIENT_ID}&response_type=code` +
-  `&scope=${encodeURIComponent(MS_SCOPES)}&redirect_uri=${encodeURIComponent(MS_REDIRECT)}` +
-  `&state=${encodeURIComponent(state)}`;
-
-/* Pull the authorization code out of the address the owner pasted.
-
-   This ONLY accepts a full https://login.live.com/… URL carrying the exact
-   `state` this bridge issued. It used to also accept a bare code, and that
-   branch quietly defeated the host check on the line below it: a code lifted
-   from anywhere could be pasted in and would be exchanged and stored. The host
-   check is only worth having if there is no way around it.
-
-   Trailing dots are stripped because "login.live.com." resolves the same but
-   fails a === comparison; userinfo ("https://login.live.com@evil.com/") is
-   handled for free, since URL parses that host as evil.com. */
-function msCodeFrom(input, expectState) {
-  const raw = String(input || '').trim();
-  if (!raw || raw.length > 8192) return { code: '', why: 'paste the whole address of the page you landed on' };
-  let u;
-  try { u = new URL(raw); } catch { return { code: '', why: 'that does not look like a web address' }; }
-  if (u.protocol !== 'https:') return { code: '', why: 'that address is not https' };
-  const host = u.hostname.toLowerCase().replace(/\.$/, '');
-  if (host !== 'login.live.com') return { code: '', why: 'that address is not the Microsoft sign-in page' };
-  if (u.searchParams.get('error')) {
-    return { code: '', why: str(u.searchParams.get('error_description')) || 'Microsoft reported a sign-in error' };
-  }
-  // The account chooser's dead end: dismissing or removing a tile lands here with
-  // removed=true and nothing else. It is not an error the owner did wrong, and
-  // "that address has no ?code= in it" would send them hunting for the wrong
-  // thing — so name it, and say the one thing that gets past it.
-  if (u.searchParams.get('removed') === 'true' || (!u.search && !u.hash)) {
-    return { code: '', why: 'that sign-in was dismissed before it finished — open the sign-in page again and go all the way through to the blank page' };
-  }
-  /* The easiest mistake to make, and it has to be caught BEFORE the state check
-     — the sign-in page carries the same state forward, so it would sail past
-     that and fail later with a vague "no code", sending the owner looking for
-     the wrong problem.
-
-     The address bar shows a login.live.com URL both BEFORE signing in (the
-     sign-in page, /oauth20_authorize.srf, carrying client_id and scope) and
-     AFTER (the blank redirect, carrying code). Only the second one is any use,
-     and on a phone they look much the same. So say exactly which one this is. */
-  if (/^\/oauth20_authorize\.srf/i.test(u.pathname) || u.searchParams.has('client_id')) {
-    return { code: '', why: 'that is the sign-in page itself, not the page after it — sign in there first, then copy the address of the blank page you land on' };
-  }
-  // the nonce ties this paste to the sign-in this bridge started
-  if (!expectState || u.searchParams.get('state') !== expectState) {
-    return { code: '', why: 'that sign-in did not start here — open the sign-in page again and retry' };
-  }
-  const code = u.searchParams.get('code') || '';
-  if (!code) return { code: '', why: 'that address has no ?code= in it — sign in fully, then copy the address of the blank page you land on' };
-  // deliberately wide: MSA codes carry . ~ + / = - as well as word characters,
-  // and a valid code silently rejected here is indistinguishable from a failure
-  if (!/^[\w.~+/=-]{6,4096}$/.test(code)) return { code: '', why: 'the code in that address looks malformed' };
-  return { code, why: '' };
-}
-
-async function msTokenRequest(params) {
-  const res = await fetch(MS_TOKEN, {
+/* Start a sign-in. Microsoft hands back a short code the owner types at
+   microsoft.com/link, plus a device_code this bridge polls with. Nothing is
+   stored yet — a sign-in that is never completed leaves no trace. */
+async function msDeviceStart(clientId) {
+  const res = await fetch(MS_DEVICECODE, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
-    body: new URLSearchParams({ client_id: MS_CLIENT_ID, redirect_uri: MS_REDIRECT, scope: MS_SCOPES, ...params }),
+    body: new URLSearchParams({ client_id: clientId, scope: MS_SCOPES }),
     signal: AbortSignal.timeout(FETCH_TIMEOUT),
   });
   const body = await res.json().catch(() => null);
+  if (!res.ok || !body?.device_code || !body?.user_code) {
+    // AADSTS7000218 / 70002 mean the registration exists but has not been told
+    // it is a public client — the one setting people miss, so name it
+    const d = str(body?.error_description);
+    const why = /7000218|70002\b|public client/i.test(d)
+      ? 'that app registration needs "Allow public client flows" turned on (Authentication → Advanced settings)'
+      : d || `Microsoft returned ${res.status}`;
+    throw Object.assign(new Error(why), { fatal: true });
+  }
+  return body;
+}
+
+async function msTokenRequest(env, params) {
+  const clientId = await readSecret(env, 'xbl_ms_client');
+  if (!clientId) throw Object.assign(new Error('no Xbox app id is set up'), { reauth: true });
+  const res = await fetch(MS_TOKEN, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
+    body: new URLSearchParams({ client_id: clientId, scope: MS_SCOPES, ...params }),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT),
+  });
+  const body = await res.json().catch(() => null);
+  // While the owner is still typing the code at microsoft.com/link, Microsoft
+  // answers 400 authorization_pending. That is the flow WORKING, not failing, so
+  // it is handed back as a state rather than thrown.
+  const err = str(body?.error);
+  if (err === 'authorization_pending' || err === 'slow_down') return { pending: true, slowDown: err === 'slow_down' };
   if (!res.ok || !body?.access_token) {
-    // an expired/consumed code and a dead refresh token both mean "sign in again"
-    throw Object.assign(new Error(str(body?.error_description) || `Microsoft returned ${res.status}`), { reauth: true });
+    const why = err === 'expired_token' ? 'that code expired — start the sign-in again'
+      : err === 'authorization_declined' ? 'the sign-in was declined on the other device'
+        : str(body?.error_description) || `Microsoft returned ${res.status}`;
+    throw Object.assign(new Error(why), { reauth: true });
   }
   return body;
 }
@@ -700,7 +684,8 @@ async function xboxAuth(env, force = false) {
   }
   const refresh = await readSecret(env, 'xbl_ms_refresh');
   if (!refresh) throw Object.assign(new Error('not signed in with Microsoft'), { reauth: true });
-  const tok = await msTokenRequest({ grant_type: 'refresh_token', refresh_token: refresh });
+  const tok = await msTokenRequest(env, { grant_type: 'refresh_token', refresh_token: refresh });
+  if (tok.pending) throw Object.assign(new Error('sign in again'), { reauth: true });
   // Microsoft ROTATES the refresh token: the old one is spent, so if the new one
   // does not land the connection is dead with no way back. This write is not
   // best-effort — a failure here must stop the request, because a failed request
@@ -803,60 +788,85 @@ async function xboxMode(env) {
 const dropXboxCaches = env =>
   env.DB.prepare("DELETE FROM gaming_cache WHERE k IN ('xbox','xbox_games','xbox_cooldown') OR k LIKE 'xbox_a_%'").run();
 
-// GET /api/gaming/xbox/msauth  -> the sign-in URL, with a fresh one-time state
-// POST                         -> finish the sign-in, or clear it
+/* GET  /api/gaming/xbox/msauth  -> whether an app id is set, and if so nothing else
+   POST { clientId }             -> save the app id and START a sign-in
+   POST { poll: <device_code> }  -> has the owner finished typing the code yet?
+   POST { clear: true }          -> disconnect
+
+   The device_code is never stored: it is short-lived, it is only useful to
+   whoever holds it, and the browser already has it. It rides in the poll. */
 async function handleXboxMsAuth(request, env) {
   if (request.method === 'GET') {
-    // the nonce ties the paste that comes back to the sign-in started here
-    const state = crypto.randomUUID();
-    await upsertSecret(env, 'xbl_ms_state', state).run();
-    return json({ url: msAuthorizeUrl(state) });
+    return json({ hasClientId: !!(await readSecret(env, 'xbl_ms_client')) });
   }
-  if (request.method === 'POST') {
-    // an unbounded body should not reach JSON.parse
-    const text = await request.text();
-    if (text.length > 16384) return json({ error: 'that request was too large' }, 413);
-    let body = null;
-    try { body = JSON.parse(text); } catch { /* handled below */ }
+  if (request.method !== 'POST') return json({ error: 'method not allowed' }, 405);
 
-    // the way back out, and what Disconnect sends
-    if (body && body.clear === true) {
-      await ensureCacheTable(env);
-      // one batch: either the whole disconnect lands or the caller sees a failure
-      await env.DB.batch([
-        dropSecret(env, 'xbl_ms_refresh'),
-        dropSecret(env, XSTS_SECRET),
-        dropSecret(env, 'xbl_ms_state'),
-      ]);
-      await dropXboxCaches(env);
-      return json({ ok: true, signedIn: false });
-    }
+  // an unbounded body should not reach JSON.parse
+  const text = await request.text();
+  if (text.length > 16384) return json({ error: 'that request was too large' }, 413);
+  let body = null;
+  try { body = JSON.parse(text); } catch { /* handled below */ }
 
-    const expect = await readSecret(env, 'xbl_ms_state');
-    const { code, why } = msCodeFrom(body?.url, expect);
-    if (!code) return json({ error: why || 'paste the whole address of the page you landed on' }, 400);
+  // the way back out, and what Disconnect sends
+  if (body && body.clear === true) {
+    await ensureCacheTable(env);
+    // one batch: either the whole disconnect lands or the caller sees a failure.
+    // The app id survives, so reconnecting does not mean re-registering.
+    await env.DB.batch([dropSecret(env, 'xbl_ms_refresh'), dropSecret(env, XSTS_SECRET)]);
+    await dropXboxCaches(env);
+    return json({ ok: true, signedIn: false });
+  }
+
+  // ---- poll: is the sign-in on the other device done? ----
+  if (body && typeof body.poll === 'string') {
+    if (!/^[\w.~+/=-]{6,4096}$/.test(body.poll)) return json({ error: 'bad device code' }, 400);
     try {
-      const tok = await msTokenRequest({ grant_type: 'authorization_code', code });
-      if (!tok.refresh_token) return json({ error: 'Microsoft did not return a refresh token — try signing in again' }, 502);
-      // Prove the whole chain works BEFORE storing anything. A refresh token that
-      // cannot reach Xbox Live is worse than none: the card would say "signed in"
-      // and never load, which is the failure mode this whole path exists to escape.
+      const tok = await msTokenRequest(env, {
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+        device_code: body.poll,
+      });
+      if (tok.pending) return json({ pending: true, slowDown: !!tok.slowDown });
+      if (!tok.refresh_token) {
+        return json({ error: 'Microsoft did not return a refresh token — check the app has "offline_access" consent' }, 502);
+      }
+      // Prove the WHOLE chain before storing anything. A refresh token that cannot
+      // reach Xbox Live is worse than none: the card would say "signed in" and
+      // never load, which is the exact failure this path exists to escape.
       const auth = await xblExchange(tok.access_token);
       const profile = await msProfile(auth);
       await ensureCacheTable(env);
       await env.DB.batch([
         upsertSecret(env, 'xbl_ms_refresh', tok.refresh_token),
         upsertSecret(env, XSTS_SECRET, JSON.stringify(auth)),
-        dropSecret(env, 'xbl_ms_state'), // single use
       ]);
       await dropXboxCaches(env); // whatever the old path cached belongs to the old path
       const user = Array.isArray(profile?.profileUsers) ? profile.profileUsers[0] : null;
       return json({ ok: true, signedIn: true, gamertag: xblSetting(user, ['Gamertag', 'ModernGamertag']) });
     } catch (err) {
-      return json({ error: err?.message || 'could not complete the Microsoft sign-in' }, 400);
+      return json({ error: err?.message || 'could not complete the sign-in' }, 400);
     }
   }
-  return json({ error: 'method not allowed' }, 405);
+
+  // ---- start: save the owner's app id and ask Microsoft for a code ----
+  const clientId = String(body?.clientId || '').trim();
+  if (!isClientId(clientId)) {
+    return json({ error: 'that is not an Application (client) ID — it looks like 12345678-abcd-...' }, 400);
+  }
+  try {
+    const dev = await msDeviceStart(clientId);
+    await upsertSecret(env, 'xbl_ms_client', clientId).run();
+    return json({
+      ok: true,
+      userCode: str(dev.user_code),
+      // Microsoft's own wording for where to type it, rather than one hardcoded here
+      verifyUrl: str(dev.verification_uri) || 'https://www.microsoft.com/link',
+      deviceCode: str(dev.device_code),
+      interval: Math.max(3, num(dev.interval) || 5),
+      expiresIn: num(dev.expires_in) || 900,
+    });
+  } catch (err) {
+    return json({ error: err?.message || 'could not start the sign-in' }, 400);
+  }
 }
 
 /* ---------- PlayStation ---------- */

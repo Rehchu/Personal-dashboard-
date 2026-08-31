@@ -103,18 +103,23 @@ function xboxSetup(again = false) {
        Microsoft reads your own Xbox profile; nothing is posted and your password
        never reaches this dashboard.`}</p>
     <ol>
-      <li>Open the <a href="#" data-msauth="open"><b>Xbox sign-in page</b></a> and
-        <b>sign in all the way through</b> — password, and Yes to any prompt.</li>
-      <li>You'll end up on a <b>completely blank page</b>. That blank page is the
-        finish line, not an error.</li>
-      <li>Copy that blank page's <b>address</b> and paste it below. It must contain
-        <code>?code=</code> — if it says <code>oauth20_authorize</code> you copied
-        the sign-in page instead and need to sign in first.</li>
+      <li>Go to <a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
+        target="_blank" rel="noopener">Entra app registrations</a> → <b>New registration</b>.
+        Free, and no Azure subscription needed.</li>
+      <li>Name it anything. For <b>Supported account types</b> pick
+        <b>Personal Microsoft accounts only</b>. Register.</li>
+      <li>Open <b>Authentication</b> → <b>Advanced settings</b> → set
+        <b>Allow public client flows</b> to <b>Yes</b> → Save. (Miss this one and
+        sign-in fails — the message below will tell you if you did.)</li>
+      <li>Copy the <b>Application (client) ID</b> off the Overview page and paste
+        it here. Add nothing under API permissions; no secret.</li>
     </ol>
-    <input type="text" id="gm-msurl" placeholder="https://login.live.com/oauth20_desktop.srf?code=…"
+    <input type="text" id="gm-msclient" placeholder="Application (client) ID — 12345678-abcd-…"
       autocomplete="off" spellcheck="false">
-    <button data-msauth="finish">${again ? 'Reconnect Xbox' : 'Finish sign-in'}</button>
-    <p class="gm-note">Only the sign-in token is kept, on the Worker — never in this browser.</p>
+    <button data-msauth="start">${again ? 'Reconnect Xbox' : 'Start sign-in'}</button>
+    <div id="gm-devicecode"></div>
+    <p class="gm-note">You'll get a short code to type at microsoft.com/link — on this
+      phone or any other device. Only the sign-in token is kept, on the Worker.</p>
 
     <details style="margin-top:14px">
       <summary style="cursor:pointer;color:var(--ink-2);font-size:13px">Or use an OpenXBL key instead</summary>
@@ -281,12 +286,34 @@ export function mount(root, tools) {
   // one place) and opens it in a new tab. "finish" posts back whatever address
   // the owner landed on; the bridge pulls the code out and does the exchange.
   async function msAuth(step, el) {
-    if (step === 'open') {
+    if (step === 'start') {
+      const input = el.closest('.gm-setup')?.querySelector('#gm-msclient');
+      const clientId = (input?.value || '').trim();
+      if (!clientId) { showToast('Paste your Application (client) ID first'); return; }
+      el.disabled = true; el.textContent = 'Starting…';
+      const panel = el.closest('.gm-setup')?.querySelector('#gm-devicecode');
       try {
-        const { url } = await (await fetch('/api/gaming/xbox/msauth')).json();
-        if (url) window.open(url, '_blank', 'noopener');
-        else showToast('Could not start the Xbox sign-in');
-      } catch { showToast('Could not start the Xbox sign-in'); }
+        const res = await fetch('/api/gaming/xbox/msauth', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ clientId }),
+        });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok || !d.userCode) throw new Error(d.error || '');
+        // the code is the whole interaction now — make it big and unmissable
+        if (panel) panel.innerHTML = `<div style="margin:14px 0;padding:14px;border-radius:12px;
+          background:var(--surface-3,rgba(255,255,255,.06));text-align:center">
+          <div style="font-size:12.5px;color:var(--ink-2)">Go to
+            <a href="${esc(d.verifyUrl)}" target="_blank" rel="noopener"><b>${esc(d.verifyUrl.replace(/^https?:\/\//, ''))}</b></a>
+            and enter this code</div>
+          <div style="font:800 30px/1.3 ui-monospace,monospace;letter-spacing:.14em;margin:8px 0;color:var(--ink)">${esc(d.userCode)}</div>
+          <div class="gm-note" id="gm-devicewait" style="margin:0">Waiting for you to finish signing in…</div>
+        </div>`;
+        el.textContent = 'Waiting…';
+        await msPoll(d.deviceCode, Number(d.interval) || 5, Number(d.expiresIn) || 900, panel);
+      } catch (err) {
+        showToast(err.message || 'Could not start the sign-in');
+        el.disabled = false; el.textContent = 'Try again';
+      }
       return;
     }
     if (step === 'disconnect') {
@@ -298,26 +325,41 @@ export function mount(root, tools) {
       else showToast('Could not disconnect');
       return;
     }
-    // finish
-    const input = el.closest('.gm-setup')?.querySelector('#gm-msurl');
-    const val = (input?.value || '').trim();
-    if (!val) { showToast('Paste the address of the page you landed on'); return; }
-    el.disabled = true; el.textContent = 'Signing in…';
-    try {
-      const res = await fetch('/api/gaming/xbox/msauth', {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ url: val }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body.ok) throw new Error(body.error || '');
-      showToast(body.gamertag ? `Signed in as ${body.gamertag}` : 'Xbox connected');
-      await loadAll();
-    } catch (err) {
-      // the bridge's message names the real cause (expired code, no Xbox
-      // profile on the account, a child account) — say it rather than "failed"
-      showToast(err.message || 'Could not complete the sign-in');
-      el.disabled = false; el.textContent = 'Try again';
+  }
+
+  /* Ask the bridge every few seconds whether the owner has finished signing in on
+     whatever device they used. Microsoft sets the interval; honouring it (and
+     slow_down) is required, not optional — polling faster gets the flow throttled.
+     Stops on success, on a real error, when the code expires, or when the tile is
+     closed, so it can never outlive the view that started it. */
+  async function msPoll(deviceCode, interval, expiresIn, panel) {
+    const deadline = Date.now() + expiresIn * 1000;
+    let wait = interval;
+    const note = () => panel?.querySelector('#gm-devicewait');
+    while (alive && Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, wait * 1000));
+      if (!alive) return;
+      let d;
+      try {
+        const res = await fetch('/api/gaming/xbox/msauth', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ poll: deviceCode }),
+        });
+        d = await res.json().catch(() => ({}));
+      } catch { continue; } // a dropped request is not a failed sign-in
+      if (d.pending) { if (d.slowDown) wait += 5; continue; }
+      if (d.ok) {
+        showToast(d.gamertag ? `Signed in as ${d.gamertag}` : 'Xbox connected');
+        await loadAll();
+        return;
+      }
+      const el = note();
+      if (el) el.textContent = d.error || 'That sign-in did not complete.';
+      showToast(d.error || 'Could not complete the sign-in');
+      return;
     }
+    const el = note();
+    if (el) el.textContent = 'That code expired — start the sign-in again.';
   }
 
   function wireSetup() {
