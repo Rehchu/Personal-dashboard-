@@ -162,13 +162,14 @@ export function mount(root, tools) {
   root.innerHTML = `
     <div id="town-grid">
       <div>
-        <div class="panel"><h3>The town</h3><canvas id="town-canvas"></canvas></div>
+        <div class="panel"><h3>The town <span id="town-wx" style="font-weight:400;font-size:12px;color:var(--ink-3)"></span></h3><canvas id="town-canvas"></canvas></div>
         <div class="panel" style="margin-top:16px"><h3>Live feed</h3><div class="town-feed" id="town-feed"></div></div>
       </div>
       <div>
         <div class="panel"><h3>📋 Corporate inbox</h3><div id="town-approvals"></div></div>
         <div class="panel" style="margin-top:16px"><h3>Townsfolk</h3><div id="town-agents"></div></div>
         <div class="panel" style="margin-top:16px"><h3>Work reports</h3><div id="town-reports"></div></div>
+        <div class="panel" style="margin-top:16px"><h3>🏛️ Town charter</h3><div id="town-laws"></div></div>
         <div class="panel" style="margin-top:16px"><h3>Talk to someone</h3>
           <div class="town-chat-row">
             <select id="town-who"></select>
@@ -551,13 +552,32 @@ export function mount(root, tools) {
 
     syncWorld(s);
 
+    root.querySelector('#town-wx').textContent = s.weather ? `· ${s.weather}` : '';
+
     root.querySelector('#town-agents').innerHTML = (s.agents || []).map(a => {
       const ev = a.eval && a.eval.note
         ? `<div style="flex-basis:100%;font-size:12.5px;color:#e0b23a;margin-top:2px">${'★'.repeat(Math.max(1, Math.min(5, Number(a.eval.rating) || 3)))}${'☆'.repeat(5 - Math.max(1, Math.min(5, Number(a.eval.rating) || 3)))} ${esc(a.eval.by)}: “${esc(a.eval.note)}”</div>`
         : '';
+      const en = Number.isFinite(Number(a.energy))
+        ? `<span title="energy" style="font-size:12px;color:${a.energy < 35 ? '#ff8a92' : 'var(--ink-2)'}">⚡${Number(a.energy)}</span>`
+        : '';
+      const dy = a.diary?.length
+        ? `<div style="flex-basis:100%;font-size:12px;color:var(--ink-3);font-style:italic;margin-top:2px">📖 “${esc(a.diary[a.diary.length - 1].text)}”</div>`
+        : '';
       return `<div class="town-agent" style="flex-wrap:wrap"><span class="nm">${esc(a.name)}</span>
-        <span class="rl">${esc(a.role)} · ${esc(a.loc)}</span><span class="co">${Number(a.coins) || 0}c</span>${ev}</div>`;
+        <span class="rl">${esc(a.role)} · ${esc(a.loc)}${a.busy ? ' · 🔧 at their desk' : ''}</span>${en}<span class="co">${Number(a.coins) || 0}c</span>${ev}${dy}</div>`;
     }).join('');
+
+    // civic life: passed laws and the ballots still open
+    const lawsHost = root.querySelector('#town-laws');
+    const laws = s.laws || [];
+    const props = s.proposals || [];
+    lawsHost.innerHTML = (laws.length || props.length)
+      ? [
+        ...props.map(p => `<div class="town-ev">🗳️ <b>ballot #${Number(p.id) || 0}</b> “${esc(p.text)}” — ${esc(p.by)} · ${Number(p.yes) || 0} for, ${Number(p.no) || 0} against</div>`),
+        ...laws.slice().reverse().map(l => `<div class="town-ev">📜 “${esc(l.text)}” <span class="t">— ${esc(l.by)}, t${Number(l.tick) || 0}</span></div>`),
+      ].join('')
+      : '<p class="muted" style="margin:0">No laws yet — the town runs on goodwill.</p>';
 
     root.querySelector('#town-feed').innerHTML = (s.feed || []).map(e => `
       <div class="town-ev"><span class="t">t${Number(e.tick) || 0}</span><b>${esc(e.name)}</b> ${esc(e.text)}</div>`).join('');
