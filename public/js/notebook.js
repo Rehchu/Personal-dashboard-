@@ -3,6 +3,7 @@
 // stored in logical page units, so a page renders identically on any screen.
 
 import { load, save, uid, debounce, showToast, esc } from './store.js';
+import { mergeCol } from './sync.js';
 
 const LOGICAL_W = 1000;  // logical page width; uniform scale preserves proportions
 const LOGICAL_H = 1414;  // fixed A-series page: bounds identical on every screen
@@ -169,6 +170,65 @@ const pagesIn = (pages, secId) =>
 const pageText = p => p.texts.map(t => t.text).join('\n');
 const countWords = s => (s.match(/[^\s]+/g) || []).length;
 
+/* ---------- IndexedDB shadow copy ---------- */
+
+// The whole notebook is mirrored into IndexedDB on every persist so dense ink
+// survives a localStorage quota overflow. IDB is a shadow, never the system of
+// record: save('nb.pages', …) stays the write that cloud sync watches, and any
+// IDB failure — private mode, a blocked upgrade, its own quota — degrades
+// silently to exactly the localStorage-only behaviour.
+const IDB_NAME = 'pd-notebook';
+const IDB_STORE = 'kv';
+// The stamp records when save('nb.pages') last SUCCEEDED. It sits outside the
+// 'pd.' namespace on purpose, so the sync engine can never see it as a key.
+const STAMP_KEY = 'pd-nbk.savedAt';
+
+let idbDead = false; // any failure parks the mirror for the rest of the session
+let idbConn = null;  // one open-connection promise, shared by every mount
+
+function idbOpen() {
+  if (idbDead) return Promise.resolve(null);
+  if (!idbConn) {
+    idbConn = new Promise(resolve => {
+      let req;
+      // Firefox private mode throws from open(); indexedDB itself may be absent.
+      try { req = indexedDB.open(IDB_NAME, 1); } catch { idbDead = true; resolve(null); return; }
+      req.onupgradeneeded = () => { try { req.result.createObjectStore(IDB_STORE); } catch { /* store already there */ } };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => { idbDead = true; resolve(null); };
+      // another tab pins an old version — treat as unavailable, don't wait
+      req.onblocked = () => { idbDead = true; resolve(null); };
+    });
+  }
+  return idbConn;
+}
+
+function idbGet(key) {
+  return idbOpen().then(db => new Promise(resolve => {
+    if (!db) { resolve(undefined); return; }
+    try {
+      const req = db.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).get(key);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(undefined);
+    } catch { idbDead = true; resolve(undefined); } // store missing / connection closed
+  })).catch(() => undefined);
+}
+
+function idbSet(key, value) {
+  idbOpen().then(db => {
+    if (!db) return;
+    try {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).put(value, key);
+      // IDB quota (seen on iOS): swallow the abort — the localStorage copy
+      // already went through the normal path, and its toast covers the user.
+      tx.onabort = tx.onerror = e => { e.preventDefault?.(); e.stopPropagation?.(); };
+    } catch { idbDead = true; } // store missing / connection closed
+  }).catch(() => { /* the mirror must never break a save */ });
+}
+
+const readStamp = () => { try { return num(Number(localStorage.getItem(STAMP_KEY)), 0); } catch { return 0; } };
+
 export function mount(root, tools) {
   // Deleted pages live on in storage as tombstones ({id, deleted:1, ts}) so the
   // sync merge can't resurrect them. They are split off BEFORE normalize —
@@ -177,6 +237,13 @@ export function mount(root, tools) {
   const storedPages = load('nb.pages', null);
   let tombstones = Array.isArray(storedPages) ? storedPages.filter(p => p?.deleted) : [];
   let pages = normalize(Array.isArray(storedPages) ? storedPages.filter(p => !p?.deleted) : storedPages);
+
+  // Queue the shadow-copy read before anything can mirror over it — persistNow
+  // at the mount tail rewrites the IDB record, and transactions on the shared
+  // connection run in the order they are created, so this get sees the old one.
+  // The stamp is captured now too, before this mount's own saves move it.
+  const idbCopy = idbGet('nb.pages');
+  const mountStamp = readStamp();
 
   let curId = load('nb.pageId', null);
   if (!pages.some(p => p.id === curId)) {
@@ -208,13 +275,38 @@ export function mount(root, tools) {
     const ok = save('nb.pages', [...pages, ...tombstones]) && save('nb.page', Math.max(0, idx));
     save('nb.pageId', curId);
     save('nb.sec', curSec);
+    // Write-through to the IndexedDB shadow, stamped so a later mount can tell
+    // which copy is fresher — and written EVEN when save() failed: that is the
+    // quota-protection payoff, the notes still land somewhere durable. The
+    // stamp only moves on a successful save, so a mirror that outruns it is
+    // exactly a copy localStorage never got.
+    const ts = Date.now();
+    if (ok) { try { localStorage.setItem(STAMP_KEY, String(ts)); } catch { /* quota — IDB reads as newer */ } }
+    mirror({ ts, pages: [...pages, ...tombstones] });
     if (!ok && !warnedStorage) {
       warnedStorage = true;
       showToast('⚠ Storage full — recent notes may not be saved');
     }
     window.dispatchEvent(new CustomEvent('pd:data-changed'));
   }
-  const persist = debounce(persistNow, 400);
+  const persistSoon = debounce(persistNow, 400);
+  // Every user edit funnels through persist(); the flag keeps the async IDB
+  // hydration below from swapping the pages array out from under a keystroke.
+  let userEdited = false;
+  const persist = () => { userEdited = true; persistSoon(); };
+
+  // The IDB record may be the ONLY durable copy of quota-orphaned ink, so no
+  // mirror write may overwrite it while the adopt-or-skip decision below is
+  // still pending. Until hydration settles, mirror writes are buffered (latest
+  // wins); settling flushes the buffer.
+  let hydrated = false;
+  let pendingMirror = null;
+  const mirror = payload => { if (hydrated) idbSet('nb.pages', payload); else pendingMirror = payload; };
+  function settleHydration() {
+    if (hydrated) return;
+    hydrated = true;
+    if (pendingMirror) { idbSet('nb.pages', pendingMirror); pendingMirror = null; }
+  }
 
   if (!document.getElementById('notebook-style')) {
     const style = document.createElement('style');
@@ -789,6 +881,10 @@ export function mount(root, tools) {
   }
 
   function selectPage(id, { close = false } = {}) {
+    // only ever invoked by user actions (add/delete/pick), never by mount init —
+    // so it must arm the same guard as typing, or a slow IDB hydration could
+    // land right after a structural edit and quietly undo it
+    userEdited = true;
     const p = pages.find(x => x.id === id);
     if (!p) return;
     curId = p.id;
@@ -1048,16 +1144,59 @@ export function mount(root, tools) {
   syncUI();
   renderSide();
   resize();
+
+  let unmounted = false;
+
+  // Hydrate from the IndexedDB shadow. The store copy stays authoritative on a
+  // tie: a cloud pull rewrites nb.pages without ever touching the stamp, so
+  // only a STRICTLY newer mirror — a persist whose save() lost to localStorage
+  // quota — may replace what mount painted, and never over live edits.
+  let hydrateTries = 0;
+  idbCopy.then(function tryAdopt(rec) {
+    if (unmounted || userEdited) return settleHydration();
+    if (!rec || typeof rec !== 'object' || !Array.isArray(rec.pages)) return settleHydration();
+    if (!(num(rec.ts, 0) > mountStamp)) return settleHydration();
+    // mid-stroke or mid-keystroke: the recovery copy is still safe (mirror
+    // writes stay buffered), so wait and retry instead of abandoning it —
+    // a transient guard must not turn a deferred recovery into a lost one
+    if (live || drag || layer.contains(document.activeElement)) {
+      if (hydrateTries++ < 25) { setTimeout(() => tryAdopt(rec), 400); return; }
+      return settleHydration();
+    }
+    // a recovered copy with no actual content has nothing worth adopting
+    const fresh = normalize(rec.pages.filter(p => !p?.deleted));
+    if (!fresh.some(p => p.strokes.length || p.texts.length)) return settleHydration();
+    // MERGE rather than replace: a cloud pull can rewrite the store copy
+    // without moving the stamp, and wholesale adoption would revert it and
+    // push the reversion to every device. Per-id merge with the IDB copy as
+    // the winning side keeps the orphaned ink AND any pulled-only pages.
+    const merged = mergeCol([...pages, ...tombstones], rec.pages);
+    tombstones = merged.filter(p => p?.deleted);
+    pages = normalize(merged.filter(p => !p?.deleted));
+    if (!pages.some(p => p.id === curId)) curId = pages[0].id;
+    curSec = page().secId;
+    undoStack = [];
+    redoStack = [];
+    settleHydration();
+    renderTexts();
+    redraw();
+    syncUI();
+    renderSide();
+    persistNow(); // recovered notes flow back into localStorage and cloud sync
+  });
+
   // write the migrated shape straight away, so the old flat array is carried
   // forward (and pushed to the other devices) even if nothing is edited today
   persistNow();
 
   return () => { // unmount cleanup: never lose the last 400ms of ink or typing
+    unmounted = true; // a late hydration swap must not land on a dead mount
     ro.disconnect();
     themeWatch.disconnect();
     document.getElementById('notebook-style')?.remove();
     const p = page();
     for (const t of p.texts.slice()) if (!t.text.trim()) removeText(t.id, { undoable: false });
     persistNow();
+    settleHydration(); // flush the buffered mirror — the last ink must land in IDB
   };
 }

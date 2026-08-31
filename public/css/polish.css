@@ -1,3 +1,5 @@
+@layer polish {
+
 /* ============================================================
    Polish layer (loads last):
    1. Console fidelity — PS profile chip / Xbox pill nav / button glyphs
@@ -26,12 +28,12 @@
   place-items: center;
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--on-accent, #fff);
   background: linear-gradient(140deg, var(--accent), color-mix(in oklab, var(--accent) 50%, black));
 }
 
-#profile-name { font-size: 14px; color: var(--ink-2); font-family: var(--font-display); font-weight: 600; }
+#profile-name { font-size: 0.875rem; color: var(--ink-2); font-family: var(--font-display); font-weight: 600; }
 
 [data-console="xbox"] #profile-chip,
 [data-console="xbox"] #profile-avatar { border-radius: 8px; }
@@ -55,7 +57,7 @@
 .pill {
   flex: 0 0 auto;
   font-family: var(--font-display);
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   padding: 8px 18px;
@@ -76,7 +78,7 @@
   right: -2%;
   top: 50%;
   transform: translateY(-50%);
-  font-size: clamp(170px, 24vw, 330px);
+  font-size: clamp(10.625rem, 24vw, 20.625rem);
   line-height: 1;
   opacity: 0.09;
   filter: blur(1.5px) saturate(1.4);
@@ -98,7 +100,7 @@
   margin-right: 2px;
   border-radius: 50%;
   border: 1.5px solid color-mix(in oklab, var(--ink-3) 70%, transparent);
-  font-size: 11px;
+  font-size: 0.6875rem;
   vertical-align: -5px;
 }
 
@@ -243,11 +245,11 @@
     gap: 14px;
     padding-top: 6px;
   }
-  #hero-icon { width: 58px; height: 58px; font-size: 30px; border-radius: 12px; }
-  #hero-title { font-size: 24px; }
-  #hero-desc { font-size: 14.5px; }
-  .hero-btn { padding: 9px 16px; font-size: 13px; }
-  #hero-watermark { font-size: 150px; opacity: 0.06; }
+  #hero-icon { width: 58px; height: 58px; font-size: 1.875rem; border-radius: 12px; }
+  #hero-title { font-size: 1.5rem; }
+  #hero-desc { font-size: 0.90625rem; }
+  .hero-btn { padding: 9px 16px; font-size: 0.8125rem; }
+  #hero-watermark { font-size: 9.375rem; opacity: 0.06; }
 
   #activity { overflow-x: auto; scrollbar-width: none; }
   #activity::-webkit-scrollbar { display: none; }
@@ -255,7 +257,7 @@
   .act-card { min-width: 104px; flex: 0 0 auto; }
 
   .tile { width: 37vw; }
-  .tile .tile-label { opacity: 1; font-size: 12px; }
+  .tile .tile-label { opacity: 1; font-size: 0.75rem; }
 
   #appview-bar { flex-wrap: wrap; row-gap: 8px; padding-top: max(10px, env(safe-area-inset-top)); }
   #appview-title { flex: 1 1 auto; }
@@ -279,7 +281,7 @@
 /* Small phones */
 @media (max-width: 420px) {
   .tile { width: 42vw; }
-  #brand { font-size: 17px; }
+  #brand { font-size: 1.0625rem; }
   .theme-dot, .top-icon-btn { width: 34px; height: 34px; }
 }
 
@@ -288,14 +290,10 @@
 /* theme-switch fx must play above the control center (CC stays open on console switch) */
 #switch-fx { z-index: 50; }
 
-/* xbox console × minecraft theme: restore xbox tile look over the hotbar slot rules */
-[data-console="xbox"][data-theme="minecraft"] #rail .tile {
-  background: linear-gradient(150deg,
-    color-mix(in oklab, var(--tile-accent, var(--surface-2)) 85%, white 6%),
-    color-mix(in oklab, var(--tile-accent, var(--surface-2)) 60%, black 32%));
-  border: 1.5px solid color-mix(in oklab, white 10%, transparent);
-  box-shadow: none;
-}
+/* xbox console × minecraft theme: restore xbox tile look over the hotbar slot
+   rules. The unfocused-tile restoration moved to the "overrides" layer at the
+   bottom of this file: it used to beat minecraft.css's later slab rules on
+   specificity alone, which cascade layers no longer honour across layers. */
 
 [data-console="xbox"][data-theme="minecraft"] #rail .tile.focused {
   border-color: var(--accent);
@@ -315,8 +313,8 @@
 /* minecraft VT323 legibility for the newer components */
 [data-theme="minecraft"] .act-card .act-label,
 [data-theme="minecraft"] .cc-btn .cc-label,
-[data-theme="minecraft"] .pill { font-size: 15px; }
-[data-theme="minecraft"] #toast { font-size: 17px; }
+[data-theme="minecraft"] .pill { font-size: 0.9375rem; }
+[data-theme="minecraft"] #toast { font-size: 1.0625rem; }
 
 @media (prefers-reduced-motion: reduce) {
   .tile, .tile:active { transition: none; }
@@ -388,6 +386,40 @@
 }
 
 /* ---------- accessibility overrides ----------
+   Moved to the "overrides" layer at the bottom of this file: they used to
+   win over the later skins by specificity alone, which cascade layers no
+   longer honour across layers, so they now win by living in the last layer. */
+
+/* Type-to-filter: the chip shows what's typed, non-matching tiles fall back */
+#rail-filter-chip {
+  position: absolute;
+  top: -6px;
+  left: 12px;
+  z-index: 5;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--accent) 24%, var(--surface));
+  border: 1px solid color-mix(in oklab, var(--accent) 50%, transparent);
+  color: var(--ink);
+  font: 700 0.8125rem var(--font-display, system-ui);
+  letter-spacing: 0.06em;
+  pointer-events: none;
+}
+#rail-wrap { position: relative; }
+.tile.filter-dim { opacity: 0.25; filter: saturate(0.4); }
+
+} /* end @layer polish */
+
+/* ============================================================
+   Overrides layer — rules from this file that must beat every
+   skin regardless of load order. Pre-@layer they won on raw
+   specificity over files loaded later; layers hand every
+   cross-layer fight to the later layer, so they live in the
+   final "overrides" layer instead (declared in base.css).
+   ============================================================ */
+@layer overrides {
+
+/* ---------- accessibility overrides ----------
    These live here (not in a theme file) so they win over every skin's
    own shadow stacks and color rules regardless of load order. */
 
@@ -406,27 +438,29 @@
 
 /* The PS hint bar faded its text with opacity:0.62, which crushes the
    already-muted ink below 4.5:1. Give it a solid, high-contrast color.
-   The html prefix outweighs ps5home.css's own equal-specificity rule that
-   loads after this file. */
+   (Used to out-specify ps5home.css's equal-specificity opacity rule; now
+   it simply lives in the last layer.) */
 html[data-console="ps"] #hint {
   color: #cbd4df;
   opacity: 1;
 }
 
-/* Type-to-filter: the chip shows what's typed, non-matching tiles fall back */
-#rail-filter-chip {
-  position: absolute;
-  top: -6px;
-  left: 12px;
-  z-index: 5;
-  padding: 4px 12px;
-  border-radius: 999px;
-  background: color-mix(in oklab, var(--accent) 24%, var(--surface));
-  border: 1px solid color-mix(in oklab, var(--accent) 50%, transparent);
-  color: var(--ink);
-  font: 700 13px var(--font-display, system-ui);
-  letter-spacing: 0.06em;
-  pointer-events: none;
+/* xbox console × minecraft theme: restore the xbox tile look over
+   minecraft's hotbar/slab rules (moved from section 4 above — it used to
+   beat minecraft.css's later, lower-specificity slab rules on specificity;
+   the focused-tile variants stayed in the polish layer because
+   game/xboxhome.css deliberately re-wins those — hence the border and
+   box-shadow are fenced to :not(.focused) so the green focus ring from
+   game/xboxhome.css keeps winning exactly as it does today). */
+[data-console="xbox"][data-theme="minecraft"] #rail .tile {
+  background: linear-gradient(150deg,
+    color-mix(in oklab, var(--tile-accent, var(--surface-2)) 85%, white 6%),
+    color-mix(in oklab, var(--tile-accent, var(--surface-2)) 60%, black 32%));
 }
-#rail-wrap { position: relative; }
-.tile.filter-dim { opacity: 0.25; filter: saturate(0.4); }
+
+[data-console="xbox"][data-theme="minecraft"] #rail .tile:not(.focused) {
+  border: 1.5px solid color-mix(in oklab, white 10%, transparent);
+  box-shadow: none;
+}
+
+} /* end @layer overrides (polish.css) */

@@ -1,3 +1,5 @@
+@layer game {
+
 /* ============================================================
    Xbox Series X|S home — STRUCTURE, not palette.
    Scope: html[data-console="xbox"]. Loads after every theme file
@@ -99,14 +101,14 @@
   width: 42px;
   height: 42px;
   border-radius: 10px;
-  font-size: 18px;
+  font-size: 1.125rem;
 }
 
 [data-console="xbox"] #profile-name {
   align-self: end;
   color: var(--ink);
   font-weight: 700;
-  font-size: 15px;
+  font-size: 0.9375rem;
   line-height: 1.1;
   letter-spacing: 0.005em;
 }
@@ -117,7 +119,7 @@
   align-self: start;
   color: var(--xbh-ring); /* ≥7:1 on every theme surface */
   font-family: var(--font-display);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   font-weight: 700;
   line-height: 1.25;
   letter-spacing: 0.04em;
@@ -154,7 +156,7 @@
     border-radius: 6px;
     padding: 7px 17px;
     min-height: 34px;
-    font-size: 13px;
+    font-size: 0.8125rem;
     font-weight: 600;
     letter-spacing: 0.01em;
     text-transform: none;
@@ -226,7 +228,7 @@
     right: -12%;
     bottom: -16%;
     transform: none;
-    font-size: clamp(140px, 26vh, 250px);
+    font-size: clamp(8.75rem, 26vh, 15.625rem);
     opacity: 0.06;
     filter: blur(1px) saturate(1.25);
   }
@@ -237,7 +239,7 @@
     height: auto;
     aspect-ratio: 1;
     border-radius: 8px;
-    font-size: clamp(38px, 8vh, 72px);
+    font-size: clamp(2.375rem, 8vh, 4.5rem);
     box-shadow:
       inset 0 0 0 1px rgba(255, 255, 255, 0.09),
       0 16px 36px -20px rgba(0, 0, 0, 0.95);
@@ -246,7 +248,7 @@
   [data-console="xbox"] #hero-text { width: 100%; min-width: 0; }
 
   [data-console="xbox"] #hero-title {
-    font-size: clamp(19px, 1.55vw, 25px);
+    font-size: clamp(1.1875rem, 1.55vw, 1.5625rem);
     line-height: 1.15;
     letter-spacing: 0.005em;
     text-transform: none; /* Xbox titles are sentence case */
@@ -256,7 +258,7 @@
   [data-console="xbox"] #hero-desc {
     margin-top: 7px;
     max-width: none;
-    font-size: clamp(12.5px, 0.92vw, 14px);
+    font-size: clamp(0.78125rem, 0.92vw, 0.875rem);
     line-height: 1.45;
     display: -webkit-box;
     -webkit-box-orient: vertical;
@@ -268,7 +270,7 @@
   [data-console="xbox"] #hero-actions { margin-top: 12px; gap: 8px; }
 
   [data-console="xbox"] .hero-btn {
-    font-size: 12.5px;
+    font-size: 0.78125rem;
     letter-spacing: 0.04em;
     padding: 9px 15px;
   }
@@ -298,11 +300,11 @@
       color-mix(in oklab, var(--surface-2) 30%, transparent));
   }
 
-  [data-console="xbox"] .act-card .act-value { font-size: 19px; }
+  [data-console="xbox"] .act-card .act-value { font-size: 1.1875rem; }
 
   [data-console="xbox"] .act-card .act-label {
     color: var(--ink-2);
-    font-size: 10.5px;
+    font-size: 0.65625rem;
     letter-spacing: 0.07em;
   }
 
@@ -315,7 +317,7 @@
     grid-area: hint;
     align-self: end;
     text-align: left;
-    font-size: 11px;
+    font-size: 0.6875rem;
     line-height: 1.7;
     letter-spacing: 0.11em;
     color: var(--ink-2);
@@ -389,7 +391,7 @@
     grid-row: span 2;
     align-self: start;
     height: calc(var(--xbh-cell) * 2 + var(--xbh-gut));
-    font-size: clamp(50px, 4.6vw, 88px);
+    font-size: clamp(3.125rem, 4.6vw, 5.5rem);
   }
 
   [data-console="xbox"] #rail .tile:first-child .badge {
@@ -411,7 +413,7 @@
     text-align: left;
     text-transform: none;
     text-shadow: none;
-    font-size: 12.5px;
+    font-size: 0.78125rem;
     font-weight: 600;
     line-height: 1.3;
     letter-spacing: 0.01em;
@@ -431,11 +433,11 @@
        derivation more headroom than the 284px default reserve */
     --xbh-cell: clamp(94px, calc((100vh - 320px) / 3), 200px);
   }
-  [data-console="xbox"][data-theme="minecraft"] #rail .tile .tile-label { font-size: 16px; }
-  [data-console="xbox"][data-theme="minecraft"] .act-card .act-label { font-size: 15px; }
-  [data-console="xbox"][data-theme="minecraft"] #profile-name { font-size: 16px; }
-  [data-console="xbox"][data-theme="minecraft"] #profile-score { font-size: 15px; }
-  [data-console="xbox"][data-theme="minecraft"] .pill { font-size: 15px; }
+  [data-console="xbox"][data-theme="minecraft"] #rail .tile .tile-label { font-size: 1rem; }
+  [data-console="xbox"][data-theme="minecraft"] .act-card .act-label { font-size: 0.9375rem; }
+  [data-console="xbox"][data-theme="minecraft"] #profile-name { font-size: 1rem; }
+  [data-console="xbox"][data-theme="minecraft"] #profile-score { font-size: 0.9375rem; }
+  [data-console="xbox"][data-theme="minecraft"] .pill { font-size: 0.9375rem; }
 }
 
 /* short viewports: two rows instead of three, cell re-derived */
@@ -573,3 +575,5 @@
 
   [data-console="xbox"] .activity-cards { animation: none; }
 }
+
+} /* end @layer game */

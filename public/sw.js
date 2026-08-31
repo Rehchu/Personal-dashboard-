@@ -2,7 +2,7 @@
 // /api/* is never cached (sync must always hit the network). Cross-origin
 // requests (fonts, CDN, GitHub) pass through untouched.
 
-const CACHE = 'dyerhq-v8';
+const CACHE = 'dyerhq-v9';
 const CORE = [
   '/', '/index.html', '/manifest.webmanifest',
   '/css/base.css', '/css/themes.css', '/css/fx.css', '/css/xbox.css', '/css/polish.css',
@@ -65,6 +65,13 @@ self.addEventListener('fetch', e => {
           if (res.ok && res.headers.get('X-App-Shell')) {
             const clone = res.clone();
             caches.open(CACHE).then(c => c.put(e.request, clone));
+          }
+          // A lapsed session answers subresources with a bare 401. With
+          // lazily-imported modules that would fail a tile open even though
+          // the precache holds a perfectly good copy — serve the cached
+          // module instead and let the next navigation handle re-auth.
+          if (!res.ok && url.pathname !== '/') {
+            return caches.match(e.request).then(hit => hit || res);
           }
           return res;
         })

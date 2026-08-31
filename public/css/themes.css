@@ -1,3 +1,5 @@
+@layer themes {
+
 /* ============================================================
    Game themes. Each theme overrides the design tokens and adds
    its own decorative fx layer. Toggled via <html data-theme="…">
@@ -152,7 +154,7 @@
   --nb-paper: #1f1f24;
 }
 
-[data-theme="minecraft"] body { font-size: 20px; }
+[data-theme="minecraft"] body { font-size: 1.25rem; }
 
 [data-theme="minecraft"] #theme-fx {
   background:
@@ -194,14 +196,14 @@
 
 /* VT323 is illegible below ~15px — bump the smallest UI text */
 [data-theme="minecraft"] .tile-label,
-[data-theme="minecraft"] table.data th { font-size: 16px; }
+[data-theme="minecraft"] table.data th { font-size: 1rem; }
 [data-theme="minecraft"] .tile .badge,
-[data-theme="minecraft"] #hint { font-size: 15px; }
+[data-theme="minecraft"] #hint { font-size: 0.9375rem; }
 [data-theme="minecraft"] #clock-date,
 [data-theme="minecraft"] .field > label,
 [data-theme="minecraft"] .stat-tile .stat-label,
 [data-theme="minecraft"] .card-meta,
-[data-theme="minecraft"] .muted { font-size: 16px; }
+[data-theme="minecraft"] .muted { font-size: 1rem; }
 
 /* ---------------- Mass Effect ----------------
    Normandy holo-blue on deep space, N7 stripe. */
@@ -322,3 +324,5 @@
     0 0 0 2px color-mix(in oklab, var(--accent) 85%, transparent),
     0 0 30px -6px color-mix(in oklab, var(--accent) 55%, transparent);
 }
+
+} /* end @layer themes */

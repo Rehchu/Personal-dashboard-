@@ -1,3 +1,5 @@
+@layer game {
+
 /* ============================================================
    Cyberpunk — in-game HUD skin (cyberware / inventory screens).
    Black-red HUD panels, angular clipped corners, red edge tabs,
@@ -77,7 +79,7 @@
   color: #fcee0a; /* ~16:1 on panel black */
   text-transform: none;
   font-variant-caps: all-small-caps;
-  font-size: 13px;
+  font-size: 0.8125rem;
   letter-spacing: 0.14em;
   border-bottom: 1px solid rgba(252, 238, 10, 0.4);
 }
@@ -237,7 +239,7 @@
 [data-theme="cyberpunk"] #pill-nav .pill {
   text-transform: uppercase;
   letter-spacing: 0.16em;
-  font-size: 11px;
+  font-size: 0.6875rem;
   border-radius: 0;
   clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
 }
@@ -260,7 +262,7 @@
   top: 6px;
   left: 2px;
   font-family: var(--font-display);
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   letter-spacing: 0.24em;
   color: color-mix(in oklab, var(--accent) 80%, transparent);
 }
@@ -279,3 +281,5 @@
 @media (prefers-reduced-motion: reduce) {
   [data-theme="cyberpunk"] #theme-fx { animation: none; }
 }
+
+} /* end @layer game */

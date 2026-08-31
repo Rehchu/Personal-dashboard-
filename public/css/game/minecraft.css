@@ -1,3 +1,5 @@
+@layer game {
+
 /* ============================================================
    Minecraft — Bedrock "Play" screen skin.
    World-card tiles (thumbnail + dark nameplate), square Worlds/
@@ -73,7 +75,7 @@
   right: 0;
   background: rgba(0, 0, 0, 0.55);
   color: #ffffff; /* ≥12:1 over any tile art behind the scrim */
-  font-size: 16px; /* keeps the VT323 legibility floor */
+  font-size: 1rem; /* keeps the VT323 legibility floor */
   font-weight: 400;
   padding: 4px 6px;
   opacity: 1;
@@ -119,7 +121,7 @@
   border: 3px solid #1b1b1b;
   background: #6d6e70;
   color: #ffffff; /* 5.1:1 on #6d6e70 */
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 400;
   min-height: 36px; /* VT323's tight line-height: keep tap targets ≥34px */
   text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.35);
@@ -128,7 +130,7 @@
     inset -2px -2px 0 rgba(0, 0, 0, 0.40);
 }
 
-[data-theme="minecraft"] .btn.small { font-size: 15px; }
+[data-theme="minecraft"] .btn.small { font-size: 0.9375rem; }
 
 [data-theme="minecraft"] .btn:hover,
 [data-theme="minecraft"] .hero-btn:not(.primary):hover {
@@ -215,7 +217,7 @@
 
 [data-theme="minecraft"] .panel h3 {
   color: #f0f0ea; /* 11.6:1 on #2f2f34 */
-  font-size: 18px;
+  font-size: 1.125rem;
   font-weight: 400;
   letter-spacing: 0.06em;
 }
@@ -372,7 +374,7 @@
 [data-theme="minecraft"] .tile .badge {
   border-radius: 0;
   border: 2px solid #1d1d1d;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 /* buttons are wide stone slabs with the same bevel */
@@ -419,3 +421,5 @@
     inset 2px 2px 0 rgba(255, 255, 255, 0.22),
     inset -2px -2px 0 rgba(0, 0, 0, 0.4);
 }
+
+} /* end @layer game */
