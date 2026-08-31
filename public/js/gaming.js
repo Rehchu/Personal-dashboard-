@@ -91,14 +91,31 @@ function boxArt(url, fallback) {
     onerror="this.outerHTML='<div class=\\'gm-box fallback\\' aria-hidden=\\'true\\'>${fallback}</div>'">`;
 }
 
-// `again` retitles the form for someone who already had a key: the steps are
-// identical, but "Connect Xbox" reads wrong when you are replacing a dead key.
+// Two ways in, and the Microsoft one leads because it is strictly better: it
+// talks to Xbox Live directly, so there is no middleman account to activate, no
+// phone verification, and no 60-per-5-minutes cap. The OpenXBL key still works
+// and is kept for anyone who already has one, folded away under a summary.
 function xboxSetup(again = false) {
   return `<div class="gm-setup">
     <p>${again
-      ? 'Paste a fresh OpenXBL key. The old one is still stored until you save this.'
-      : `Show your real gamerscore and recently-played games. You'll need a free
-       OpenXBL key — it reads your Xbox profile without storing your password.`}</p>
+      ? 'Sign in again to reconnect Xbox — this replaces the old connection.'
+      : `Show your real gamerscore, games and achievements. Signing in with
+       Microsoft reads your own Xbox profile; nothing is posted and your password
+       never reaches this dashboard.`}</p>
+    <ol>
+      <li>Open the <a href="#" data-msauth="open"><b>Xbox sign-in page</b></a> and sign in with your Microsoft account.</li>
+      <li>You'll land on a <b>blank page</b>. That's expected — the part that matters
+        is its <b>address</b>, which contains <code>?code=…</code>.</li>
+      <li>Copy that whole address and paste it below.</li>
+    </ol>
+    <input type="text" id="gm-msurl" placeholder="https://login.live.com/oauth20_desktop.srf?code=…"
+      autocomplete="off" spellcheck="false">
+    <button data-msauth="finish">${again ? 'Reconnect Xbox' : 'Finish sign-in'}</button>
+    <p class="gm-note">Only the sign-in token is kept, on the Worker — never in this browser.</p>
+
+    <details style="margin-top:14px">
+      <summary style="cursor:pointer;color:var(--ink-2);font-size:13px">Or use an OpenXBL key instead</summary>
+      <div style="margin-top:10px">
     <ol>
       <li>Go to <a href="https://xbl.io" target="_blank" rel="noopener">xbl.io</a> and sign in with your Microsoft account.</li>
       <li><b>Activate the account</b> — xbl.io asks for a mobile number before it
@@ -110,6 +127,8 @@ function xboxSetup(again = false) {
     </ol>
     <input type="password" id="gm-xbl" placeholder="OpenXBL API key" autocomplete="off" spellcheck="false">
     <button data-save="xbl_key" data-input="gm-xbl">${again ? 'Save new key' : 'Connect Xbox'}</button>
+      </div>
+    </details>
   </div>`;
 }
 
@@ -141,7 +160,9 @@ function xboxCard(d) {
   // that would only spend more of the quota that ran out. Anything else falls
   // through to the diagnostic banner.
   const banner = reauth
-    ? `<div class="gm-banner">Xbox Live wouldn't accept that key. Paste a fresh one below.</div>`
+    ? `<div class="gm-banner">${d.mode === 'ms'
+      ? 'Your Xbox sign-in expired. Sign in again below to reconnect.'
+      : "Xbox Live wouldn't accept that key. Paste a fresh one below."}</div>`
     : d.rateLimited
       ? `<div class="gm-banner">⏳ ${esc(d.error || 'Xbox Live is rate-limiting this key.')}${
         d._stale || d.stale ? ' Showing the last snapshot.' : ''}</div>`
@@ -171,7 +192,8 @@ function xboxCard(d) {
     <div class="gm-body">${banner}${games}
       <div class="gm-more" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <button class="gm-lib-btn" data-lib="xbox">📚 Full library &amp; achievements</button>
-        ${reauth ? '' : '<button class="gm-back" data-rekey="xbox">Change key</button>'}
+        ${reauth ? '' : '<button class="gm-back" data-rekey="xbox">Reconnect</button>'}
+        ${d.mode === 'ms' && !reauth ? '<button class="gm-back" data-msauth="disconnect">Disconnect</button>' : ''}
       </div>
       ${reauth ? xboxSetup(true) : ''}</div>
   </div>`;
@@ -251,14 +273,63 @@ export function mount(root, tools) {
   }
 
   // save handlers for whichever setup form is showing
+  // The Microsoft sign-in, both halves. "open" fetches the authorize URL from
+  // the bridge (the client never builds it, so the client id and scopes live in
+  // one place) and opens it in a new tab. "finish" posts back whatever address
+  // the owner landed on; the bridge pulls the code out and does the exchange.
+  async function msAuth(step, el) {
+    if (step === 'open') {
+      try {
+        const { url } = await (await fetch('/api/gaming/xbox/msauth')).json();
+        if (url) window.open(url, '_blank', 'noopener');
+        else showToast('Could not start the Xbox sign-in');
+      } catch { showToast('Could not start the Xbox sign-in'); }
+      return;
+    }
+    if (step === 'disconnect') {
+      const res = await fetch('/api/gaming/xbox/msauth', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ clear: true }),
+      }).catch(() => null);
+      if (res?.ok) { showToast('Xbox disconnected'); await loadAll(); }
+      else showToast('Could not disconnect');
+      return;
+    }
+    // finish
+    const input = el.closest('.gm-setup')?.querySelector('#gm-msurl');
+    const val = (input?.value || '').trim();
+    if (!val) { showToast('Paste the address of the page you landed on'); return; }
+    el.disabled = true; el.textContent = 'Signing in…';
+    try {
+      const res = await fetch('/api/gaming/xbox/msauth', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ url: val }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) throw new Error(body.error || '');
+      showToast(body.gamertag ? `Signed in as ${body.gamertag}` : 'Xbox connected');
+      await loadAll();
+    } catch (err) {
+      // the bridge's message names the real cause (expired code, no Xbox
+      // profile on the account, a child account) — say it rather than "failed"
+      showToast(err.message || 'Could not complete the sign-in');
+      el.disabled = false; el.textContent = 'Try again';
+    }
+  }
+
   function wireSetup() {
     root.querySelectorAll('[data-save]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const field = btn.dataset.save;
-        // the input that belongs to THIS form — never trust bare ids alone,
-        // a container id collision here once ate every pasted PSN key
-        const input = btn.closest('.gm-setup')?.querySelector('input')
-          || root.querySelector('#' + btn.dataset.input);
+        // The input that belongs to THIS button, resolved in a way that survives
+        // both traps this form has already hit: a bare id can collide with a
+        // CONTAINER's id (which once ate every pasted PSN key), and the Xbox form
+        // now holds two inputs, so "the first input in the form" is wrong too.
+        // So: take the named one, but only if it really is an input; otherwise
+        // fall back to the single-input case.
+        const byId = btn.dataset.input ? root.querySelector('#' + btn.dataset.input) : null;
+        const input = (byId && byId.tagName === 'INPUT') ? byId
+          : btn.closest('.gm-setup')?.querySelector('input');
         const val = (input?.value || '').trim();
         if (!val) { showToast('Paste a key first'); return; }
         btn.disabled = true; btn.textContent = 'Connecting…';
@@ -388,6 +459,13 @@ export function mount(root, tools) {
       let url = '';
       try { url = decodeURIComponent(bg.dataset.bg || ''); } catch { url = ''; }
       setBg(url, bg.dataset.bgname);
+      return;
+    }
+    // the Microsoft sign-in: open the page, then finish with the pasted address
+    const ms = own(e.target.closest('[data-msauth]'));
+    if (ms) {
+      e.preventDefault();
+      msAuth(ms.dataset.msauth, ms);
       return;
     }
     // "Change key" — without this there is NO way back to the key form once a
