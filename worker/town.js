@@ -31,6 +31,10 @@ const ART_KINDS = new Set([
   'char_ctrl', 'char_arise', 'char_apex', 'char_draco', 'char_spork',
   // one shared sprite for in-world hires (hue-shifted client-side) and the owner
   'char_hire', 'char_boss',
+  // front/back walk sheets per villager (side view + flip covers left/right)
+  'char_ctrl_front', 'char_ctrl_back', 'char_arise_front', 'char_arise_back',
+  'char_apex_front', 'char_apex_back', 'char_draco_front', 'char_draco_back',
+  'char_spork_front', 'char_spork_back',
 ]);
 const MAX_ART = 8 * 1024 * 1024;   // a 1k PNG is ~1–2 MB
 function artHostAllowed(host) {
