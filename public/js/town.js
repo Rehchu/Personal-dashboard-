@@ -47,6 +47,12 @@ const TOWN_ART_SRC = {
   char_draco_back: `${HF}hf_20260831_045614_4cb75ea5-6fc7-4127-96a6-3c0620030da7.png`,
   char_spork_front: `${HF}hf_20260831_045614_6b331bc8-9ebf-40e8-a5f5-c0a197f8ef2c.png`,
   char_spork_back: `${HF}hf_20260831_045614_ac91fafd-2d15-4bde-b1fe-738172348a51.png`,
+  // the Studio district and its two: the metadata smith and the night watchman
+  studio: `${HF}hf_20260831_091646_50182dd1-c2cd-4b49-85cc-c1c569d4b736.png`,
+  char_meta: `${HF}hf_20260831_091550_28c0ccfb-7a5f-4abc-bed7-cc2c96047d37.png`,
+  char_meta_front: `${HF}hf_20260831_091550_fe9b8097-419b-4f79-bc12-3d33594a8f28.png`,
+  char_watch: `${HF}hf_20260831_091646_877caeb9-e0d3-4c9f-9e99-e071269a9705.png`,
+  char_watch_front: `${HF}hf_20260831_091646_6e80b958-44f2-4743-9ad3-5a81177ed80c.png`,
 };
 
 async function loadTownArt(kind) {
@@ -190,6 +196,7 @@ export function mount(root, tools) {
         <div class="panel"><h3>📋 Corporate inbox</h3><div id="town-approvals"></div></div>
         <div class="panel" style="margin-top:16px"><h3>Townsfolk</h3><div id="town-agents"></div></div>
         <div class="panel" style="margin-top:16px"><h3>Work reports</h3><div id="town-reports"></div></div>
+        <div class="panel" id="town-ships-panel" style="margin-top:16px" hidden><h3>🚀 Shipped by the town</h3><div id="town-ships"></div></div>
         <div class="panel" style="margin-top:16px"><h3>🏛️ Town charter</h3><div id="town-laws"></div></div>
         <div class="panel" id="town-notes-panel" style="margin-top:16px" hidden><h3>🗒️ Notes desk</h3><div id="town-notes"></div></div>
         <div class="panel" id="town-cal-panel" style="margin-top:16px" hidden><h3>📅 Community calendar</h3><div id="town-cal"></div></div>
@@ -1036,6 +1043,7 @@ export function mount(root, tools) {
         t.jobsTaken ? `${t.jobsTaken} job${t.jobsTaken === 1 ? '' : 's'} taken` : '',
         t.hires ? `${t.hires} hire${t.hires === 1 ? '' : 's'}` : '',
         t.notesFiled ? `${t.notesFiled} note${t.notesFiled === 1 ? '' : 's'} filed` : '',
+        t.ships ? `${t.ships} shipped` : '',
         t.earned ? `+${t.earned}c earned` : '',
         t.spent ? `−${t.spent}c spent` : '',
       ].filter(Boolean).join(' · ') || 'no work on record yet';
@@ -1045,6 +1053,22 @@ export function mount(root, tools) {
         <div style="font-weight:700;color:var(--ink)">${esc(a.name)} <span style="font-weight:400;font-size:12.5px;color:var(--ink-2)">${esc(line)}</span></div>
         ${recent}</div>`;
     }).join('');
+
+    // apps the villagers built and shipped to Cloudflare themselves — only
+    // engines that ship get a panel. A link is a real href, so the URL has to
+    // be a workers.dev address of their own; anything else is dropped, never
+    // rendered as a link the owner could click.
+    const shipsPanel = root.querySelector('#town-ships-panel');
+    if (Array.isArray(s.deploys)) {
+      shipsPanel.hidden = false;
+      const rows = s.deploys.slice().reverse().filter(dp =>
+        /^https:\/\/[a-z0-9.-]+\.workers\.dev(\/|$)/i.test(String(dp?.url || '')));
+      root.querySelector('#town-ships').innerHTML = rows.length
+        ? rows.map(dp => `<div class="town-ev">🚀 <b>${esc(dp.name || 'an app')}</b> by ${esc(dp.by || '?')} — <a href="${esc(dp.url)}" target="_blank" rel="noopener noreferrer">${esc(dp.url)}</a></div>`).join('')
+        : '<p class="muted" style="margin:0">Nothing shipped yet.</p>';
+    } else {
+      shipsPanel.hidden = true;
+    }
 
     const sig = (s.agents || []).map(a => a.id).join(',');
     if (sig !== agentsSig) {
