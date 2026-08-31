@@ -101,6 +101,10 @@ function xboxSetup(again = false) {
        OpenXBL key — it reads your Xbox profile without storing your password.`}</p>
     <ol>
       <li>Go to <a href="https://xbl.io" target="_blank" rel="noopener">xbl.io</a> and sign in with your Microsoft account.</li>
+      <li><b>Activate the account</b> — xbl.io asks for a mobile number before it
+        switches API access on. A key from an unactivated account saves fine here
+        and then returns an empty profile, which looks exactly like a broken key.
+        Virtual/VOIP numbers are refused.</li>
       <li>Open the <b>API Keys</b> page and copy your key.</li>
       <li>Paste it below — it's stored on the Worker, never in the browser.</li>
     </ol>
@@ -143,6 +147,7 @@ function xboxCard(d) {
         d._stale || d.stale ? ' Showing the last snapshot.' : ''}</div>`
       : d.error
         ? `<div class="gm-banner">Xbox Live didn't answer${d._stale || d.stale ? ' — showing the last snapshot' : ''}.${
+          d.hint ? `<br><b>${esc(String(d.hint).slice(0, 240))}</b>` : ''}${
           d.upstream ? `<br><span style="opacity:.8;font-size:11.5px">${esc(String(d.upstream).slice(0, 200))}</span>` : ''}</div>`
         : '';
   const games = recent.length ? recent.map(g => {

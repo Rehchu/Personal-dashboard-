@@ -409,9 +409,18 @@ async function handleXbox(env) {
       note = `${base} — ${err?.message || 'unreachable'}`;
     }
   }
-  if (cached) return json({ ...cached.data, stale: true, error: 'Xbox Live sent nothing usable', upstream: note });
+  // A key from an xbl.io account that was never activated authenticates fine and
+  // answers 200 with no profile in it — indistinguishable from a broken key, and
+  // it cost the owner an afternoon. If a host actually ANSWERED and simply had no
+  // profile to give, name that cause; a connection that never landed is a
+  // different problem and gets no such hint.
+  const answered = /answered, but with no profile/.test(note);
+  const hint = answered
+    ? 'If xbl.io still says "activate your account", API access is off until you verify a mobile number there — the key is fine, the account just is not switched on yet.'
+    : '';
+  if (cached) return json({ ...cached.data, stale: true, error: 'Xbox Live sent nothing usable', upstream: note, hint });
   // surfaced on the card: a silent empty profile is impossible to diagnose
-  return json({ configured: true, error: 'Xbox Live sent nothing usable', upstream: note });
+  return json({ configured: true, error: 'Xbox Live sent nothing usable', upstream: note, hint });
 }
 
 /* ---------- PlayStation ---------- */
