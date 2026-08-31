@@ -53,7 +53,63 @@ async function loadTownArt(kind) {
   const img = new Image();
   img.src = URL.createObjectURL(blob);
   await img.decode().catch(() => {});
-  return img.naturalWidth ? img : null;
+  if (!img.naturalWidth) return null;
+  const clean = stripAndCrop(img);
+  URL.revokeObjectURL(img.src);
+  return clean;
+}
+
+// The generator doesn't always honor "transparent background" — pieces can
+// arrive on a white or checkerboard card. Flood-fill from the edges and erase
+// only the light background CONNECTED to the border, so white highlights
+// inside a sprite survive; then crop to the pixels that remain so every piece
+// draws at its true size instead of floating in a big empty square.
+function stripAndCrop(img) {
+  const c = document.createElement('canvas');
+  c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const x = c.getContext('2d', { willReadFrequently: true });
+  x.drawImage(img, 0, 0);
+  let d;
+  try { d = x.getImageData(0, 0, c.width, c.height); } catch { return img; }
+  const { data } = d;
+  const w = c.width, h = c.height;
+  const isBg = i => {
+    const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+    if (a < 40) return true;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    return mx > 198 && mx - mn < 16;      // white and checkerboard greys alike
+  };
+  const seen = new Uint8Array(w * h);
+  const stack = [];
+  for (let px = 0; px < w; px++) { stack.push(px, (h - 1) * w + px); }
+  for (let py = 0; py < h; py++) { stack.push(py * w, py * w + w - 1); }
+  while (stack.length) {
+    const p = stack.pop();
+    if (seen[p]) continue;
+    seen[p] = 1;
+    if (!isBg(p * 4)) continue;
+    data[p * 4 + 3] = 0;
+    const px = p % w, py = (p / w) | 0;
+    if (px > 0) stack.push(p - 1);
+    if (px < w - 1) stack.push(p + 1);
+    if (py > 0) stack.push(p - w);
+    if (py < h - 1) stack.push(p + w);
+  }
+  // tight bounding box of what's left
+  let x0 = w, y0 = h, x1 = 0, y1 = 0;
+  for (let p = 0; p < w * h; p++) {
+    if (data[p * 4 + 3] > 8) {
+      const px = p % w, py = (p / w) | 0;
+      if (px < x0) x0 = px; if (px > x1) x1 = px;
+      if (py < y0) y0 = py; if (py > y1) y1 = py;
+    }
+  }
+  if (x1 <= x0 || y1 <= y0) return img;   // stripped everything? keep the original
+  x.putImageData(d, 0, 0);
+  const out = document.createElement('canvas');
+  out.width = x1 - x0 + 1; out.height = y1 - y0 + 1;
+  out.getContext('2d').drawImage(c, x0, y0, out.width, out.height, 0, 0, out.width, out.height);
+  return out;
 }
 
 const AGENT_FACES = ['🧑‍🔧', '🧑‍💼', '🧑‍🍳', '🧑‍🎨', '🧑‍🚒', '🧑‍🌾', '🧑‍💻', '🧑‍🏫'];
@@ -144,8 +200,18 @@ export function mount(root, tools) {
   let decor = [];          // grass tufts and flowers, fixed per layout
   const sprites = new Map();
   const bubblesShown = new Set();
+  let puffs = [];      // short-lived particles: chimney smoke, walking dust
+  let lastSmoke = 0;
   let mapReady = false;
   let raf = 0;
+
+  // bottom-center anchored, aspect preserved — art pieces are cropped to their
+  // true pixels now, so each scales to fit its slot instead of a fixed square
+  function drawSprite(img, cx, bottom, maxH, maxW = maxH) {
+    const k = Math.min(maxW / img.width, maxH / img.height);
+    const w = img.width * k, h = img.height * k;
+    ctx.drawImage(img, cx - w / 2, bottom - h, w, h);
+  }
 
   // deterministic scatter — the same tuft grows in the same spot every frame
   function makeDecor() {
@@ -229,6 +295,21 @@ export function mount(root, tools) {
           sp.bubbleUntil = performance.now() + 6500;
         }
       }
+      // friendship, visibly: a talker walks over to whoever they're talking to,
+      // and a helping hand puts hearts over both heads
+      const talk = /^to ([^:]{1,24}):/.exec(e.text || '');
+      const help = /^lends (.{1,24}?) a hand/.exec(e.text || '');
+      const otherName = (talk?.[1] || help?.[1] || '').trim();
+      if (otherName) {
+        const speaker = [...sprites.values()].find(s => s.name === e.name);
+        const friend = [...sprites.values()].find(s => s.name === otherName);
+        if (speaker && friend) {
+          speaker.tx = friend.x + (speaker.x < friend.x ? -26 : 26);
+          speaker.ty = friend.y + 4;
+          speaker.wanderAt = performance.now() + 6000;   // stay with them a moment
+          if (help) speaker.heartUntil = friend.heartUntil = performance.now() + 3200;
+        }
+      }
     }
     if (bubblesShown.size > 400) bubblesShown.clear();
     mapReady = true;
@@ -259,7 +340,19 @@ export function mount(root, tools) {
         if (d) { const p = randIn(d); sp.tx = p.x; sp.ty = p.y; }
         sp.wanderAt = now + 1200 + Math.random() * 3500;
       }
+      // little dust kicks behind a walking villager
+      if (sp.moving && now - (sp.lastDust || 0) > 170) {
+        sp.lastDust = now;
+        puffs.push({ kind: 'dust', x: sp.x - (sp.dir || 1) * 7 + (Math.random() * 6 - 3), y: sp.y + 10, born: now });
+      }
     }
+    // the Test Kitchen's chimney smokes while the town is awake
+    const kd = districts.kitchen;
+    if (kd && now - lastSmoke > 750) {
+      lastSmoke = now;
+      puffs.push({ kind: 'smoke', x: kd.x + kd.w / 2 + 20 + (Math.random() * 6 - 3), y: kd.y + 22, born: now });
+    }
+    puffs = puffs.filter(p => now - p.born < (p.kind === 'smoke' ? 2400 : 550));
     draw(now, t);
   }
 
@@ -304,6 +397,19 @@ export function mount(root, tools) {
     ctx.beginPath();
     ctx.arc(W / 2, H / 2, 26, 0, Math.PI * 2);
     ctx.fill();
+    // the plaza fountain: a pool with slow ripples
+    ctx.fillStyle = '#5aa7c7';
+    ctx.beginPath();
+    ctx.arc(W / 2, H / 2, 12, 0, Math.PI * 2);
+    ctx.fill();
+    for (let k = 0; k < 2; k++) {
+      const r = 3 + ((t / 22 + k * 11) % 12);
+      ctx.strokeStyle = `rgba(255,255,255,${Math.max(0, 0.55 - r / 24)})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(W / 2, H / 2, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
 
     // grass tufts and flowers
     for (const g of decor) {
@@ -324,7 +430,7 @@ export function mount(root, tools) {
       const img = art[d.key];
       const cx = d.x + d.w / 2;
       if (img) {
-        ctx.drawImage(img, cx - 46, d.y + 14, 92, 92);
+        drawSprite(img, cx, d.y + 112, 100, 128);
       } else {
         ctx.font = '40px system-ui';
         ctx.textAlign = 'center';
@@ -338,7 +444,7 @@ export function mount(root, tools) {
       const done = (Number(st.progress) || 0) >= 100;
       const img = done && art[st.kind];
       if (img) {
-        ctx.drawImage(img, st.x - 27, st.y - 40, 54, 54);
+        drawSprite(img, st.x, st.y + 14, 56, 64);
       } else {
         ctx.font = '24px system-ui';
         ctx.textAlign = 'center';
@@ -356,20 +462,41 @@ export function mount(root, tools) {
       label(String(st.name || '').slice(0, 14), st.x, st.y + 26, 9);
     }
 
+    // particles under the people: smoke drifts up, dust settles
+    for (const p of puffs) {
+      const age = (now - p.born) / (p.kind === 'smoke' ? 2400 : 550);
+      if (p.kind === 'smoke') {
+        ctx.fillStyle = `rgba(240,240,235,${0.5 * (1 - age)})`;
+        ctx.beginPath();
+        ctx.arc(p.x + Math.sin(p.born + now / 400) * 3, p.y - age * 26, 2.5 + age * 4, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.fillStyle = `rgba(190,155,105,${0.5 * (1 - age)})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y + age * 3, 1.5 + age * 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
     // townsfolk, back-to-front so nearer ones overlap farther ones
     const walkers = [...sprites.values()].sort((a, b) => a.y - b.y);
     for (const sp of walkers) {
-      const bob = sp.moving ? Math.sin(t / 90) * 2 : 0;
+      // a real walk: step rhythm in the bounce, a waddle in the shoulders,
+      // slow breathing when standing still
+      const step = Math.sin(t / 85);
+      const bob = sp.moving ? Math.abs(Math.cos(t / 85)) * 2.8 : Math.sin(t / 650 + sp.hue) * 0.8;
+      const tilt = sp.moving ? step * 0.085 : Math.sin(t / 900 + sp.hue) * 0.015;
       ctx.fillStyle = 'rgba(0,0,0,0.25)';
       ctx.beginPath();
-      ctx.ellipse(sp.x, sp.y + 12, 10, 3.5, 0, 0, Math.PI * 2);
+      ctx.ellipse(sp.x, sp.y + 12, sp.moving ? 9 + Math.abs(step) * 2 : 10, 3.5, 0, 0, Math.PI * 2);
       ctx.fill();
       const img = sp.artKey && art[sp.artKey];
       if (img) {
         ctx.save();
-        ctx.translate(sp.x, sp.y + bob);
+        ctx.translate(sp.x, sp.y + 12);        // pivot at the feet
+        ctx.rotate(tilt);
         if (sp.dir === -1) ctx.scale(-1, 1);   // sprites face right natively
-        ctx.drawImage(img, -24, -36, 48, 48);
+        drawSprite(img, 0, -bob, 46, 42);
         ctx.restore();
       } else {
         ctx.fillStyle = `hsl(${sp.hue} 45% 38%)`;
@@ -381,6 +508,12 @@ export function mount(root, tools) {
         ctx.fillText(sp.face, sp.x, sp.y + bob + 4);
       }
       label(sp.name || '', sp.x, sp.y + 28);
+      if (sp.heartUntil && now < sp.heartUntil) {
+        const rise = (1 - (sp.heartUntil - now) / 3200) * 10;
+        ctx.font = '12px system-ui';
+        ctx.textAlign = 'center';
+        ctx.fillText('💛', sp.x + 13, sp.y - 34 - rise);
+      }
       if (sp.bubble && now < sp.bubbleUntil) {
         ctx.font = '11px system-ui';
         const tw = Math.min(220, ctx.measureText(sp.bubble).width + 16);
@@ -433,6 +566,8 @@ export function mount(root, tools) {
     root.querySelector('#town-reports').innerHTML = (s.agents || []).map(a => {
       const t = a.tally || {};
       const line = [
+        t.deepSessions ? `${t.deepSessions} workshop session${t.deepSessions === 1 ? '' : 's'}` : '',
+        t.assists ? `${t.assists} assist${t.assists === 1 ? '' : 's'}` : '',
         t.buildsFinished ? `${t.buildsFinished} build${t.buildsFinished === 1 ? '' : 's'} finished` : '',
         t.shifts ? `${t.shifts} shift${t.shifts === 1 ? '' : 's'}` : '',
         t.jobsTaken ? `${t.jobsTaken} job${t.jobsTaken === 1 ? '' : 's'} taken` : '',
