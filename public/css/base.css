@@ -1,3 +1,12 @@
+/* Cascade layer order for the whole app — one layer per stylesheet in link
+   order (the six game/*.css files share the "game" layer), plus a final
+   "overrides" layer for the few rules that must beat every layer (see
+   polish.css and mobile.css). Declared once, before any rule, so layer
+   priority mirrors today's link order exactly. */
+@layer base, themes, fx, xbox, polish, game, mobile, overrides;
+
+@layer base {
+
 /* ============================================================
    Base layout — PS5-style console dashboard shell.
    Theme files only override the custom properties + fx layers.
@@ -29,7 +38,7 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font-body);
-  font-size: 17px;
+  font-size: 1.0625rem;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
 }
@@ -89,7 +98,7 @@ a { color: var(--accent); }
 
 #brand {
   font-family: var(--font-display);
-  font-size: clamp(18px, 2.4vw, 26px);
+  font-size: clamp(1.125rem, 2.4vw, 1.625rem);
   letter-spacing: 0.14em;
   font-weight: 800;
   text-transform: uppercase;
@@ -97,7 +106,7 @@ a { color: var(--accent); }
 
 #brand-sub {
   color: var(--ink-3);
-  font-size: 13px;
+  font-size: 0.8125rem;
   letter-spacing: 0.28em;
   text-transform: uppercase;
 }
@@ -113,7 +122,7 @@ a { color: var(--accent); }
   display: grid;
   place-items: center;
   font-family: var(--font-display);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   color: var(--ink-2);
   border: 1.5px solid color-mix(in oklab, var(--ink-3) 55%, transparent);
@@ -131,8 +140,8 @@ a { color: var(--accent); }
 .theme-dot:focus-visible, button:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
 #clock { text-align: right; line-height: 1.15; }
-#clock-time { font-family: var(--font-display); font-size: 20px; font-weight: 700; display: block; }
-#clock-date { color: var(--ink-3); font-size: 12.5px; letter-spacing: 0.08em; text-transform: uppercase; }
+#clock-time { font-family: var(--font-display); font-size: 1.25rem; font-weight: 700; display: block; }
+#clock-date { color: var(--ink-3); font-size: 0.78125rem; letter-spacing: 0.08em; text-transform: uppercase; }
 
 /* ---------- home layout ---------- */
 
@@ -162,7 +171,7 @@ a { color: var(--accent); }
   border-radius: var(--tile-radius);
   display: grid;
   place-items: center;
-  font-size: clamp(30px, 4.4vw, 52px);
+  font-size: clamp(1.875rem, 4.4vw, 3.25rem);
   background: var(--hero-accent, var(--surface-2));
   box-shadow: var(--tile-glow);
   transition: background 400ms ease;
@@ -172,7 +181,7 @@ a { color: var(--accent); }
 
 #hero-title {
   font-family: var(--font-display);
-  font-size: clamp(26px, 4vw, 44px);
+  font-size: clamp(1.625rem, 4vw, 2.75rem);
   font-weight: 800;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -182,7 +191,7 @@ a { color: var(--accent); }
   margin-top: 6px;
   max-width: 62ch;
   color: var(--ink-2);
-  font-size: clamp(15px, 1.5vw, 18px);
+  font-size: clamp(0.9375rem, 1.5vw, 1.125rem);
 }
 
 #hero-actions { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 10px; }
@@ -190,7 +199,7 @@ a { color: var(--accent); }
 .hero-btn {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 14.5px;
+  font-size: 0.90625rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   text-decoration: none;
@@ -247,7 +256,7 @@ a { color: var(--accent); }
   scroll-snap-align: center;
   display: grid;
   place-items: center;
-  font-size: clamp(38px, 5.4vw, 62px);
+  font-size: clamp(2.375rem, 5.4vw, 3.875rem);
   background: linear-gradient(150deg,
     color-mix(in oklab, var(--tile-accent, var(--surface-2)) 85%, white 6%),
     color-mix(in oklab, var(--tile-accent, var(--surface-2)) 60%, black 32%));
@@ -263,7 +272,7 @@ a { color: var(--accent); }
   bottom: -26px;
   text-align: center;
   font-family: var(--font-display);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -290,7 +299,7 @@ a { color: var(--accent); }
   position: absolute;
   top: 9px;
   right: 9px;
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   font-family: var(--font-display);
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -313,7 +322,7 @@ a { color: var(--accent); }
 #hint {
   text-align: center;
   color: var(--ink-3);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -351,7 +360,7 @@ a { color: var(--accent); }
 #appview-back {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 15px;
+  font-size: 0.9375rem;
   letter-spacing: 0.05em;
   color: var(--ink-2);
   padding: 8px 16px;
@@ -363,7 +372,7 @@ a { color: var(--accent); }
 
 #appview-title {
   font-family: var(--font-display);
-  font-size: clamp(18px, 2.4vw, 24px);
+  font-size: clamp(1.125rem, 2.4vw, 1.5rem);
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -390,7 +399,7 @@ a { color: var(--accent); }
 
 .panel h3 {
   font-family: var(--font-display);
-  font-size: 15px;
+  font-size: 0.9375rem;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -406,7 +415,7 @@ a { color: var(--accent); }
 }
 
 .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
-.field > label { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+.field > label { font-size: 0.8125rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
 
 input, select, textarea {
   font: inherit;
@@ -426,7 +435,7 @@ input:focus, select:focus, textarea:focus {
 .btn {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 14px;
+  font-size: 0.875rem;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   padding: 9px 18px;
@@ -446,18 +455,18 @@ input:focus, select:focus, textarea:focus {
 
 .btn.danger:hover { border-color: #ff5964; color: #ff8a92; }
 
-.btn.small { font-size: 12px; padding: 6px 12px; }
+.btn.small { font-size: 0.75rem; padding: 6px 12px; }
 
 table.data {
   width: 100%;
   border-collapse: collapse;
-  font-size: 15px;
+  font-size: 0.9375rem;
 }
 
 table.data th {
   text-align: left;
   font-family: var(--font-display);
-  font-size: 12px;
+  font-size: 0.75rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-3);
@@ -473,7 +482,7 @@ table.data td {
 
 table.data td:first-child { color: var(--ink); }
 
-.muted { color: var(--ink-3); font-size: 14px; }
+.muted { color: var(--ink-3); font-size: 0.875rem; }
 
 .stat-row { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 18px; }
 
@@ -487,14 +496,14 @@ table.data td:first-child { color: var(--ink); }
 
 .stat-tile .stat-value {
   font-family: var(--font-display);
-  font-size: 30px;
+  font-size: 1.875rem;
   font-weight: 800;
   line-height: 1.05;
 }
 
 .stat-tile .stat-label {
   margin-top: 3px;
-  font-size: 12px;
+  font-size: 0.75rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-3);
@@ -511,7 +520,7 @@ table.data td:first-child { color: var(--ink); }
   border: 1px solid color-mix(in oklab, var(--ink-3) 45%, transparent);
   border-radius: 8px;
   padding: 6px 10px;
-  font-size: 13.5px;
+  font-size: 0.84375rem;
   color: var(--ink);
   white-space: nowrap;
   transform: translate(-50%, calc(-100% - 10px));
@@ -546,9 +555,9 @@ table.data td:first-child { color: var(--ink); }
   box-shadow: var(--tile-glow);
 }
 
-.card .card-title { font-family: var(--font-display); font-weight: 700; font-size: 17px; }
-.card .card-desc { color: var(--ink-2); font-size: 14.5px; min-height: 2.4em; }
-.card .card-meta { display: flex; gap: 14px; color: var(--ink-3); font-size: 13px; align-items: center; }
+.card .card-title { font-family: var(--font-display); font-weight: 700; font-size: 1.0625rem; }
+.card .card-desc { color: var(--ink-2); font-size: 0.90625rem; min-height: 2.4em; }
+.card .card-meta { display: flex; gap: 14px; color: var(--ink-3); font-size: 0.8125rem; align-items: center; }
 
 .lang-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 5px; vertical-align: -1px; }
 
@@ -607,7 +616,7 @@ table.data td:first-child { color: var(--ink); }
   border-radius: 9px;
   display: grid;
   place-items: center;
-  font-size: 19px;
+  font-size: 1.1875rem;
   color: var(--ink-2);
   border: 1.5px solid transparent;
 }
@@ -625,7 +634,7 @@ table.data td:first-child { color: var(--ink); }
 
 .nb-swatch.active { border-color: var(--ink); box-shadow: 0 0 0 2px var(--accent); }
 
-.nb-toggle { display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px; color: var(--ink-2); cursor: pointer; user-select: none; }
+.nb-toggle { display: inline-flex; align-items: center; gap: 7px; font-size: 0.84375rem; color: var(--ink-2); cursor: pointer; user-select: none; }
 .nb-toggle input { accent-color: var(--accent); width: 16px; height: 16px; }
 
 /* editor (writing) */
@@ -634,7 +643,7 @@ table.data td:first-child { color: var(--ink); }
   min-height: calc(100vh - 380px);
   resize: vertical;
   line-height: 1.65;
-  font-size: 17px;
+  font-size: 1.0625rem;
   font-family: Georgia, 'Times New Roman', serif;
   background: color-mix(in oklab, var(--surface) 92%, transparent);
 }
@@ -651,7 +660,7 @@ table.data td:first-child { color: var(--ink); }
   color: var(--ink);
   border-radius: 999px;
   padding: 10px 22px;
-  font-size: 14.5px;
+  font-size: 0.90625rem;
   opacity: 0;
   pointer-events: none;
   transition: opacity 200ms ease, transform 200ms ease;
@@ -676,7 +685,7 @@ table.data td:first-child { color: var(--ink); }
   border-radius: 50%;
   display: grid;
   place-items: center;
-  font-size: 19px;
+  font-size: 1.1875rem;
   color: var(--ink-2);
   border: 1.5px solid color-mix(in oklab, var(--ink-3) 55%, transparent);
   transition: transform 150ms ease, border-color 150ms ease, color 150ms ease;
@@ -715,14 +724,14 @@ table.data td:first-child { color: var(--ink); }
 
 .act-card .act-value {
   font-family: var(--font-display);
-  font-size: 21px;
+  font-size: 1.3125rem;
   font-weight: 800;
   line-height: 1.1;
 }
 
 .act-card .act-label {
   margin-top: 2px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--ink-3);
@@ -773,7 +782,7 @@ table.data td:first-child { color: var(--ink); }
 }
 
 .cc-group-title {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -812,7 +821,7 @@ table.data td:first-child { color: var(--ink); }
 
 [data-console="xbox"] .cc-btn .cc-ico { border-radius: 8px; }
 .cc-btn .cc-ico svg { width: 22px; height: 22px; }
-.cc-btn .cc-label { font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; }
+.cc-btn .cc-label { font-size: 0.75rem; letter-spacing: 0.05em; text-transform: uppercase; }
 
 #cc-extra {
   margin-top: 16px;
@@ -849,7 +858,7 @@ table.data td:first-child { color: var(--ink); }
 
 #boot-text {
   font-family: var(--font-display);
-  font-size: 30px;
+  font-size: 1.875rem;
   font-weight: 800;
   letter-spacing: 0.34em;
   padding-left: 0.34em; /* optically center the tracked text */
@@ -867,11 +876,13 @@ table.data td:first-child { color: var(--ink); }
   #hero { min-height: 0; }
   #brand-sub, #hint { display: none; }
   #clock-date { display: none; }
-  #clock-time { font-size: 16px; white-space: nowrap; }
-  .theme-dot { width: 32px; height: 32px; font-size: 11px; }
+  #clock-time { font-size: 1rem; white-space: nowrap; }
+  .theme-dot { width: 32px; height: 32px; font-size: 0.6875rem; }
   #topbar { flex-wrap: wrap; gap: 8px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+} /* end @layer base */

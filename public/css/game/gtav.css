@@ -1,3 +1,5 @@
+@layer game {
+
 /* ============================================================
    GTA V — pause-menu skin.
    Translucent dark surfaces over the Vinewood sunset (polish.css
@@ -77,7 +79,7 @@
   text-transform: uppercase;
   letter-spacing: 0.2em;
   font-weight: 700;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: #cfcfc8;
   padding: 10px 22px;
   transition: background 120ms ease, color 120ms ease;
@@ -116,7 +118,7 @@
   font-family: var(--font-body);
   font-variant: small-caps;
   text-transform: lowercase;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.25em;
   color: #cfcfc8;
@@ -294,7 +296,7 @@
   text-transform: uppercase;
   letter-spacing: 0.12em;
   font-weight: 700;
-  font-size: 12px;
+  font-size: 0.75rem;
   background: none;
   color: color-mix(in oklab, var(--ink) 55%, transparent);
 }
@@ -360,3 +362,5 @@
     color-mix(in oklab, var(--ink) 12%, transparent) 62% calc(62% + 1px),
     transparent calc(62% + 1px));
 }
+
+} /* end @layer game */

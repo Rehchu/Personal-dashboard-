@@ -1,3 +1,5 @@
+@layer fx {
+
 /* ============================================================
    Per-game effects.
    1) Theme-switch transition: JS adds class "run fx-<theme>" to
@@ -351,3 +353,5 @@
     animation: none !important;
   }
 }
+
+} /* end @layer fx */

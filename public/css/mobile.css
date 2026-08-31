@@ -1,3 +1,5 @@
+@layer mobile {
+
 /* ============================================================
    Phone-first layer (loads LAST — wins every cascade fight at
    equal specificity).
@@ -27,10 +29,10 @@
   #topbar { flex-wrap: nowrap; align-items: center; gap: 8px; }
   .topbar-right { width: auto; justify-content: flex-end; gap: 8px; }
   .topbar-left { min-width: 0; overflow: hidden; }
-  #brand { font-size: 16px; white-space: nowrap; }
+  #brand { font-size: 1rem; white-space: nowrap; }
   #brand-sub { display: none; }
   #profile-name { display: none; }
-  #clock-time { font-size: 15px; white-space: nowrap; }
+  #clock-time { font-size: 0.9375rem; white-space: nowrap; }
 
   [data-console="xbox"] .topbar-left { display: none; }
   [data-console="xbox"] .topbar-right { display: flex; }
@@ -42,7 +44,7 @@
   [data-console="xbox"] .top-icon-btn {
     width: 44px;
     height: 44px;
-    font-size: 18px;
+    font-size: 1.125rem;
   }
 
   [data-console="ps"] .top-icon-btn svg,
@@ -52,10 +54,10 @@
   [data-console="xbox"] #profile-chip { min-height: 44px; padding: 3px 9px 3px 3px; }
 
   [data-console="ps"] #profile-avatar,
-  [data-console="xbox"] #profile-avatar { width: 30px; height: 30px; font-size: 13px; }
+  [data-console="xbox"] #profile-avatar { width: 30px; height: 30px; font-size: 0.8125rem; }
 
   /* PS5 status row: quiet mark on the left, everything else hard right */
-  [data-console="ps"] #brand { font-size: 11px; letter-spacing: 0.16em; }
+  [data-console="ps"] #brand { font-size: 0.6875rem; letter-spacing: 0.16em; }
   [data-console="ps"] #brand-mark { display: none; }
   [data-console="ps"] .topbar-right { justify-content: flex-end; }
 
@@ -73,7 +75,7 @@
   .activity-cards { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .activity-cards::-webkit-scrollbar { display: none; }
   .act-card { min-width: 128px; flex: 0 0 auto; padding: 12px 16px; }
-  .act-card .act-value { font-size: 21px; }
+  .act-card .act-value { font-size: 1.3125rem; }
 
   #rail-wrap { padding: 0 14px; }
 
@@ -99,7 +101,7 @@
   [data-console="xbox"] #rail .tile {
     width: 100%;
     aspect-ratio: 1.3;
-    font-size: 40px;
+    font-size: 2.5rem;
   }
 
   /* selection ring only — no scale jumps inside a grid */
@@ -157,7 +159,7 @@
     min-width: 82px;
     max-width: 122px;
     aspect-ratio: 1;
-    font-size: 34px;
+    font-size: 2.125rem;
   }
 
   [data-console="ps"] #rail .tile.focused { transform: translateY(-4px) scale(1.3); }
@@ -166,12 +168,12 @@
 
   /* app details under the row, PS5-style: big light title, one-line
      description, then full-width-reachable action buttons */
-  [data-console="ps"] #hero-title { font-size: 23px; line-height: 1.12; }
+  [data-console="ps"] #hero-title { font-size: 1.4375rem; line-height: 1.12; }
 
   [data-console="ps"] #hero-desc {
     margin-top: 5px;
     max-width: none;
-    font-size: 13.5px;
+    font-size: 0.84375rem;
     line-height: 1.4;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -184,7 +186,7 @@
   [data-console="ps"] .hero-btn {
     min-height: 44px;
     padding: 0 18px;
-    font-size: 13px;
+    font-size: 0.8125rem;
   }
 
   /* --- in-tile nameplates (both consoles) --- */
@@ -203,7 +205,7 @@
     padding: 16px 8px 7px;
     background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
     color: #fff;
-    font-size: 12.5px;
+    font-size: 0.78125rem;
     font-weight: 600;
     letter-spacing: 0.05em;
     white-space: normal;
@@ -214,7 +216,7 @@
   /* the PS row's tiles are ~100px wide — tighter plate, same idea */
   [data-console="ps"] #rail .tile .tile-label {
     padding: 14px 5px 6px;
-    font-size: 11px;
+    font-size: 0.6875rem;
     line-height: 1.15;
     letter-spacing: 0.03em;
   }
@@ -223,7 +225,7 @@
      Placed after the PS rule on purpose: at equal specificity legibility
      wins over tightness. */
   [data-theme="minecraft"] #rail .tile .tile-label {
-    font-size: 16px;
+    font-size: 1rem;
     font-weight: 400;
     line-height: 1.1;
     background: linear-gradient(transparent, rgba(0, 0, 0, 0.72));
@@ -264,7 +266,7 @@
     box-shadow: none;
     border-radius: 10px;
     padding: 8px 4px;
-    font-size: 12px;
+    font-size: 0.75rem;
     font-weight: 600;
     letter-spacing: 0.02em;
     text-transform: none;
@@ -308,10 +310,10 @@
 
 /* tiny phones */
 @media (max-width: 380px) {
-  [data-console="xbox"] #rail .tile { font-size: 30px; }
-  [data-console="ps"] #rail .tile { width: 30vw; min-width: 76px; font-size: 30px; }
+  [data-console="xbox"] #rail .tile { font-size: 1.875rem; }
+  [data-console="ps"] #rail .tile { width: 30vw; min-width: 76px; font-size: 1.875rem; }
   [data-console="ps"] .topbar-left { display: none; }
-  #brand { font-size: 14px; }
+  #brand { font-size: 0.875rem; }
 }
 
 /* short viewports (landscape phones): the PS row must not push the app
@@ -323,8 +325,8 @@
   }
 
   [data-console="ps"] #rail { padding-top: 18px; padding-bottom: 22px; }
-  [data-console="ps"] #rail .tile { width: 17vw; min-width: 72px; max-width: 96px; font-size: 28px; }
-  [data-console="ps"] #hero-title { font-size: 20px; }
+  [data-console="ps"] #rail .tile { width: 17vw; min-width: 72px; max-width: 96px; font-size: 1.75rem; }
+  [data-console="ps"] #hero-title { font-size: 1.25rem; }
   [data-console="ps"] #hero-desc { -webkit-line-clamp: 1; }
 }
 
@@ -333,3 +335,135 @@
   [data-console="ps"] #rail .tile.focused:active { transform: scale(1.3); }
   [data-console="ps"] #rail .tile:active { transform: none; }
 }
+
+} /* end @layer mobile */
+
+/* ============================================================
+   Cascade-preservation overrides (added with the @layer refactor).
+   Before layering, the rules below — copied verbatim from the game
+   files named on each rule — beat this file's equal-or-lower
+   specificity phone rules on SPECIFICITY even though mobile.css
+   loaded last. Cascade layers hand every cross-layer fight to the
+   later layer, which would have flipped these to the mobile values;
+   restating today's winners in the final "overrides" layer keeps
+   the pre-layer outcome exactly. Keep values in sync with the
+   source files noted on each rule.
+   ============================================================ */
+@layer overrides {
+
+@media (max-width: 720px) {
+  /* game/ps5home.css — status-row + activity-strip metrics that
+     out-specified the generic phone rules above */
+  [data-console="ps"] #topbar { gap: 10px; }
+  [data-console="ps"] .topbar-right { gap: clamp(9px, 1.1vw, 15px); }
+  [data-console="ps"] #clock-time { font-size: 0.96875rem; }
+  [data-console="ps"] .act-card { min-width: 132px; flex: 0 0 auto; padding: 11px 18px; }
+  [data-console="ps"] .act-card .act-value { font-size: 1.25rem; }
+
+  /* game/xboxhome.css — top-bar gap (unfenced, 1-1-0 vs #topbar's 1-0-0) */
+  [data-console="xbox"] #topbar { gap: clamp(10px, 1.3vw, 18px); }
+
+  /* game/xboxhome.css — xbox × minecraft focused-tile lift (1-4-0 beat the
+     phone grid's transform:none at 1-3-0) */
+  [data-console="xbox"][data-theme="minecraft"] #rail .tile.focused {
+    transform: translateY(-4px) scale(1.03);
+  }
+
+  /* game/gtav.css — flat inverted nameplate on the focused tile (1-4-0) */
+  [data-theme="gtav"] #rail .tile.focused .tile-label {
+    background: none;
+    color: #14140f;
+    text-shadow: none;
+    font-weight: 800;
+  }
+
+  /* game/cyberpunk.css — authority-bar nameplate on the focused tile (1-4-0) */
+  [data-theme="cyberpunk"] #rail .tile.focused .tile-label {
+    border-left: 3px solid var(--accent);
+    padding-left: 9px;
+    background: linear-gradient(90deg,
+      color-mix(in oklab, var(--accent) 22%, transparent), rgba(0, 0, 0, 0.72) 45%);
+  }
+
+  /* per-theme tab identity: each skin's #pill-nav .pill rules (1-2-0 / 1-3-0)
+     out-specified the shared tab-bar restyle above, so on phones the themed
+     look kept winning. Restated from the theme files, one block each. */
+
+  /* game/gtav.css */
+  [data-theme="gtav"] #pill-nav .pill {
+    border-radius: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-weight: 700;
+    font-size: 0.75rem;
+    background: none;
+    color: color-mix(in oklab, var(--ink) 55%, transparent);
+  }
+
+  [data-theme="gtav"] #pill-nav .pill.active {
+    background: #f2f2ee;
+    color: #14140f;
+    font-weight: 800;
+  }
+
+  /* game/minecraft.css */
+  [data-theme="minecraft"] #pill-nav .pill {
+    border-radius: 0;
+    border: 3px solid #1d1d1d;
+    background-color: #8b8b8b;
+    color: #ffffff;
+    text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.55);
+    box-shadow:
+      inset 2px 2px 0 rgba(255, 255, 255, 0.3),
+      inset -2px -2px 0 rgba(0, 0, 0, 0.4);
+    transition: none;
+  }
+
+  [data-theme="minecraft"] #pill-nav .pill.active {
+    background-color: #3f6b28;
+    box-shadow:
+      inset -2px -2px 0 rgba(255, 255, 255, 0.28),
+      inset 2px 2px 0 rgba(0, 0, 0, 0.45);
+  }
+
+  /* game/cyberpunk.css */
+  [data-theme="cyberpunk"] #pill-nav .pill {
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    font-size: 0.6875rem;
+    border-radius: 0;
+    clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+  }
+
+  [data-theme="cyberpunk"] #pill-nav .pill.active {
+    background: var(--accent);
+    color: #0a0a06;
+    font-weight: 800;
+  }
+
+  /* game/assassins.css */
+  [data-theme="assassins"] #pill-nav .pill {
+    font-family: var(--font-display);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    border-radius: 0;
+    font-size: 0.71875rem;
+    border-bottom: 2px solid transparent;
+    color: #4a4a45;
+  }
+
+  [data-theme="assassins"] #pill-nav .pill.active {
+    background: none;
+    color: #17171a;
+    border-bottom-color: var(--accent);
+    font-weight: 700;
+  }
+}
+
+/* game/xboxhome.css parks the lift under reduced motion — restated so the
+   transform copied above does not resurrect it */
+@media (max-width: 720px) and (prefers-reduced-motion: reduce) {
+  [data-console="xbox"][data-theme="minecraft"] #rail .tile.focused { transform: none; }
+}
+
+} /* end @layer overrides (mobile.css) */

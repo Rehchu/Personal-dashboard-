@@ -12,40 +12,36 @@ import { ICONS } from './icons.js';
 import { initAchievements, trophyCaseHTML } from './achievements.js';
 import { activityCards } from './activity.js';
 import { sync } from './sync.js';
-import * as github from './github.js';
-import * as fitness from './fitness.js';
-import * as writing from './writing.js';
-import * as notebook from './notebook.js';
-import * as expenses from './expenses.js';
-import * as cloudflare from './cloudflare.js';
-import * as today from './today.js';
-import * as habits from './habits.js';
-import * as dragons from './dragons.js';
-import * as archive from './archive.js';
-import * as ptz from './ptz.js';
-import * as csvedit from './csvedit.js';
-import * as service from './service.js';
-import * as biz from './biz.js';
+// gaming stays a static import: updateScore() calls gaming.chipSummary() at
+// boot and on every pd:data-changed, well outside the mount flow.
 import * as gaming from './gaming.js';
-import * as town from './town.js';
+
+// Every other tile module is fetched on demand (first open, or the idle-time
+// warmup below). Each entry's load() caches its import promise so a module is
+// requested at most once; a failed fetch clears the cache so "Try again" can
+// re-import instead of replaying the rejection.
+const lazy = path => {
+  let p = null;
+  return () => (p ??= import(path).catch(err => { p = null; throw err; }));
+};
 
 const MODULES = {
-  today: { title: 'Today', mount: today.mount },
-  ops: { title: 'Mission Control', mount: biz.mount },
-  projects: { title: 'GitHub Projects', mount: github.mount },
-  fitness: { title: 'Fitness', mount: fitness.mount },
-  writing: { title: 'Book Writing', mount: writing.mount },
-  notebook: { title: 'Notebook', mount: notebook.mount },
-  habits: { title: 'Habits', mount: habits.mount },
-  dragons: { title: 'Dragon Vault', mount: dragons.mount },
-  archive: { title: 'Chat Archive', mount: archive.mount },
-  expenses: { title: 'Expenses', mount: expenses.mount },
-  cloudflare: { title: 'Cloudflare Fleet', mount: cloudflare.mount },
-  ptz: { title: 'Church Cameras', mount: ptz.mount },
-  csv: { title: 'Song Bank', mount: csvedit.mount },
-  service: { title: 'Service Planner', mount: service.mount },
-  gaming: { title: 'Gaming', mount: gaming.mount },
-  town: { title: 'Dyer Town', mount: town.mount },
+  today: { title: 'Today', load: lazy('./today.js') },
+  ops: { title: 'Mission Control', load: lazy('./biz.js') },
+  projects: { title: 'GitHub Projects', load: lazy('./github.js') },
+  fitness: { title: 'Fitness', load: lazy('./fitness.js') },
+  writing: { title: 'Book Writing', load: lazy('./writing.js') },
+  notebook: { title: 'Notebook', load: lazy('./notebook.js') },
+  habits: { title: 'Habits', load: lazy('./habits.js') },
+  dragons: { title: 'Dragon Vault', load: lazy('./dragons.js') },
+  archive: { title: 'Chat Archive', load: lazy('./archive.js') },
+  expenses: { title: 'Expenses', load: lazy('./expenses.js') },
+  cloudflare: { title: 'Cloudflare Fleet', load: lazy('./cloudflare.js') },
+  ptz: { title: 'Church Cameras', load: lazy('./ptz.js') },
+  csv: { title: 'Song Bank', load: lazy('./csvedit.js') },
+  service: { title: 'Service Planner', load: lazy('./service.js') },
+  gaming: { title: 'Gaming', load: () => Promise.resolve(gaming) },
+  town: { title: 'Dyer Town', load: lazy('./town.js') },
 };
 
 const $ = sel => document.querySelector(sel);
@@ -308,17 +304,22 @@ function activate(t) {
 /* ---------- module host ---------- */
 const appview = $('#appview');
 let unmount = null;
+// Generation counter for the await window in openModule: only the newest open
+// (and only while the overlay is still up — closeModule bumps it too) is
+// allowed to mount once its import resolves. A stale load just fizzles.
+let openSeq = 0;
 
-function openModule(id) {
+async function openModule(id) {
   const mod = MODULES[id];
   if (!mod) return;
+  const seq = ++openSeq;
   $('#appview-title').textContent = mod.title;
   // the tab/window title should follow the open module, then restore on close
   document.title = `${mod.title} — Dyer HQ`;
   const tools = $('#appview-tools');
   const body = $('#appview-body');
   tools.innerHTML = '';
-  body.innerHTML = '';
+  body.innerHTML = '<p class="muted">Loading…</p>';
   appview.hidden = false;
   // Make the background untabbable + invisible to assistive tech while the
   // full-screen module owns the view, and push a history entry so the phone
@@ -328,9 +329,19 @@ function openModule(id) {
   ambient.pause(); // the module view fully covers the background layers
   storm.stop();
   if (!bgVideo.hidden) bgVideo.pause();
+  // move focus into the overlay before the (possibly network-bound) import —
+  // the background just went inert, so leaving focus out there strands it
+  const back = $('#appview-back');
+  if (back) back.focus();
   try {
-    unmount = mod.mount(body, tools) || null;
+    const ns = await mod.load();
+    // the user closed the overlay or opened another tile while we fetched —
+    // this mount lost the race, so leave the newer view alone
+    if (seq !== openSeq || appview.hidden) return;
+    body.innerHTML = '';
+    unmount = ns.mount(body, tools) || null;
   } catch (err) {
+    if (seq !== openSeq || appview.hidden) return;
     body.innerHTML = `<p class="muted">This module hit an error: ${esc(err.message)}</p>`;
     // a crashed mount was a dead end — give a way back into the module
     const retry = document.createElement('button');
@@ -340,13 +351,11 @@ function openModule(id) {
     retry.addEventListener('click', () => openModule(id));
     body.append(retry);
   }
-  // move focus into the overlay so keyboard users are not stranded behind it
-  const back = $('#appview-back');
-  if (back) back.focus();
 }
 
 function closeModule() {
   if (appview.hidden) return;
+  openSeq++; // an in-flight open must not mount into a closed overlay
   if (typeof unmount === 'function') { try { unmount(); } catch { /* noop */ } }
   unmount = null;
   appview.hidden = true;
@@ -1354,3 +1363,21 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => { /* offline support is best-effort */ });
 }
 uiReady = true;
+
+// Warm the lazy tile modules once the shell has painted and the browser is
+// idle: one import per idle slot, so the first tile-open is instant in
+// practice without the boot path paying for sixteen modules up front.
+// A warmup failure is ignored — load() clears its cache, and the real
+// openModule gets a fresh attempt (plus the error panel) later.
+{
+  // wrapped, not aliased: an unbound native requestIdleCallback throws
+  // "Illegal invocation" when called through a plain variable
+  const idle = window.requestIdleCallback ? (fn => window.requestIdleCallback(fn)) : (fn => setTimeout(fn, 500));
+  const queue = Object.values(MODULES);
+  const warmNext = () => {
+    const mod = queue.shift();
+    if (!mod) return;
+    mod.load().catch(() => { /* noop — retried on open */ }).then(() => idle(warmNext));
+  };
+  idle(warmNext);
+}
