@@ -126,7 +126,10 @@ function xboxCard(d) {
 
   const p = d.profile || {};
   const recent = d.recent || [];
-  const banner = d.error ? `<div class="gm-banner">Xbox Live didn't answer${d._stale || d.stale ? ' — showing the last snapshot' : ''}.</div>` : '';
+  const banner = d.error
+    ? `<div class="gm-banner">Xbox Live didn't answer${d._stale || d.stale ? ' — showing the last snapshot' : ''}.${
+      d.upstream ? `<br><span style="opacity:.8;font-size:11.5px">${esc(String(d.upstream).slice(0, 200))}</span>` : ''}</div>`
+    : '';
   const games = recent.length ? recent.map(g => {
     const pct = g.total ? Math.round((num(g.earned) / num(g.total)) * 100) : 0;
     return `<div class="gm-game">

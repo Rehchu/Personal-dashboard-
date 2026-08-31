@@ -144,10 +144,14 @@ async function handleKeys(request, env) {
 
 /* ---------- Xbox via OpenXBL ---------- */
 
-async function fetchXbl(pathname, key) {
-  // api.xbl.io/v2 is the host OpenXBL's docs specify; the older xbl.io/api/v2
-  // form stopped answering reliably, which read as a "dead" key on the card
-  const res = await fetch(`https://api.xbl.io/v2${pathname}`, {
+// OpenXBL has published two base URLs over the years, and one of them can
+// answer 200 with a body that carries no profile at all — which used to cache
+// as an empty gamertag and read on the card as "your key is dead". Try both and
+// keep whichever actually returns something usable.
+const XBL_HOSTS = ['https://xbl.io/api/v2', 'https://api.xbl.io/v2'];
+
+async function fetchXbl(pathname, key, base = XBL_HOSTS[0]) {
+  const res = await fetch(`${base}${pathname}`, {
     headers: { 'X-Authorization': key, Accept: 'application/json' },
     signal: AbortSignal.timeout(FETCH_TIMEOUT),
   });
@@ -226,7 +230,12 @@ async function handleXboxGames(env) {
   const cached = await readCache(env, 'xbox_games').catch(() => null);
   if (cached && cached.age < CACHE_MS) return json(cached.data);
   try {
-    const data = normalizeXboxLibrary(await fetchXbl('/player/titleHistory', key));
+    let data = null;
+    for (const base of XBL_HOSTS) {
+      const d = normalizeXboxLibrary(await fetchXbl('/player/titleHistory', key, base).catch(() => null));
+      if (d.games.length) { data = d; break; }
+    }
+    if (!data) throw new Error('no titles from either host');
     await writeCache(env, 'xbox_games', data).catch(() => { /* fresh data still goes out */ });
     return json(data);
   } catch {
@@ -275,18 +284,28 @@ async function handleXbox(env) {
   const cached = await readCache(env, 'xbox').catch(() => null);
   if (cached && cached.age < CACHE_MS) return json(cached.data);
 
-  try {
-    const [account, history] = await Promise.all([
-      fetchXbl('/account', key),
-      fetchXbl('/player/titleHistory', key),
-    ]);
-    const data = normalizeXbox(account, history);
-    await writeCache(env, 'xbox', data).catch(() => { /* fresh data still goes out */ });
-    return json(data);
-  } catch {
-    if (cached) return json({ ...cached.data, stale: true });
-    return json({ configured: true, error: 'Xbox Live is unreachable right now' }, 502);
+  // whichever host answers with a real profile wins; an empty answer is a
+  // FAILURE, never something to cache over good data
+  let note = '';
+  for (const base of XBL_HOSTS) {
+    try {
+      const [account, history] = await Promise.all([
+        fetchXbl('/account', key, base),
+        fetchXbl('/player/titleHistory', key, base),
+      ]);
+      const data = normalizeXbox(account, history);
+      if (data.profile.gamertag || data.recent.length) {
+        await writeCache(env, 'xbox', data).catch(() => { /* fresh data still goes out */ });
+        return json(data);
+      }
+      note = `${base} answered, but with no profile — ${JSON.stringify(account).slice(0, 180)}`;
+    } catch (err) {
+      note = `${base} — ${err?.message || 'unreachable'}`;
+    }
   }
+  if (cached) return json({ ...cached.data, stale: true, error: 'Xbox Live sent nothing usable', upstream: note });
+  // surfaced on the card: a silent empty profile is impossible to diagnose
+  return json({ configured: true, error: 'Xbox Live sent nothing usable', upstream: note });
 }
 
 /* ---------- PlayStation ---------- */
