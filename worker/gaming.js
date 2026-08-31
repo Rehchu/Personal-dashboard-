@@ -145,7 +145,9 @@ async function handleKeys(request, env) {
 /* ---------- Xbox via OpenXBL ---------- */
 
 async function fetchXbl(pathname, key) {
-  const res = await fetch(`https://xbl.io/api/v2${pathname}`, {
+  // api.xbl.io/v2 is the host OpenXBL's docs specify; the older xbl.io/api/v2
+  // form stopped answering reliably, which read as a "dead" key on the card
+  const res = await fetch(`https://api.xbl.io/v2${pathname}`, {
     headers: { 'X-Authorization': key, Accept: 'application/json' },
     signal: AbortSignal.timeout(FETCH_TIMEOUT),
   });
