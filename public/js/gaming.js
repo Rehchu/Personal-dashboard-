@@ -103,10 +103,13 @@ function xboxSetup(again = false) {
        Microsoft reads your own Xbox profile; nothing is posted and your password
        never reaches this dashboard.`}</p>
     <ol>
-      <li>Open the <a href="#" data-msauth="open"><b>Xbox sign-in page</b></a> and sign in with your Microsoft account.</li>
-      <li>You'll land on a <b>blank page</b>. That's expected — the part that matters
-        is its <b>address</b>, which contains <code>?code=…</code>.</li>
-      <li>Copy that whole address and paste it below.</li>
+      <li>Open the <a href="#" data-msauth="open"><b>Xbox sign-in page</b></a> and
+        <b>sign in all the way through</b> — password, and Yes to any prompt.</li>
+      <li>You'll end up on a <b>completely blank page</b>. That blank page is the
+        finish line, not an error.</li>
+      <li>Copy that blank page's <b>address</b> and paste it below. It must contain
+        <code>?code=</code> — if it says <code>oauth20_authorize</code> you copied
+        the sign-in page instead and need to sign in first.</li>
     </ol>
     <input type="text" id="gm-msurl" placeholder="https://login.live.com/oauth20_desktop.srf?code=…"
       autocomplete="off" spellcheck="false">

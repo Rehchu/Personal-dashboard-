@@ -594,6 +594,18 @@ function msCodeFrom(input, expectState) {
   if (u.searchParams.get('removed') === 'true' || (!u.search && !u.hash)) {
     return { code: '', why: 'that sign-in was dismissed before it finished — open the sign-in page again and go all the way through to the blank page' };
   }
+  /* The easiest mistake to make, and it has to be caught BEFORE the state check
+     — the sign-in page carries the same state forward, so it would sail past
+     that and fail later with a vague "no code", sending the owner looking for
+     the wrong problem.
+
+     The address bar shows a login.live.com URL both BEFORE signing in (the
+     sign-in page, /oauth20_authorize.srf, carrying client_id and scope) and
+     AFTER (the blank redirect, carrying code). Only the second one is any use,
+     and on a phone they look much the same. So say exactly which one this is. */
+  if (/^\/oauth20_authorize\.srf/i.test(u.pathname) || u.searchParams.has('client_id')) {
+    return { code: '', why: 'that is the sign-in page itself, not the page after it — sign in there first, then copy the address of the blank page you land on' };
+  }
   // the nonce ties this paste to the sign-in this bridge started
   if (!expectState || u.searchParams.get('state') !== expectState) {
     return { code: '', why: 'that sign-in did not start here — open the sign-in page again and retry' };
