@@ -555,8 +555,13 @@ const writeXstsCache = (env, auth) => upsertSecret(env, XSTS_SECRET, JSON.string
 // The URL the owner opens to sign in, carrying a one-time `state` nonce this
 // bridge minted. They land on a blank page whose ADDRESS carries ?code=… and
 // paste that address back — the same paste-the-URL shape the PSN setup uses.
+// No `prompt` parameter on purpose. `prompt=select_account` forces the account
+// chooser on every attempt, and that chooser is its own failure surface: backing
+// out of it or dismissing a tile redirects to oauth20_desktop.srf?removed=true —
+// no code, no state, a dead end. With no prompt, an existing session goes
+// straight through and a signed-out one gets an ordinary sign-in page.
 const msAuthorizeUrl = state =>
-  `${MS_AUTHORIZE}?client_id=${MS_CLIENT_ID}&response_type=code&prompt=select_account` +
+  `${MS_AUTHORIZE}?client_id=${MS_CLIENT_ID}&response_type=code` +
   `&scope=${encodeURIComponent(MS_SCOPES)}&redirect_uri=${encodeURIComponent(MS_REDIRECT)}` +
   `&state=${encodeURIComponent(state)}`;
 
@@ -582,12 +587,19 @@ function msCodeFrom(input, expectState) {
   if (u.searchParams.get('error')) {
     return { code: '', why: str(u.searchParams.get('error_description')) || 'Microsoft reported a sign-in error' };
   }
+  // The account chooser's dead end: dismissing or removing a tile lands here with
+  // removed=true and nothing else. It is not an error the owner did wrong, and
+  // "that address has no ?code= in it" would send them hunting for the wrong
+  // thing — so name it, and say the one thing that gets past it.
+  if (u.searchParams.get('removed') === 'true' || (!u.search && !u.hash)) {
+    return { code: '', why: 'that sign-in was dismissed before it finished — open the sign-in page again and go all the way through to the blank page' };
+  }
   // the nonce ties this paste to the sign-in this bridge started
   if (!expectState || u.searchParams.get('state') !== expectState) {
     return { code: '', why: 'that sign-in did not start here — open the sign-in page again and retry' };
   }
   const code = u.searchParams.get('code') || '';
-  if (!code) return { code: '', why: 'that address has no ?code= in it' };
+  if (!code) return { code: '', why: 'that address has no ?code= in it — sign in fully, then copy the address of the blank page you land on' };
   // deliberately wide: MSA codes carry . ~ + / = - as well as word characters,
   // and a valid code silently rejected here is indistinguishable from a failure
   if (!/^[\w.~+/=-]{6,4096}$/.test(code)) return { code: '', why: 'the code in that address looks malformed' };
