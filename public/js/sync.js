@@ -25,7 +25,9 @@ import { deriveKey, encryptData, decryptData } from './synccrypto.js';
 // Never synced. sync.* is the engine's own state; ui.bgUpload resumes a multipart
 // upload whose file lives only on the device that started it; ui.tile is the
 // current scroll position and would push on every tile the user browses past.
-const DENY = new Set(['ui.bgUpload', 'ui.tile']);
+// town.me is the owner-avatar's spot on the town map — genuinely per-device,
+// and written on every click-to-walk, so syncing it would be pure churn
+const DENY = new Set(['ui.bgUpload', 'ui.tile', 'town.me']);
 const syncable = k => !k.startsWith('sync.') && !DENY.has(k);
 
 let key = load('sync.key', null);

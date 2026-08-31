@@ -29,6 +29,8 @@ const ART_KINDS = new Set([
   'repairshop', 'chapel', 'gym', 'library', 'kitchen', 'plaza',
   // the townsfolk themselves
   'char_ctrl', 'char_arise', 'char_apex', 'char_draco', 'char_spork',
+  // one shared sprite for in-world hires (hue-shifted client-side) and the owner
+  'char_hire', 'char_boss',
 ]);
 const MAX_ART = 8 * 1024 * 1024;   // a 1k PNG is ~1–2 MB
 function artHostAllowed(host) {
