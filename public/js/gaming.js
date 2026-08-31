@@ -127,7 +127,8 @@ function xboxCard(d) {
   const p = d.profile || {};
   const recent = d.recent || [];
   // a throttle is not a breakage — say so plainly, and don't invite a Refresh
-  // that would only spend more of the quota that ran out
+  // that would only spend more of the quota that ran out. Anything else falls
+  // through to main's diagnostic banner, which is kept as it was.
   const banner = d.rateLimited
     ? `<div class="gm-banner">⏳ ${esc(d.error || 'Xbox Live is rate-limiting this key.')}${
       d._stale || d.stale ? ' Showing the last snapshot.' : ''}</div>`
