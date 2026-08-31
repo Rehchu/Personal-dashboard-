@@ -36,6 +36,17 @@ const TOWN_ART_SRC = {
   // one shared sprite for in-world hires (hue-shifted per person) and the owner
   char_hire: `${HF}hf_20260831_042858_d9ce3a7a-9a7b-4556-a6ed-9cb8765f2d0b.png`,
   char_boss: `${HF}hf_20260831_042858_a435ece7-0026-4234-b9fb-afb52907c232.png`,
+  // front/back walk sheets per villager (side + a horizontal flip covers the rest)
+  char_ctrl_front: `${HF}hf_20260831_045614_d2c6793a-84d2-40da-ac88-80a474878fc8.png`,
+  char_ctrl_back: `${HF}hf_20260831_045828_13e00ae2-fb3e-490d-aa0a-e11c1cdb69cb.png`,
+  char_arise_front: `${HF}hf_20260831_045828_b9f9ddce-7517-4a29-879e-bf6ef082760d.png`,
+  char_arise_back: `${HF}hf_20260831_045614_900e1b6d-eeba-4311-a611-6b213af2d5a2.png`,
+  char_apex_front: `${HF}hf_20260831_045614_e41bcdde-d69d-483e-acf4-1f8003463a58.png`,
+  char_apex_back: `${HF}hf_20260831_045828_da021acf-6e32-4f3c-8849-e5e46c78b359.png`,
+  char_draco_front: `${HF}hf_20260831_045614_8af1f17e-de88-4b30-b9b4-fa86b6e26a19.png`,
+  char_draco_back: `${HF}hf_20260831_045614_4cb75ea5-6fc7-4127-96a6-3c0620030da7.png`,
+  char_spork_front: `${HF}hf_20260831_045614_6b331bc8-9ebf-40e8-a5f5-c0a197f8ef2c.png`,
+  char_spork_back: `${HF}hf_20260831_045614_ac91fafd-2d15-4bde-b1fe-738172348a51.png`,
 };
 
 async function loadTownArt(kind) {
@@ -181,6 +192,7 @@ export function mount(root, tools) {
         <div class="panel" style="margin-top:16px"><h3>Work reports</h3><div id="town-reports"></div></div>
         <div class="panel" style="margin-top:16px"><h3>🏛️ Town charter</h3><div id="town-laws"></div></div>
         <div class="panel" id="town-notes-panel" style="margin-top:16px" hidden><h3>🗒️ Notes desk</h3><div id="town-notes"></div></div>
+        <div class="panel" id="town-cal-panel" style="margin-top:16px" hidden><h3>📅 Community calendar</h3><div id="town-cal"></div></div>
         <div class="panel" style="margin-top:16px"><h3>Talk to someone</h3>
           <div class="town-chat-row">
             <select id="town-who"></select>
@@ -363,6 +375,7 @@ export function mount(root, tools) {
         sp.y += (dy / dist) * speed * dt;
         sp.moving = true;
         if (Math.abs(dx) > 2) sp.dir = dx < 0 ? -1 : 1;    // face where you walk
+        sp.axis = Math.abs(dy) > Math.abs(dx) * 1.2 ? (dy > 0 ? 'down' : 'up') : 'side';
       } else if (sp.moving || !sp.wanderAt) {
         sp.moving = false;
         sp.wanderAt = now + 1200 + Math.random() * 3500;   // linger, then wander
@@ -541,12 +554,21 @@ export function mount(root, tools) {
       ctx.beginPath();
       ctx.ellipse(sp.x, sp.y + 12, sp.moving ? 9 + Math.abs(step) * 2 : 10, 3.5, 0, 0, Math.PI * 2);
       ctx.fill();
-      const img = sp.artKey && art[sp.artKey];
+      // four-way walk: the front sheet coming toward you, the back sheet
+      // going away, the side sheet (flipped for left) otherwise; idle faces
+      // front. Directions without a sheet fall back to the side sprite.
+      let img = sp.artKey && art[sp.artKey];
+      let flip = sp.dir === -1;
+      if (sp.artKey && !sp.isHire) {
+        const axis = sp.moving ? sp.axis : 'down';
+        if (axis === 'down' && art[`${sp.artKey}_front`]) { img = art[`${sp.artKey}_front`]; flip = false; }
+        else if (axis === 'up' && art[`${sp.artKey}_back`]) { img = art[`${sp.artKey}_back`]; flip = false; }
+      }
       if (img) {
         ctx.save();
         ctx.translate(sp.x, sp.y + 12);        // pivot at the feet
         ctx.rotate(tilt);
-        if (sp.dir === -1) ctx.scale(-1, 1);   // sprites face right natively
+        if (flip) ctx.scale(-1, 1);            // side sprites face right natively
         // hires share one sprite — a per-person hue shift keeps them distinct
         // hue-rotate is silently ignored where 2D-canvas filters are missing
         // (older Safari); those browsers fall back to identical untinted hires
@@ -652,6 +674,9 @@ export function mount(root, tools) {
       const ev = a.eval && a.eval.note
         ? `<div style="flex-basis:100%;font-size:12.5px;color:#e0b23a;margin-top:2px">${'★'.repeat(Math.max(1, Math.min(5, Number(a.eval.rating) || 3)))}${'☆'.repeat(5 - Math.max(1, Math.min(5, Number(a.eval.rating) || 3)))} ${esc(a.eval.by)}: “${esc(a.eval.note)}”</div>`
         : '';
+      const mo = a.morale && Number.isFinite(Number(a.morale.score))
+        ? `<span title="${esc(a.morale.why || '')}" style="font-size:12px;cursor:help;color:${a.morale.score < 35 ? '#ff8a92' : a.morale.score < 65 ? '#e0b23a' : 'var(--ink-2)'}">${a.morale.score < 35 ? '😟' : a.morale.score < 65 ? '😐' : '😊'}${Number(a.morale.score)}</span>`
+        : '';
       const en = Number.isFinite(Number(a.energy))
         ? `<span title="energy" style="font-size:12px;color:${a.energy < 35 ? '#ff8a92' : 'var(--ink-2)'}">⚡${Number(a.energy)}</span>`
         : '';
@@ -659,7 +684,7 @@ export function mount(root, tools) {
         ? `<div style="flex-basis:100%;font-size:12px;color:var(--ink-3);font-style:italic;margin-top:2px">📖 “${esc(a.diary[a.diary.length - 1].text)}”</div>`
         : '';
       return `<div class="town-agent" style="flex-wrap:wrap"><span class="nm">${esc(a.name)}</span>
-        <span class="rl">${esc(a.role)} · ${esc(a.loc)}${a.busy ? ' · 🔧 at their desk' : ''}</span>${en}<span class="co">${Number(a.coins) || 0}c</span>${ev}${dy}</div>`;
+        <span class="rl">${esc(a.role)} · ${esc(a.loc)}${a.busy ? ' · 🔧 at their desk' : ''}</span>${mo}${en}<span class="co">${Number(a.coins) || 0}c</span>${ev}${dy}</div>`;
     }).join('');
 
     // civic life: passed laws and the ballots still open
@@ -683,6 +708,18 @@ export function mount(root, tools) {
         : '<p class="muted" style="margin:0">No notes filed yet.</p>';
     } else {
       notesPanel.hidden = true;
+    }
+
+    // community happenings the town pitched and corporate approved — always
+    // marked optional for the owner, but you'd better believe he's coming
+    const calPanel = root.querySelector('#town-cal-panel');
+    if (Array.isArray(s.events)) {
+      calPanel.hidden = false;
+      root.querySelector('#town-cal').innerHTML = s.events.length
+        ? s.events.slice().reverse().map(ev => `<div class="town-ev">📅 <b>${esc(ev.title || '')}</b> — ${esc(ev.date || 'soon')} <span class="t">pitched by ${esc(ev.by || '?')}</span></div>`).join('')
+        : '<p class="muted" style="margin:0">Nothing planned yet — the town will think of something.</p>';
+    } else {
+      calPanel.hidden = true;
     }
 
     root.querySelector('#town-feed').innerHTML = (s.feed || []).map(e => `
