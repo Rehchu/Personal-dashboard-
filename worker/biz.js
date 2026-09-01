@@ -108,11 +108,17 @@ async function shopPulse(env) {
          FROM inquiries
          WHERE lower(COALESCE(status,'')) NOT IN ${LEAD_DONE}
          GROUP BY COALESCE(NULLIF(TRIM(type),''),'other')`),
+      // Real people first, then recency. The shop's own daily summary mail is
+      // ingested back into this table once a day, so a plain ORDER BY
+      // created_at fills all five slots with robot mail and pushes the actual
+      // repair quotes off the panel — which is exactly what it was doing.
       env.SHOP_DB.prepare(
         `SELECT name, subject, type, ai_priority, status, created_at
          FROM inquiries
          WHERE lower(COALESCE(status,'')) NOT IN ${LEAD_DONE}
-         ORDER BY created_at DESC LIMIT 5`),
+         ORDER BY CASE WHEN COALESCE(type,'') = 'internal' THEN 1 ELSE 0 END,
+                  created_at DESC
+         LIMIT 5`),
       // date is 'YYYY-MM-DD' text, so string comparison IS date comparison
       env.SHOP_DB.prepare(
         `SELECT customer_name, title, type, date, time, duration_minutes, status

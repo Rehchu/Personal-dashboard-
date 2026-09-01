@@ -1283,13 +1283,19 @@ function boot() {
 
 /* ---------- Mission Control live badge ----------
    The ops tile wears the count of things wanting attention (open shop tickets +
-   waiting leads + open IT tickets). Read from biz.js's cache first so it paints
-   instantly, then refreshed once from the bridges in the background. */
+   waiting customers + open IT tickets). Read from biz.js's cache first so it
+   paints instantly, then refreshed once from the bridges in the background.
+
+   Counts leads.customer, not leads.count: the shop's own daily summary mail is
+   ingested back into the inquiries table, so `count` carries a dozen robot
+   emails and the badge sat in alert red permanently. A badge that cries wolf
+   every day is one you stop seeing. Falls back to count only for a payload
+   cached before that split existed. */
 function opsAttentionCount() {
   const shop = load('biz.shop', null)?.data;
   const it = load('biz.ariseit', null)?.data;
   let n = 0;
-  if (shop && shop.configured !== false) n += (shop.tickets?.length || 0) + (shop.leads?.count || 0);
+  if (shop && shop.configured !== false) n += (shop.tickets?.length || 0) + (shop.leads?.customer ?? shop.leads?.count ?? 0);
   if (it && it.configured !== false) n += (it.open?.length || 0);
   return n;
 }
