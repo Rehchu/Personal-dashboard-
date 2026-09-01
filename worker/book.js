@@ -6,10 +6,14 @@
 // idea. Four chapters and a lore bible existed with nothing to show for them.
 //
 // This reads that branch through the GitHub API and hands the tile a summary.
-// It lives in the Worker rather than the browser for one reason: the repo is
-// PRIVATE, so a token is required, and a token must never reach a page. The
-// token is kept in the same D1 secrets table as the camera credentials and is
-// never returned by any route — only ever used server-side.
+//
+// Rehchu/Dragons is a PUBLIC repo, so no credential is needed and the tile
+// works out of the box. A token is optional: set one and the rate limit goes
+// from GitHub's 60 requests an hour for anonymous callers to 5,000, and the
+// bridge keeps working if the repo is ever made private. When a token is
+// present it stays in the D1 secrets table beside the camera credentials and is
+// never returned by any route — which is also why this runs in the Worker
+// rather than the browser.
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -27,15 +31,21 @@ const CHAPTER_DIR = 'chapters';
 // as though the book were longer than it is.
 const DOC_FILES = ['LORE.md', 'LORE_TIMELINE.md', 'TIMELINE.md', 'GAP-MAP.md', 'AUDIT.md'];
 
+// A full refresh costs roughly a dozen API calls. Anonymous callers get 60 an
+// hour from GitHub, so cache far longer when there is no token to spend.
 const CACHE_MS = 5 * 60 * 1000;
+const ANON_CACHE_MS = 15 * 60 * 1000;
 let cache = null; // { at, body }
 
+// The authorization header is omitted entirely when there is no token — sending
+// `Bearer ` with nothing after it makes GitHub reject the request outright,
+// which would be a worse failure than simply being anonymous.
 const gh = (env, path, token) => fetch(`https://api.github.com${path}`, {
   headers: {
     accept: 'application/vnd.github+json',
-    authorization: `Bearer ${token}`,
     'user-agent': 'dyer-hq-book-bridge',
     'x-github-api-version': '2022-11-28',
+    ...(token ? { authorization: `Bearer ${token}` } : {}),
   },
 });
 
@@ -92,8 +102,9 @@ export async function handleBook(url, request, env) {
     return json({ ok: true });
   }
 
+  // No token is not an error: the repo is public. It only means a smaller rate
+  // budget, which the longer cache below absorbs.
   const tok = await token(env);
-  if (!tok) return json({ configured: false, repo: `${OWNER}/${REPO}`, branch: BRANCH });
 
   if (path === '/api/book/read') {
     const want = url.searchParams.get('path') || '';
@@ -106,11 +117,18 @@ export async function handleBook(url, request, env) {
     return json({ path: want, title: titleOf(file.text, want), words: words(file.text), text: file.text, url: file.url });
   }
 
-  if (cache && Date.now() - cache.at < CACHE_MS) return json({ ...cache.body, cached: true });
+  if (cache && Date.now() - cache.at < (tok ? CACHE_MS : ANON_CACHE_MS)) {
+    return json({ ...cache.body, cached: true });
+  }
 
   const listRes = await gh(env, `/repos/${OWNER}/${REPO}/contents/${CHAPTER_DIR}?ref=${encodeURIComponent(BRANCH)}`, tok);
   if (listRes.status === 404) {
     return json({ configured: true, repo: `${OWNER}/${REPO}`, branch: BRANCH, chapters: [], docs: [], totals: { chapters: 0, words: 0 }, note: 'no chapters/ directory on that branch yet' });
+  }
+  if (listRes.status === 403 && !tok) {
+    // Anonymous callers get 60 an hour. Say so plainly rather than reporting a
+    // bare 403, which reads like a permissions problem and is not one.
+    return json({ error: 'GitHub rate-limited this anonymous request. It resets within the hour, or POST a token to /api/book/token to raise the limit.' }, 429);
   }
   if (!listRes.ok) return json({ error: `github said ${listRes.status}` }, 502);
 

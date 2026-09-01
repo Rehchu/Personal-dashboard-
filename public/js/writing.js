@@ -346,13 +346,6 @@ export function mount(root, tools) {
       const d = await res.json();
       if (!alive) return;
 
-      if (d.configured === false) {
-        box.innerHTML = `<p class="muted">The manuscript bridge has no GitHub token yet, so it cannot read
-          <code>${esc(d.repo || 'the repo')}</code>. Add one with a POST to <code>/api/book/token</code>
-          (a fine-grained token with read access to that repository is enough).</p>`;
-        sagaLoaded = true;
-        return;
-      }
       if (d.error) { box.innerHTML = `<p class="muted">${esc(d.error)}</p>`; return; }
 
       const link = root.querySelector('#wr-saga-branch');
