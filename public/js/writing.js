@@ -60,6 +60,18 @@ const words = text => (text.trim() ? text.trim().split(/\s+/).length : 0);
 const bookWords = book => book.chapters.reduce((s, c) => s + words(c.text), 0);
 
 const STYLE = `
+  .wr-saga-list { display: flex; flex-direction: column; gap: 6px; }
+  .wr-saga-row { display: flex; gap: 12px; align-items: baseline; width: 100%; text-align: left;
+    padding: 11px 13px; border-radius: 10px; cursor: pointer; color: var(--ink);
+    background: var(--surface-2); border: 1px solid var(--line, rgba(255,255,255,.12));
+    font: 600 14px var(--font-body, system-ui); }
+  .wr-saga-row:hover { border-color: var(--accent); }
+  .wr-saga-t { flex: 1; }
+  .wr-saga-m { font-weight: 400; font-size: 12px; white-space: nowrap; }
+  .wr-saga-text { white-space: pre-wrap; word-wrap: break-word; max-height: 60vh; overflow: auto;
+    padding: 14px; border-radius: 10px; background: var(--surface-2); line-height: 1.65;
+    font: 14px/1.65 var(--font-body, system-ui); }
+
   #wr-views { display: flex; gap: 6px; }
   #wr-outline { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
   .wr-card { text-align: left; padding: 13px 14px; border-radius: 10px; cursor: pointer;
@@ -91,6 +103,9 @@ export function mount(root, tools) {
   let book = books.find(b => b.id === sel.book) || books[0];
   let chapter = book.chapters.find(c => c.id === sel.chapter) || book.chapters[0];
   let view = load('writing.view', 'write');
+  // the saga panel fetches over the network; a reply that lands after the tile
+  // closed must not paint into a detached node
+  let alive = true;
 
   const persist = () => save('books', books);
   const remember = () => save('writing.sel', { book: book.id, chapter: chapter?.id });
@@ -100,6 +115,7 @@ export function mount(root, tools) {
       <button class="btn small" data-view="write">Write</button>
       <button class="btn small" data-view="outline">Outline</button>
       <button class="btn small" data-view="cast">Cast</button>
+      <button class="btn small" data-view="saga">Saga</button>
     </span>
     <button class="btn small" id="wr-focus">◑ Focus</button>
     <button class="btn small" id="wr-sprint">⏱ Sprint</button>
@@ -158,6 +174,17 @@ export function mount(root, tools) {
               `<button class="btn small" data-add-card="${k}">＋ ${KIND_LABEL[k]}</button>`).join('')}
           </div>
           <div id="wr-cast"></div>
+        </div>
+
+        <div class="panel" id="wr-saga-panel" hidden>
+          <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:4px">
+            <h3 style="flex:1;margin:0">The dragon saga</h3>
+            <a class="btn small" id="wr-saga-branch" href="#" target="_blank" rel="noopener" hidden>open the branch ↗</a>
+          </div>
+          <p class="muted" style="margin-bottom:14px">
+            What Draco has actually committed — read straight from the repo, not from this browser.
+          </p>
+          <div id="wr-saga"><p class="muted">Reading the manuscript…</p></div>
         </div>
       </div>
     </div>`;
@@ -288,11 +315,97 @@ export function mount(root, tools) {
     root.querySelector('#wr-editor-panel').hidden = view !== 'write';
     root.querySelector('#wr-outline-panel').hidden = view !== 'outline';
     root.querySelector('#wr-cast-panel').hidden = view !== 'cast';
+    root.querySelector('#wr-saga-panel').hidden = view !== 'saga';
     tools.querySelectorAll('[data-view]').forEach(b => {
       b.style.borderColor = b.dataset.view === view ? 'var(--accent)' : '';
     });
     if (view === 'outline') renderOutline();
     if (view === 'cast') renderCast();
+    if (view === 'saga') renderSaga();
+  }
+
+  /* ---------- the saga: chapters Draco has really committed ----------
+     The other three views are this browser's own copy. This one is the
+     repository, so it is deliberately read-only — nothing typed here could
+     survive Draco's next push, and pretending otherwise would lose work. */
+  let sagaLoaded = false;
+
+  function sagaRow(c, isDoc) {
+    const kb = c.bytes ? ` · ${Math.round(c.bytes / 1024)} KB` : '';
+    return `<button class="wr-saga-row" data-read="${esc(c.path)}">
+      <span class="wr-saga-t">${esc(c.title || c.file)}</span>
+      <span class="muted wr-saga-m">${c.words.toLocaleString()} words${kb}${isDoc ? ' · notes' : ''}</span>
+    </button>`;
+  }
+
+  async function renderSaga(force) {
+    const box = root.querySelector('#wr-saga');
+    if (!box || (sagaLoaded && !force)) return;
+    try {
+      const res = await fetch('/api/book', { headers: { accept: 'application/json' } });
+      const d = await res.json();
+      if (!alive) return;
+
+      if (d.configured === false) {
+        box.innerHTML = `<p class="muted">The manuscript bridge has no GitHub token yet, so it cannot read
+          <code>${esc(d.repo || 'the repo')}</code>. Add one with a POST to <code>/api/book/token</code>
+          (a fine-grained token with read access to that repository is enough).</p>`;
+        sagaLoaded = true;
+        return;
+      }
+      if (d.error) { box.innerHTML = `<p class="muted">${esc(d.error)}</p>`; return; }
+
+      const link = root.querySelector('#wr-saga-branch');
+      if (d.branchUrl && link) { link.href = d.branchUrl; link.hidden = false; }
+
+      const t = d.totals || { chapters: 0, words: 0, loreWords: 0 };
+      const when = d.lastCommit?.at ? new Date(d.lastCommit.at).toLocaleString() : null;
+
+      box.innerHTML = `
+        <div class="stat-row" style="margin-bottom:16px">
+          <div class="stat-tile"><div class="stat-value">${t.chapters}</div><div class="stat-label">chapters written</div></div>
+          <div class="stat-tile"><div class="stat-value">${(t.words || 0).toLocaleString()}</div><div class="stat-label">words of prose</div></div>
+          <div class="stat-tile"><div class="stat-value">${(t.loreWords || 0).toLocaleString()}</div><div class="stat-label">words of lore &amp; notes</div></div>
+        </div>
+        ${d.lastCommit ? `<p class="muted" style="margin:0 0 14px">Last commit${when ? ` ${esc(when)}` : ''} — “${esc(d.lastCommit.message)}”</p>` : ''}
+        ${(d.chapters || []).length
+          ? `<div class="wr-saga-list">${d.chapters.map(c => sagaRow(c, false)).join('')}</div>`
+          : `<p class="muted">${esc(d.note || 'No chapters on that branch yet.')}</p>`}
+        ${(d.docs || []).length
+          ? `<h3 style="margin:20px 0 8px;font-size:14px">The bible</h3>
+             <div class="wr-saga-list">${d.docs.map(c => sagaRow(c, true)).join('')}</div>` : ''}
+        <div id="wr-saga-read" hidden></div>`;
+
+      box.querySelectorAll('[data-read]').forEach(b =>
+        b.addEventListener('click', () => openSaga(b.dataset.read)));
+      sagaLoaded = true;
+    } catch {
+      if (alive) box.innerHTML = '<p class="muted">Could not reach the manuscript bridge.</p>';
+    }
+  }
+
+  async function openSaga(path) {
+    const pane = root.querySelector('#wr-saga-read');
+    if (!pane) return;
+    pane.hidden = false;
+    pane.innerHTML = '<p class="muted">Opening…</p>';
+    try {
+      const res = await fetch(`/api/book/read?path=${encodeURIComponent(path)}`, { headers: { accept: 'application/json' } });
+      const d = await res.json();
+      if (!alive) return;
+      if (d.error) { pane.innerHTML = `<p class="muted">${esc(d.error)}</p>`; return; }
+      pane.innerHTML = `
+        <div style="display:flex;gap:10px;align-items:baseline;margin:20px 0 8px">
+          <h3 style="flex:1;margin:0">${esc(d.title)}</h3>
+          <span class="muted">${d.words.toLocaleString()} words</span>
+          <button class="btn small" id="wr-saga-close">✕</button>
+        </div>
+        <pre class="wr-saga-text">${esc(d.text)}</pre>`;
+      pane.querySelector('#wr-saga-close').addEventListener('click', () => { pane.hidden = true; });
+      pane.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch {
+      if (alive) pane.innerHTML = '<p class="muted">Could not open that file.</p>';
+    }
   }
 
   function renderEditor() {
@@ -488,6 +601,7 @@ export function mount(root, tools) {
   renderAll();
 
   return () => {
+    alive = false;
     if (sprint) endSprint(false);
     commitNow(); // closing the module must not lose the last 600ms of typing
     document.documentElement.classList.remove('wr-focus'); // never leak focus mode
