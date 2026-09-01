@@ -34,6 +34,27 @@ const num = n => (Number.isFinite(Number(n)) ? Number(n) : 0);
 const money = n => `$${num(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const ago = d => (d === null || d === undefined ? '' : d === 0 ? 'today' : `${d}d`);
 
+// created_at arrives as SQLite's 'YYYY-MM-DD HH:MM:SS'. Safari refuses to parse
+// that with a space in it, so normalise to ISO before measuring or the age
+// silently reads as blank on the iPad.
+const daysSince = ts => {
+  if (!ts) return null;
+  const t = Date.parse(String(ts).replace(' ', 'T'));
+  return Number.isFinite(t) ? Math.max(0, Math.floor((Date.now() - t) / 86400000)) : null;
+};
+
+// The tile answers "how many people are waiting on me", not "how many rows are
+// in the table". Internal notes are real work but nobody is sitting there
+// wondering why the shop never wrote back, so they never set the alarm colour.
+function leadTile(leads) {
+  const waiting = num(leads.customer);
+  const days = daysSince(leads.oldestCustomerAt);
+  const label = waiting && days !== null
+    ? (days === 0 ? 'waiting · came in today' : `waiting · oldest ${days}d`)
+    : 'customers waiting';
+  return statTile(waiting, label, waiting ? 'warn' : 'good');
+}
+
 const PRIORITY = { high: '#d64545', urgent: '#d64545', medium: '#c98a1a', normal: '#5a8f9a', low: '#5a8f9a' };
 function prioChip(p) {
   const key = String(p || '').toLowerCase();
@@ -90,7 +111,7 @@ function renderShop(d) {
   if (d.configured === false) return `<div class="biz-panel">${clearState('🖥️', 'Shop database not connected yet.')}</div>`;
 
   const tickets = d.tickets || [];
-  const leads = d.leads || { count: 0, newest: [] };
+  const leads = d.leads || { count: 0, customer: 0, oldestCustomerAt: null, byType: {}, newest: [] };
   const invoices = d.unpaidInvoices || [];
   const appt = d.nextAppointment;
   const owed = invoices.reduce((s, i) => s + (num(i.total) - num(i.paid)), 0);
@@ -99,7 +120,7 @@ function renderShop(d) {
 
   const stats = `<div class="biz-stats">
     ${statTile(tickets.length, 'open tickets', tickets.length ? 'warn' : 'good')}
-    ${statTile(leads.count, 'leads waiting', leads.count ? 'warn' : 'good')}
+    ${leadTile(leads)}
     ${statTile(invoices.length, invoices.length ? `unpaid · ${money(owed)}` : 'invoices clear', invoices.length ? 'warn' : 'good')}
     ${statTile(appt ? '1' : '—', 'next appointment')}
   </div>`;
@@ -114,14 +135,17 @@ function renderShop(d) {
       <span class="r">${ago(t.ageDays)}</span>
     </div>`).join('') : clearState('✅', 'No tickets in the queue.');
 
-  const leadRows = (leads.newest || []).length ? leads.newest.map(l => `
+  const internalWaiting = num(leads.byType?.internal);
+  const leadRows = ((leads.newest || []).length ? leads.newest.map(l => `
     <div class="biz-row">
       <div class="main">
-        <div class="t">${esc(l.name || 'Someone')}</div>
+        <div class="t">${esc(l.name || 'Someone')}${l.type === 'internal' ? '<span class="biz-chip" style="--c:var(--ink-3)">internal</span>' : ''}</div>
         <div class="s">${esc(l.subject || l.status || 'new inquiry')}</div>
       </div>
       ${prioChip(l.ai_priority)}
-    </div>`).join('') : clearState('📭', 'Inbox is empty.');
+      <span class="r">${ago(daysSince(l.created_at))}</span>
+    </div>`).join('') : clearState('📭', 'Nothing waiting — inbox is clear.'))
+    + (internalWaiting ? `<p class="biz-note">${internalWaiting} internal note${internalWaiting === 1 ? '' : 's'} also open — not customers waiting on a reply.</p>` : '');
 
   const invoiceRows = invoices.length ? invoices.slice(0, 6).map(i => `
     <div class="biz-row">
