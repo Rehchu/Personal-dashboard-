@@ -118,8 +118,10 @@ async function handleKeys(request, env) {
     }
     const v = body.xbl_key.trim();
     stmts.push(v ? upsertSecret(env, 'xbl_key', v) : dropSecret(env, 'xbl_key'));
-    // whichever way the key changed, the cached data belongs to the old one
+    // whichever way the key changed, the cached data belongs to the old one —
+    // and so does the penalty box, since the quota is counted per key
     await dropCache(env, 'xbox').catch(() => {});
+    await dropCache(env, COOLDOWN_KEY).catch(() => {});
   }
 
   if ('psn_npsso' in body) {
@@ -150,16 +152,80 @@ async function handleKeys(request, env) {
 // keep whichever actually returns something usable.
 const XBL_HOSTS = ['https://xbl.io/api/v2', 'https://api.xbl.io/v2'];
 
+// The free tier allows 60 calls per 300s, counted per KEY — not per host. When
+// it is blown, OpenXBL answers **HTTP 200** with the limit as the BODY:
+//   {"content":{"currentRequests":70,"maxRequests":60,
+//    "periodInSeconds":300,"limitType":"Rate"},"code":429}
+// so `!res.ok` sails straight past it and the empty body reads as "no profile".
+// Worse, walking on to the second host spends another call against the same
+// blown quota — the retry was digging the hole deeper. Detect it in the body,
+// mark the error, and let every caller STOP rather than retry.
+class XblRateLimited extends Error {
+  constructor(seconds) {
+    super('rate limit reached');
+    this.rateLimited = true;
+    this.retryAfterMs = Math.min(Math.max(Number(seconds) || 300, 60), 3600) * 1000;
+  }
+}
+
+const rateLimitOf = body => {
+  const c = body?.content;
+  if (Number(body?.code) === 429 || c?.limitType === 'Rate') {
+    return Number(c?.periodInSeconds) || 300;
+  }
+  return 0;
+};
+
 async function fetchXbl(pathname, key, base = XBL_HOSTS[0]) {
   const res = await fetch(`${base}${pathname}`, {
     headers: { 'X-Authorization': key, Accept: 'application/json' },
     signal: AbortSignal.timeout(FETCH_TIMEOUT),
   });
+  if (res.status === 429) {
+    try { await res.body?.cancel(); } catch { /* noop */ }
+    throw new XblRateLimited(Number(res.headers.get('retry-after')) || 300);
+  }
+  // A key OpenXBL refuses is not a transient outage — it is the one failure the
+  // owner can actually DO something about, so it gets its own kind and the card
+  // offers the key form back. Same shape PSN's expired-NPSSO path already uses.
+  if (res.status === 401 || res.status === 403) {
+    try { await res.body?.cancel(); } catch { /* noop */ }
+    const err = new Error(`OpenXBL rejected the key (${res.status})`);
+    err.reauth = true;
+    throw err;
+  }
   if (!res.ok) {
     try { await res.body?.cancel(); } catch { /* noop */ }
     throw new Error(`OpenXBL returned ${res.status}`);
   }
-  return res.json();
+  const body = await res.json();
+  const period = rateLimitOf(body);
+  if (period) throw new XblRateLimited(period);
+  return body;
+}
+
+// A blown quota is remembered, so the NEXT tile open does not spend four more
+// calls discovering the same thing. Kept in the same D1 table as the payloads:
+// one row, holding the timestamp the penalty box opens again.
+const COOLDOWN_KEY = 'xbox_cooldown';
+
+async function xblCoolingDown(env) {
+  const row = await readCache(env, COOLDOWN_KEY).catch(() => null);
+  const until = Number(row?.data?.until) || 0;
+  return until > Date.now() ? until : 0;
+}
+
+const startCooldown = (env, err) =>
+  writeCache(env, COOLDOWN_KEY, { until: Date.now() + (err?.retryAfterMs || 300000) })
+    .catch(() => { /* the request still answers without it */ });
+
+// The one shape every Xbox route returns while throttled: the last good
+// snapshot when there is one, and always a message that names the real cause.
+function throttled(cached, until) {
+  const mins = Math.max(1, Math.ceil((until - Date.now()) / 60000));
+  const error = `Xbox Live is rate-limiting this key — retrying in about ${mins} minute${mins === 1 ? '' : 's'}`;
+  if (cached) return json({ ...cached.data, stale: true, rateLimited: true, error });
+  return json({ configured: true, rateLimited: true, error });
 }
 
 // Profile fields live in a settings array of {id, value} pairs, and OpenXBL
@@ -224,75 +290,187 @@ function normalizeXboxLibrary(history) {
   };
 }
 
+// Achievements come back in the same shape from OpenXBL and from Xbox Live
+// itself — OpenXBL proxies this endpoint — so both paths normalize through here.
+function normalizeAchievements(body) {
+  const list = Array.isArray(body?.achievements) ? body.achievements : [];
+  return {
+    configured: true,
+    achievements: list.map(a => ({
+      name: str(a?.name),
+      detail: str(a?.description) || str(a?.lockedDescription),
+      icon: str(Array.isArray(a?.mediaAssets) ? a.mediaAssets[0]?.url : ''),
+      score: num(Array.isArray(a?.rewards) ? a.rewards.find(r => r?.type === 'Gamerscore')?.value : 0),
+      unlocked: a?.progressState === 'Achieved',
+      unlockedAt: str(a?.progression?.timeUnlocked) || null,
+      rarity: num(a?.rarity?.currentPercentage),
+    })).sort((a, b) => Number(b.unlocked) - Number(a.unlocked)),
+  };
+}
+
 async function handleXboxGames(env) {
+  const mode = await xboxMode(env);
+  if (mode === 'none') return json({ configured: false });
+  if (mode === 'ms') return handleXboxGamesMs(env);
   const key = await readSecret(env, 'xbl_key');
   if (!key) return json({ configured: false });
   const cached = await readCache(env, 'xbox_games').catch(() => null);
   if (cached && cached.age < CACHE_MS) return json(cached.data);
+
+  const cooling = await xblCoolingDown(env);
+  if (cooling) return throttled(cached, cooling);
+
   try {
     let data = null;
     for (const base of XBL_HOSTS) {
-      const d = normalizeXboxLibrary(await fetchXbl('/player/titleHistory', key, base).catch(() => null));
+      let body;
+      try {
+        body = await fetchXbl('/player/titleHistory', key, base);
+      } catch (err) {
+        if (err?.rateLimited) throw err; // never spend the second host on a blown quota
+        continue;
+      }
+      const d = normalizeXboxLibrary(body);
       if (d.games.length) { data = d; break; }
     }
     if (!data) throw new Error('no titles from either host');
     await writeCache(env, 'xbox_games', data).catch(() => { /* fresh data still goes out */ });
     return json(data);
-  } catch {
+  } catch (err) {
+    if (err?.rateLimited) {
+      await startCooldown(env, err);
+      return throttled(cached, Date.now() + err.retryAfterMs);
+    }
     if (cached) return json({ ...cached.data, stale: true });
     return json({ configured: true, error: 'Xbox Live is unreachable right now' }, 502);
   }
 }
 
 async function handleXboxAchievements(env, url) {
-  const key = await readSecret(env, 'xbl_key');
-  if (!key) return json({ configured: false });
   const titleId = str(url.searchParams.get('titleId'));
   if (!/^\d{1,15}$/.test(titleId)) return json({ error: 'bad titleId' }, 400);
+  const mode = await xboxMode(env);
+  if (mode === 'none') return json({ configured: false });
+  if (mode === 'ms') return handleXboxAchievementsMs(env, titleId);
+  const key = await readSecret(env, 'xbl_key');
+  if (!key) return json({ configured: false });
 
   const cacheKey = `xbox_a_${titleId}`;
   const cached = await readCache(env, cacheKey).catch(() => null);
   if (cached && cached.age < CACHE_MS) return json(cached.data);
 
+  const cooling = await xblCoolingDown(env);
+  if (cooling) return throttled(cached, cooling);
+
   try {
     const body = await fetchXbl(`/achievements/title/${titleId}`, key);
-    const list = Array.isArray(body?.achievements) ? body.achievements : [];
-    const data = {
-      configured: true,
-      achievements: list.map(a => ({
-        name: str(a?.name),
-        detail: str(a?.description) || str(a?.lockedDescription),
-        icon: str(Array.isArray(a?.mediaAssets) ? a.mediaAssets[0]?.url : ''),
-        score: num(Array.isArray(a?.rewards) ? a.rewards.find(r => r?.type === 'Gamerscore')?.value : 0),
-        unlocked: a?.progressState === 'Achieved',
-        unlockedAt: str(a?.progression?.timeUnlocked) || null,
-        rarity: num(a?.rarity?.currentPercentage),
-      })).sort((a, b) => Number(b.unlocked) - Number(a.unlocked)),
-    };
+    const data = normalizeAchievements(body);
     await writeCache(env, cacheKey, data).catch(() => { /* fresh data still goes out */ });
     return json(data);
-  } catch {
+  } catch (err) {
+    if (err?.rateLimited) {
+      await startCooldown(env, err);
+      return throttled(cached, Date.now() + err.retryAfterMs);
+    }
+    if (cached) return json({ ...cached.data, stale: true });
+    return json({ configured: true, error: 'Xbox Live is unreachable right now' }, 502);
+  }
+}
+
+// The Microsoft-signed-in versions of the three Xbox reads. Same normalizers,
+// same cache keys, same response shape — only the transport differs, so the
+// dashboard never has to know which way in is live.
+async function handleXboxMs(env) {
+  const cached = await readCache(env, 'xbox').catch(() => null);
+  if (cached && cached.age < CACHE_MS) return json(cached.data);
+  try {
+    let note = '';
+    const data = await withXbox(env, async auth => {
+      const account = await msProfile(auth);
+      // a profile with no history is still worth showing — but WHY there is no
+      // history gets recorded rather than swallowed, so an empty shelf is
+      // diagnosable instead of silent (the same `upstream` the key path surfaces)
+      const history = await msTitles(auth).catch(err => {
+        if (err?.reauth) throw err;
+        note = `titlehub — ${err?.message || 'unreachable'}`;
+        return null;
+      });
+      // mode rides along so the card can offer the right way back out: a
+      // Microsoft sign-in is disconnected, an OpenXBL key is replaced
+      return { ...normalizeXbox(account, history), mode: 'ms' };
+    });
+    if (data.profile.gamertag || data.recent.length) {
+      await writeCache(env, 'xbox', data).catch(() => {});
+      return json(note ? { ...data, upstream: note } : data);
+    }
+    if (cached) return json({ ...cached.data, stale: true, error: 'Xbox Live sent nothing usable', upstream: note });
+    return json({ configured: true, mode: 'ms', error: 'Xbox Live sent nothing usable', upstream: note });
+  } catch (err) {
+    // neither "no Xbox profile" nor "child account" is fixed by signing in again
+    if (err?.fatal) return json({ configured: true, mode: 'ms', error: err.message });
+    if (err?.reauth) return json({ ...(cached ? { ...cached.data, stale: true } : {}), configured: true, error: 'reauth', mode: 'ms' });
+    if (cached) return json({ ...cached.data, stale: true });
+    return json({ configured: true, error: 'Xbox Live is unreachable right now' }, 502);
+  }
+}
+
+async function handleXboxGamesMs(env) {
+  const cached = await readCache(env, 'xbox_games').catch(() => null);
+  if (cached && cached.age < CACHE_MS) return json(cached.data);
+  try {
+    const data = await withXbox(env, async auth => normalizeXboxLibrary(await msTitles(auth)));
+    if (!data.games.length) throw new Error('no titles');
+    await writeCache(env, 'xbox_games', data).catch(() => {});
+    return json(data);
+  } catch (err) {
+    if (err?.reauth) return json({ configured: true, error: 'reauth', mode: 'ms' });
+    if (cached) return json({ ...cached.data, stale: true });
+    return json({ configured: true, error: 'Xbox Live is unreachable right now' }, 502);
+  }
+}
+
+async function handleXboxAchievementsMs(env, titleId) {
+  const cacheKey = `xbox_a_${titleId}`;
+  const cached = await readCache(env, cacheKey).catch(() => null);
+  if (cached && cached.age < CACHE_MS) return json(cached.data);
+  try {
+    const body = await withXbox(env, auth => msAchievements(auth, titleId));
+    const data = normalizeAchievements(body);
+    await writeCache(env, cacheKey, data).catch(() => {});
+    return json(data);
+  } catch (err) {
+    if (err?.reauth) return json({ configured: true, error: 'reauth', mode: 'ms' });
     if (cached) return json({ ...cached.data, stale: true });
     return json({ configured: true, error: 'Xbox Live is unreachable right now' }, 502);
   }
 }
 
 async function handleXbox(env) {
+  const mode = await xboxMode(env);
+  if (mode === 'none') return json({ configured: false });
+  if (mode === 'ms') return handleXboxMs(env);
   const key = await readSecret(env, 'xbl_key');
   if (!key) return json({ configured: false });
 
   const cached = await readCache(env, 'xbox').catch(() => null);
   if (cached && cached.age < CACHE_MS) return json(cached.data);
 
+  // still in the penalty box — spend no calls at all
+  const cooling = await xblCoolingDown(env);
+  if (cooling) return throttled(cached, cooling);
+
   // whichever host answers with a real profile wins; an empty answer is a
   // FAILURE, never something to cache over good data
   let note = '';
   for (const base of XBL_HOSTS) {
     try {
-      const [account, history] = await Promise.all([
-        fetchXbl('/account', key, base),
-        fetchXbl('/player/titleHistory', key, base),
-      ]);
+      // sequential, not Promise.all: two in flight is two against the quota
+      // even when the first one already came back rate-limited
+      const account = await fetchXbl('/account', key, base);
+      const history = await fetchXbl('/player/titleHistory', key, base).catch(err => {
+        if (err?.rateLimited) throw err;
+        return null; // a profile with no history is still worth showing
+      });
       const data = normalizeXbox(account, history);
       if (data.profile.gamertag || data.recent.length) {
         await writeCache(env, 'xbox', data).catch(() => { /* fresh data still goes out */ });
@@ -300,12 +478,395 @@ async function handleXbox(env) {
       }
       note = `${base} answered, but with no profile — ${JSON.stringify(account).slice(0, 180)}`;
     } catch (err) {
+      // the quota is per key, so the other host shares it: trying it next is
+      // what took this account from 60 to 70 requests. Stop here.
+      if (err?.rateLimited) {
+        await startCooldown(env, err);
+        return throttled(cached, Date.now() + err.retryAfterMs);
+      }
+      // a rejected key is rejected on both hosts — asking the second one only
+      // wastes a call and delays telling the owner the one thing they can fix
+      if (err?.reauth) {
+        return json({ ...(cached ? { ...cached.data, stale: true } : {}), configured: true, error: 'reauth' });
+      }
       note = `${base} — ${err?.message || 'unreachable'}`;
     }
   }
-  if (cached) return json({ ...cached.data, stale: true, error: 'Xbox Live sent nothing usable', upstream: note });
+  // A key from an xbl.io account that was never activated authenticates fine and
+  // answers 200 with no profile in it — indistinguishable from a broken key, and
+  // it cost the owner an afternoon. If a host actually ANSWERED and simply had no
+  // profile to give, name that cause; a connection that never landed is a
+  // different problem and gets no such hint.
+  const answered = /answered, but with no profile/.test(note);
+  const hint = answered
+    ? 'If xbl.io still says "activate your account", API access is off until you verify a mobile number there — the key is fine, the account just is not switched on yet.'
+    : '';
+  if (cached) return json({ ...cached.data, stale: true, error: 'Xbox Live sent nothing usable', upstream: note, hint });
   // surfaced on the card: a silent empty profile is impossible to diagnose
-  return json({ configured: true, error: 'Xbox Live sent nothing usable', upstream: note });
+  return json({ configured: true, error: 'Xbox Live sent nothing usable', upstream: note, hint });
+}
+
+/* ---------- Xbox, signed in with Microsoft directly ----------
+
+   The second way in, and the better one. OpenXBL is a middleman that needs a
+   phone-verified account before it will serve anything, and caps the free tier
+   at 60 calls per 300s. This path talks to Microsoft and Xbox Live itself:
+   no middleman, no phone verification, no cap.
+
+   SIGN-IN IS THE DEVICE CODE FLOW, and that is not a style choice.
+
+   This first shipped as "sign in, land on a blank page, copy that page's
+   address back" — the pattern the PSN setup uses. Microsoft has deliberately
+   broken that pattern: the landing page's own script rewrites its address to
+   `?removed=true`, deleting the authorization code from anywhere a human could
+   copy it. Their warning page says why — "Microsoft will never ask you to copy
+   or share this URL" — because a person pasting a live auth code somewhere is
+   indistinguishable from the phishing flow they are defending against. No
+   parameter fixes it; the whole shape is what they refuse.
+
+   Device code has no redirect at all, so there is nothing to scrub: the owner
+   reads a short code off this dashboard and types it at microsoft.com/link.
+   It also removes the in-app-browser question entirely — the sign-in does not
+   have to happen in the same browser, or on the same device.
+
+   THE CLIENT ID IS THE OWNER'S OWN, not a well-known one. The legacy Xbox app
+   id (000000004C12AE6F) is only used in the wild against the LEGACY
+   login.live.com endpoints with scope service::user.auth.xboxlive.com::MBI_SSL;
+   pairing it with the modern AAD endpoint and the XboxLive.signin scope is a
+   combination nothing supports, and it is refused outright by the device code
+   endpoint (AADSTS700016 — it is not an object in the consumers directory).
+   So the owner registers a free app of their own and pastes its id in, the same
+   way they would paste any other key here. Setup steps live in the tile.
+
+   The chain, once signed in:
+     1. device code -> Microsoft access + refresh token (login.microsoftonline.com)
+     2. access      -> XBL user token                   (user.auth.xboxlive.com)
+     3. XBL         -> XSTS token + user hash + XUID    (xsts.auth.xboxlive.com)
+     4. call Xbox Live as  Authorization: XBL3.0 x=<uhs>;<xsts>
+
+   Steps 2-4 are redone from the stored refresh token whenever the cached XSTS
+   expires, so the owner signs in once and the refresh token carries it. */
+
+const MS_SCOPES = 'XboxLive.signin offline_access';
+const MS_DEVICECODE = 'https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode';
+const MS_TOKEN = 'https://login.microsoftonline.com/consumers/oauth2/v2.0/token';
+// an Entra Application (client) ID: a plain GUID
+const isClientId = v => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v || '').trim());
+const XBL_AUTH = 'https://user.auth.xboxlive.com/user/authenticate';
+const XSTS_AUTH = 'https://xsts.auth.xboxlive.com/xsts/authorize';
+/* The live XSTS credential lives in `secrets`, not in the payload cache.
+
+   It is a bearer token granting full read of the owner's Xbox Live account. The
+   gaming_cache table exists to hold NORMALIZED PAYLOADS that get handed back to
+   the browser, so a credential sitting in it is one careless `return cached.data`
+   away from being served to the client. `secrets` is the table whose whole
+   contract is "never leaves the Worker" — that is where this belongs. */
+const XSTS_SECRET = 'xbl_xsts';
+
+async function readXstsCache(env) {
+  const raw = await readSecret(env, XSTS_SECRET);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+const writeXstsCache = (env, auth) => upsertSecret(env, XSTS_SECRET, JSON.stringify(auth)).run();
+
+/* Start a sign-in. Microsoft hands back a short code the owner types at
+   microsoft.com/link, plus a device_code this bridge polls with. Nothing is
+   stored yet — a sign-in that is never completed leaves no trace. */
+async function msDeviceStart(clientId) {
+  const res = await fetch(MS_DEVICECODE, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
+    body: new URLSearchParams({ client_id: clientId, scope: MS_SCOPES }),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT),
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok || !body?.device_code || !body?.user_code) {
+    // AADSTS7000218 / 70002 mean the registration exists but has not been told
+    // it is a public client — the one setting people miss, so name it
+    const d = str(body?.error_description);
+    const why = /7000218|70002\b|public client/i.test(d)
+      ? 'that app registration needs "Allow public client flows" turned on (Authentication → Advanced settings)'
+      : d || `Microsoft returned ${res.status}`;
+    throw Object.assign(new Error(why), { fatal: true });
+  }
+  return body;
+}
+
+async function msTokenRequest(env, params) {
+  const clientId = await readSecret(env, 'xbl_ms_client');
+  if (!clientId) throw Object.assign(new Error('no Xbox app id is set up'), { reauth: true });
+  const res = await fetch(MS_TOKEN, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
+    body: new URLSearchParams({ client_id: clientId, scope: MS_SCOPES, ...params }),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT),
+  });
+  const body = await res.json().catch(() => null);
+  // While the owner is still typing the code at microsoft.com/link, Microsoft
+  // answers 400 authorization_pending. That is the flow WORKING, not failing, so
+  // it is handed back as a state rather than thrown.
+  const err = str(body?.error);
+  if (err === 'authorization_pending' || err === 'slow_down') return { pending: true, slowDown: err === 'slow_down' };
+  if (!res.ok || !body?.access_token) {
+    const why = err === 'expired_token' ? 'that code expired — start the sign-in again'
+      : err === 'authorization_declined' ? 'the sign-in was declined on the other device'
+        : str(body?.error_description) || `Microsoft returned ${res.status}`;
+    throw Object.assign(new Error(why), { reauth: true });
+  }
+  return body;
+}
+
+// Xbox Live's own two-step: the Microsoft token buys an XBL token, which buys
+// an XSTS token. The XSTS response carries the user hash and XUID every later
+// call needs.
+async function xblExchange(accessToken) {
+  const xblRes = await fetch(XBL_AUTH, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json', 'x-xbl-contract-version': '1' },
+    body: JSON.stringify({
+      Properties: { AuthMethod: 'RPS', SiteName: 'user.auth.xboxlive.com', RpsTicket: `d=${accessToken}` },
+      RelyingParty: 'http://auth.xboxlive.com',
+      TokenType: 'JWT',
+    }),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT),
+  });
+  const xbl = await xblRes.json().catch(() => null);
+  if (!xblRes.ok || !xbl?.Token) {
+    throw Object.assign(new Error(`Xbox Live refused the sign-in (${xblRes.status})`), { reauth: true });
+  }
+
+  const xstsRes = await fetch(XSTS_AUTH, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json', 'x-xbl-contract-version': '1' },
+    body: JSON.stringify({
+      Properties: { SandboxId: 'RETAIL', UserTokens: [xbl.Token] },
+      RelyingParty: 'http://xboxlive.com',
+      TokenType: 'JWT',
+    }),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT),
+  });
+  const xsts = await xstsRes.json().catch(() => null);
+  if (!xstsRes.ok || !xsts?.Token) {
+    // 2148916233 = the Microsoft account has no Xbox profile yet; 2148916238 =
+    // a child account that must be added to a family. Both are the owner's to
+    // fix and neither is worth retrying.
+    // XErr arrives as a JSON NUMBER — str() returns '' for a number, so building
+    // this from str() made both friendly messages unreachable.
+    const code = String(xsts?.XErr ?? '');
+    const known = code === '2148916233'
+      ? 'that Microsoft account has no Xbox profile — sign in at xbox.com once to create one'
+      : code === '2148916238'
+        ? 'that account is a child account and needs adding to a family group first'
+        : '';
+    // neither of those is fixed by signing in again, so don't invite a retry
+    throw Object.assign(new Error(known || `Xbox Live declined the token (${xstsRes.status})`),
+      known ? { fatal: true } : { reauth: true });
+  }
+  const claim = xsts?.DisplayClaims?.xui?.[0] || {};
+  const uhs = str(claim.uhs);
+  if (!uhs) throw Object.assign(new Error('Xbox Live returned no user hash'), { reauth: true });
+  return {
+    token: xsts.Token,
+    uhs,
+    xuid: str(claim.xid),
+    // expire a minute early so a call never starts on a token about to die
+    exp: Date.parse(str(xsts.NotAfter)) || (Date.now() + 3600000),
+  };
+}
+
+// The live XSTS credential: cached until it expires, otherwise minted again from
+// the stored refresh token. Mirrors withPsnAccess's shape below.
+async function xboxAuth(env, force = false) {
+  if (!force) {
+    const c = await readXstsCache(env);
+    if (c?.token && c?.uhs && Number(c.exp) - 60000 > Date.now()) return c;
+  }
+  const refresh = await readSecret(env, 'xbl_ms_refresh');
+  if (!refresh) throw Object.assign(new Error('not signed in with Microsoft'), { reauth: true });
+  const tok = await msTokenRequest(env, { grant_type: 'refresh_token', refresh_token: refresh });
+  if (tok.pending) throw Object.assign(new Error('sign in again'), { reauth: true });
+  // Microsoft ROTATES the refresh token: the old one is spent, so if the new one
+  // does not land the connection is dead with no way back. This write is not
+  // best-effort — a failure here must stop the request, because a failed request
+  // is retryable and a lost refresh token is not.
+  if (tok.refresh_token && tok.refresh_token !== refresh) {
+    await upsertSecret(env, 'xbl_ms_refresh', tok.refresh_token).run();
+  }
+  const auth = await xblExchange(tok.access_token);
+  await writeXstsCache(env, auth);
+  return auth;
+}
+
+async function fetchXboxLive(url, auth, contract = '2', extra = {}) {
+  const res = await fetch(url, {
+    headers: {
+      authorization: `XBL3.0 x=${auth.uhs};${auth.token}`,
+      'x-xbl-contract-version': contract,
+      'accept-language': 'en-US',
+      accept: 'application/json',
+      ...extra,
+    },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT),
+  });
+  if (!res.ok) {
+    try { await res.body?.cancel(); } catch { /* noop */ }
+    throw Object.assign(new Error(`Xbox Live returned ${res.status}`), { status: res.status });
+  }
+  return res.json();
+}
+
+// One 401 is what a just-expired XSTS looks like: mint a new one and try once more.
+async function withXbox(env, fn) {
+  let auth = await xboxAuth(env);
+  try {
+    return await fn(auth);
+  } catch (err) {
+    if (err?.status !== 401) throw err;
+    auth = await xboxAuth(env, true);
+    return fn(auth);
+  }
+}
+
+const PROFILE_SETTINGS = 'Gamertag,ModernGamertag,Gamerscore,GameDisplayPicRaw,AppDisplayPicRaw';
+
+// titlehub wants to know who is asking; the reference implementation sends these
+// on every call and there is no reason to differ.
+const TITLEHUB_HEADERS = {
+  'x-xbl-client-name': 'XboxApp',
+  'x-xbl-client-type': 'UWA',
+  'x-xbl-client-version': '39.39.22001.0',
+};
+
+// Xbox Live's own shapes happen to be the ones OpenXBL proxies, so normalizeXbox
+// and normalizeXboxLibrary are reused verbatim rather than written twice.
+//
+// Contract versions are per-endpoint and deliberate, not a shared default:
+//   profile      3 — ModernGamertag is a gamertag-2.0 setting the contract-2
+//                    schema does not define; 3 is what actually returns it
+//   achievements 4 — contract 2 has no `rarity`, and normalizeAchievements reads
+//                    rarity.currentPercentage. On 2 every achievement would come
+//                    back rarity:0 while the OpenXBL path shows real numbers. 4
+//                    is a superset: same progressState/progression/mediaAssets.
+const msProfile = auth =>
+  fetchXboxLive(`https://profile.xboxlive.com/users/me/profile/settings?settings=${PROFILE_SETTINGS}`, auth, '3');
+
+// The profile is read as /users/me, but titles and achievements are addressed by
+// XUID. An absent one would build "xuid()" and come back a bewildering 404, so
+// it is checked once, here, with a message that says what actually happened.
+function requireXuid(auth) {
+  if (!/^\d{1,20}$/.test(String(auth?.xuid || ''))) {
+    throw Object.assign(new Error('Xbox Live did not return an account id — sign in again'), { reauth: true });
+  }
+  return auth.xuid;
+}
+
+// maxItems is explicit: without it titlehub returns one service-chosen page, and
+// the library panel promises "every title Xbox has history for" — a silent single
+// page would quietly make that a lie.
+const msTitles = auth =>
+  fetchXboxLive(
+    `https://titlehub.xboxlive.com/users/xuid(${requireXuid(auth)})/titles/titlehistory/decoration/achievement,scid?maxItems=500`,
+    auth, '2', TITLEHUB_HEADERS);
+
+const msAchievements = (auth, titleId) =>
+  fetchXboxLive(
+    `https://achievements.xboxlive.com/users/xuid(${requireXuid(auth)})/achievements?titleId=${encodeURIComponent(titleId)}&maxItems=1000`,
+    auth, '4');
+
+// Which way in is live. Microsoft wins when both exist: it is the one without a
+// rate limit, and the one the owner signed into most recently.
+async function xboxMode(env) {
+  if (await readSecret(env, 'xbl_ms_refresh')) return 'ms';
+  if (await readSecret(env, 'xbl_key')) return 'openxbl';
+  return 'none';
+}
+
+// Every Xbox payload this account produced, including the per-title achievement
+// rows. Enumerating keys missed those and left the disconnected account's data
+// in D1 forever, so the namespace goes in one statement.
+const dropXboxCaches = env =>
+  env.DB.prepare("DELETE FROM gaming_cache WHERE k IN ('xbox','xbox_games','xbox_cooldown') OR k LIKE 'xbox_a_%'").run();
+
+/* GET  /api/gaming/xbox/msauth  -> whether an app id is set, and if so nothing else
+   POST { clientId }             -> save the app id and START a sign-in
+   POST { poll: <device_code> }  -> has the owner finished typing the code yet?
+   POST { clear: true }          -> disconnect
+
+   The device_code is never stored: it is short-lived, it is only useful to
+   whoever holds it, and the browser already has it. It rides in the poll. */
+async function handleXboxMsAuth(request, env) {
+  if (request.method === 'GET') {
+    return json({ hasClientId: !!(await readSecret(env, 'xbl_ms_client')) });
+  }
+  if (request.method !== 'POST') return json({ error: 'method not allowed' }, 405);
+
+  // an unbounded body should not reach JSON.parse
+  const text = await request.text();
+  if (text.length > 16384) return json({ error: 'that request was too large' }, 413);
+  let body = null;
+  try { body = JSON.parse(text); } catch { /* handled below */ }
+
+  // the way back out, and what Disconnect sends
+  if (body && body.clear === true) {
+    await ensureCacheTable(env);
+    // one batch: either the whole disconnect lands or the caller sees a failure.
+    // The app id survives, so reconnecting does not mean re-registering.
+    await env.DB.batch([dropSecret(env, 'xbl_ms_refresh'), dropSecret(env, XSTS_SECRET)]);
+    await dropXboxCaches(env);
+    return json({ ok: true, signedIn: false });
+  }
+
+  // ---- poll: is the sign-in on the other device done? ----
+  if (body && typeof body.poll === 'string') {
+    if (!/^[\w.~+/=-]{6,4096}$/.test(body.poll)) return json({ error: 'bad device code' }, 400);
+    try {
+      const tok = await msTokenRequest(env, {
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+        device_code: body.poll,
+      });
+      if (tok.pending) return json({ pending: true, slowDown: !!tok.slowDown });
+      if (!tok.refresh_token) {
+        return json({ error: 'Microsoft did not return a refresh token — check the app has "offline_access" consent' }, 502);
+      }
+      // Prove the WHOLE chain before storing anything. A refresh token that cannot
+      // reach Xbox Live is worse than none: the card would say "signed in" and
+      // never load, which is the exact failure this path exists to escape.
+      const auth = await xblExchange(tok.access_token);
+      const profile = await msProfile(auth);
+      await ensureCacheTable(env);
+      await env.DB.batch([
+        upsertSecret(env, 'xbl_ms_refresh', tok.refresh_token),
+        upsertSecret(env, XSTS_SECRET, JSON.stringify(auth)),
+      ]);
+      await dropXboxCaches(env); // whatever the old path cached belongs to the old path
+      const user = Array.isArray(profile?.profileUsers) ? profile.profileUsers[0] : null;
+      return json({ ok: true, signedIn: true, gamertag: xblSetting(user, ['Gamertag', 'ModernGamertag']) });
+    } catch (err) {
+      return json({ error: err?.message || 'could not complete the sign-in' }, 400);
+    }
+  }
+
+  // ---- start: save the owner's app id and ask Microsoft for a code ----
+  const clientId = String(body?.clientId || '').trim();
+  if (!isClientId(clientId)) {
+    return json({ error: 'that is not an Application (client) ID — it looks like 12345678-abcd-...' }, 400);
+  }
+  try {
+    const dev = await msDeviceStart(clientId);
+    await upsertSecret(env, 'xbl_ms_client', clientId).run();
+    return json({
+      ok: true,
+      userCode: str(dev.user_code),
+      // Microsoft's own wording for where to type it, rather than one hardcoded here
+      verifyUrl: str(dev.verification_uri) || 'https://www.microsoft.com/link',
+      deviceCode: str(dev.device_code),
+      interval: Math.max(3, num(dev.interval) || 5),
+      expiresIn: num(dev.expires_in) || 900,
+    });
+  } catch (err) {
+    return json({ error: err?.message || 'could not start the sign-in' }, 400);
+  }
 }
 
 /* ---------- PlayStation ---------- */
@@ -592,6 +1153,7 @@ export async function handleGaming(url, request, env) {
       if (request.method !== 'GET') return json({ error: 'method not allowed' }, 405);
       return await handlePsn(env);
     }
+    if (path === '/api/gaming/xbox/msauth') return await handleXboxMsAuth(request, env);
     if (path === '/api/gaming/xbox/games') {
       if (request.method !== 'GET') return json({ error: 'method not allowed' }, 405);
       return await handleXboxGames(env);

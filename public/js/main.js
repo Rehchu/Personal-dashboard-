@@ -38,7 +38,8 @@ const MODULES = {
   expenses: { title: 'Expenses', load: lazy('./expenses.js') },
   cloudflare: { title: 'Cloudflare Fleet', load: lazy('./cloudflare.js') },
   ptz: { title: 'Church Cameras', load: lazy('./ptz.js') },
-  csv: { title: 'Song Bank', load: lazy('./csvedit.js') },
+  songbank: { title: 'Song Bank', load: lazy('./songbank.js') },
+  csv: { title: 'CSV Editor', load: lazy('./csvedit.js') },
   service: { title: 'Service Planner', load: lazy('./service.js') },
   gaming: { title: 'Gaming', load: () => Promise.resolve(gaming) },
   town: { title: 'Dyer Town', load: lazy('./town.js') },
@@ -71,9 +72,21 @@ const ambient = initAmbient($('#fx-canvas'));
 /* ---------- animated background: storm / video / off ---------- */
 const storm = initStorm($('#storm-canvas'));
 const bgVideo = $('#bg-video');
+const bgImage = $('#bg-image');
+// The gallery holds clips AND stills (game art, an achievement icon), so the
+// 'video' background mode really means "whatever the gallery is showing".
+// videoOk is that picture being ready: 'canplay' for a clip, 'load' for a still.
 let videoOk = false;
 bgVideo.addEventListener('canplay', () => { videoOk = true; });
 bgVideo.addEventListener('error', () => { videoOk = false; });
+bgImage.addEventListener('load', () => { videoOk = true; });
+bgImage.addEventListener('error', () => { videoOk = false; });
+// bgKind names the layer the current gallery background lives on. An item's own
+// content type decides it: image/* is a still, anything else (video/*, or no
+// type at all — every background saved before stills existed) is a clip.
+let bgKind = 'video';
+const isImageType = type => /^image\//.test(String(type || ''));
+const bgTypeOf = id => gallery.items.find(it => it.id === id)?.type;
 let bgMode = load('ui.bg', 'storm');
 // reduced motion decides the DEFAULT background only. Picking one in the
 // control center is the owner asking for it, so an explicit choice wins —
@@ -83,27 +96,49 @@ let bgChosen = load('ui.bg', null) !== null;
 function applyBg(mode, explicit = false) {
   if (explicit) { bgChosen = true; save('ui.bg', mode); }
   if (!bgChosen && matchMedia('(prefers-reduced-motion: reduce)').matches) mode = 'off';
-  // The element ships with no src (see index.html) so Storm/Off never fetches
-  // the video. The first time a video background is actually asked for, point it
-  // at the selected-background route and load — canplay then flips videoOk true
-  // (the init listener below re-runs applyBg('video')). A specific clip set by
-  // playSelectedBg/playThemeBg already owns .src, so don't clobber it.
-  if (mode === 'video' && !bgVideo.src) { bgVideo.src = '/media/bg.mp4'; bgVideo.load(); }
+  // Both layers ship with no src (see index.html) so Storm/Off never fetches
+  // anything. The first time a gallery background is actually asked for, point
+  // the layer its type calls for at the selected-background route and load —
+  // canplay/load then flips videoOk true (the init listeners below re-run
+  // applyBg('video')). A specific background set by playSelectedBg/playThemeBg
+  // already owns .src, so don't clobber it.
+  if (mode === 'video' && !bgVideo.src && !bgImage.src) loadSelectedLazily();
   if (mode === 'video' && !videoOk) mode = 'storm';
   bgMode = mode;
   document.documentElement.dataset.bg = mode;
-  bgVideo.hidden = mode !== 'video';
-  if (mode === 'video') bgVideo.play().catch(() => { applyBg('storm', explicit); });
+  // exactly one layer is ever up: a still never gets .play(), a clip never gets
+  // left running behind an image
+  const showImage = mode === 'video' && bgKind === 'image';
+  bgVideo.hidden = mode !== 'video' || showImage;
+  bgImage.hidden = !showImage;
+  if (mode === 'video' && !showImage) bgVideo.play().catch(() => { applyBg('storm', explicit); });
   else bgVideo.pause();
   if (mode === 'storm') storm.start(bgChosen); else storm.stop();
 }
 
+// The lazy first load behind applyBg. /media/bg.mp4 is whichever background is
+// selected, but a still cannot come down it into a <video> — so a selected image
+// is fetched by its own id onto the image layer instead. Before the gallery
+// listing lands (boot) there is no type to read, and the clip route is right for
+// every background that predates stills.
+function loadSelectedLazily() {
+  const id = gallery.selected;
+  if (id && isImageType(bgTypeOf(id))) {
+    bgKind = 'image';
+    bgImage.src = `/media/bg/${id}`;
+    return;
+  }
+  bgKind = 'video';
+  bgVideo.src = '/media/bg.mp4';
+  bgVideo.load();
+}
+
 function cycleBg() {
-  // Video is offered once a clip has proven playable (videoOk) OR the gallery
-  // holds backgrounds — since the video no longer preloads, a fresh page can't
-  // have flipped videoOk yet even though a perfectly good clip is one tap away.
-  // Choosing Video then lazily loads the clip: storm shows for a beat, and the
-  // init canplay listener promotes to video the moment the file is ready.
+  // Video is offered once a background has proven showable (videoOk) OR the
+  // gallery holds items — since nothing preloads, a fresh page can't have
+  // flipped videoOk yet even though a perfectly good background is one tap away.
+  // Choosing Video then lazily loads it: storm shows for a beat, and the init
+  // canplay/load listener promotes to video the moment the file is ready.
   const haveVideo = videoOk || gallery.items.length > 0;
   const order = haveVideo ? ['storm', 'video', 'off'] : ['storm', 'off'];
   applyBg(order[(order.indexOf(bgMode) + 1) % order.length], true);
@@ -329,6 +364,7 @@ async function openModule(id) {
   ambient.pause(); // the module view fully covers the background layers
   storm.stop();
   if (!bgVideo.hidden) bgVideo.pause();
+  bgImage.hidden = true; // a still has nothing to pause — take it off the layer
   // move focus into the overlay before the (possibly network-bound) import —
   // the background just went inert, so leaving focus out there strands it
   const back = $('#appview-back');
@@ -368,7 +404,10 @@ function closeModule() {
   $('#appview-tools').innerHTML = '';
   ambient.resume();
   if (bgMode === 'storm') storm.start();
-  if (bgMode === 'video' && !bgVideo.hidden) bgVideo.play().catch(() => { /* noop */ });
+  // put the gallery background back: a still just returns to the layer, a clip
+  // has to be told to resume
+  if (bgMode === 'video' && bgKind === 'image') bgImage.hidden = false;
+  else if (bgMode === 'video' && !bgVideo.hidden) bgVideo.play().catch(() => { /* noop */ });
   sfx.play('back');
   setFocus(focusIndex, false); // refresh activity cards with any new data
   rail.focus({ preventScroll: true });
@@ -558,14 +597,33 @@ async function refreshGallery() {
   return gallery;
 }
 
-// Point the player at whichever background is selected. A cache-buster is
+// Load one gallery item onto the layer its type calls for, and run `ready` the
+// moment the picture is actually up — 'canplay' for a clip, 'load' for a still.
+// applyBg does the showing/hiding, so the layer that loses stays as it is until
+// the new background is ready rather than blinking to nothing.
+function loadBgMedia(id, url, ready) {
+  videoOk = false;
+  bgKind = isImageType(bgTypeOf(id)) ? 'image' : 'video';
+  const up = () => { videoOk = true; ready(); };
+  if (bgKind === 'image') {
+    // re-picking the still already decoded on the layer need not fire 'load'
+    // again, so that one is ready right now
+    if (bgImage.getAttribute('src') === url && bgImage.complete && bgImage.naturalWidth) { up(); return; }
+    bgImage.addEventListener('load', up, { once: true });
+    bgImage.src = url;
+    return;
+  }
+  bgVideo.addEventListener('canplay', up, { once: true });
+  bgVideo.src = url;
+  bgVideo.load();
+}
+
+// Point the background at whichever gallery item is selected. A cache-buster is
 // needed because the URL does not change when the selection does.
 function playSelectedBg(explicit = false) {
   if (!gallery.selected) { videoOk = false; if (explicit) applyBg('storm', true); return; }
-  videoOk = false;
-  bgVideo.src = `/media/bg/${gallery.selected}?v=${Date.now()}`;
-  bgVideo.load();
-  bgVideo.addEventListener('canplay', () => applyBg('video', true), { once: true });
+  loadBgMedia(gallery.selected, `/media/bg/${gallery.selected}?v=${Date.now()}`,
+    () => applyBg('video', true));
 }
 
 /* ---------- per-theme backgrounds ----------
@@ -576,17 +634,14 @@ function playSelectedBg(explicit = false) {
    WITHOUT touching the global selection, so people who never mapped a theme keep
    the background they picked. */
 
-// Point the player at one specific background id. Reuses applyBg's own
-// reduced-motion gate: a device that prefers reduced motion and has never
-// chosen a background stays calm even on a mapped theme.
+// Point the background at one specific id. Reuses applyBg's own reduced-motion
+// gate: a device that prefers reduced motion and has never chosen a background
+// stays calm even on a mapped theme.
 function playThemeBg(id) {
-  videoOk = false;
   // /media/bg/<id> is already unique per background, so no cache-buster is
   // needed — dropping the ?v=Date.now() lets switching back to a theme reuse
-  // the cached clip instead of re-downloading it every time.
-  bgVideo.src = `/media/bg/${id}`;
-  bgVideo.load();
-  bgVideo.addEventListener('canplay', () => applyBg('video'), { once: true });
+  // the cached file instead of re-downloading it every time.
+  loadBgMedia(id, `/media/bg/${id}`, () => applyBg('video'));
 }
 
 function applyThemeBg(theme) {
@@ -1348,16 +1403,29 @@ boot();
 initAchievements(() => consoleMode);
 sync.init();
 applyBg(bgMode);
-// applyBg only points the (src-less) element at /media/bg.mp4 when the saved
-// background is 'video', so Storm/Off visits never fetch it. When it IS video,
-// that load fires canplay here and we flip the picture up — before the gallery
-// listing comes back — without a network hit for anyone else.
-bgVideo.addEventListener('canplay', () => { if (load('ui.bg', 'storm') === 'video') applyBg('video', true); }, { once: true });
+// applyBg only points a (src-less) layer at the selected background when the
+// saved background is 'video', so Storm/Off visits never fetch it. When it IS
+// video, that load fires canplay/load here and we flip the picture up — before
+// the gallery listing comes back — without a network hit for anyone else.
+const promoteBg = () => { if (load('ui.bg', 'storm') === 'video') applyBg('video', true); };
+bgVideo.addEventListener('canplay', promoteBg, { once: true });
+bgImage.addEventListener('load', promoteBg, { once: true });
 refreshGallery().then(() => {
   if (!gallery.items.length) videoOk = false;
+  // A selected still can't come down /media/bg.mp4 into the <video> element,
+  // and the boot applyBg ran before this listing arrived — so now that the type
+  // is finally readable, put it on the image layer.
+  else if (load('ui.bg', 'storm') === 'video' && isImageType(bgTypeOf(gallery.selected))) playSelectedBg();
   // the gallery is loaded now, so a theme that owns a background can finally
   // resolve its mapping (the applyTheme during boot ran before this landed)
   applyThemeBg(document.documentElement.dataset.theme);
+});
+// The Gaming tile can add a background from a game cover or an achievement icon
+// while the app is running. The Worker stores it AND selects it, but this
+// module's `gallery` was read at boot — without this it stays stale and the new
+// background only shows up on the next reload.
+window.addEventListener('pd:bg-imported', () => {
+  refreshGallery().then(() => { if (gallery.selected) playSelectedBg(true); });
 });
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => { /* offline support is best-effort */ });

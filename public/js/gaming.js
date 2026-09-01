@@ -91,17 +91,52 @@ function boxArt(url, fallback) {
     onerror="this.outerHTML='<div class=\\'gm-box fallback\\' aria-hidden=\\'true\\'>${fallback}</div>'">`;
 }
 
-function xboxSetup() {
+// Two ways in, and the Microsoft one leads because it is strictly better: it
+// talks to Xbox Live directly, so there is no middleman account to activate, no
+// phone verification, and no 60-per-5-minutes cap. The OpenXBL key still works
+// and is kept for anyone who already has one, folded away under a summary.
+function xboxSetup(again = false) {
   return `<div class="gm-setup">
-    <p>Show your real gamerscore and recently-played games. You'll need a free
-       OpenXBL key — it reads your Xbox profile without storing your password.</p>
+    <p>${again
+      ? 'Sign in again to reconnect Xbox — this replaces the old connection.'
+      : `Show your real gamerscore, games and achievements. Signing in with
+       Microsoft reads your own Xbox profile; nothing is posted and your password
+       never reaches this dashboard.`}</p>
+    <ol>
+      <li>Go to <a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
+        target="_blank" rel="noopener">Entra app registrations</a> → <b>New registration</b>.
+        Free, and no Azure subscription needed.</li>
+      <li>Name it anything. For <b>Supported account types</b> pick
+        <b>Personal Microsoft accounts only</b>. Register.</li>
+      <li>Open <b>Authentication</b> → <b>Advanced settings</b> → set
+        <b>Allow public client flows</b> to <b>Yes</b> → Save. (Miss this one and
+        sign-in fails — the message below will tell you if you did.)</li>
+      <li>Copy the <b>Application (client) ID</b> off the Overview page and paste
+        it here. Add nothing under API permissions; no secret.</li>
+    </ol>
+    <input type="text" id="gm-msclient" placeholder="Application (client) ID — 12345678-abcd-…"
+      autocomplete="off" spellcheck="false">
+    <button data-msauth="start">${again ? 'Reconnect Xbox' : 'Start sign-in'}</button>
+    <div id="gm-devicecode"></div>
+    <p class="gm-note">You'll get a short code to type at microsoft.com/link — on this
+      phone or any other device. Only the sign-in token is kept, on the Worker.</p>
+
+    <details style="margin-top:14px">
+      <summary style="cursor:pointer;color:var(--ink-2);font-size:13px">Or use an OpenXBL key instead</summary>
+      <div style="margin-top:10px">
     <ol>
       <li>Go to <a href="https://xbl.io" target="_blank" rel="noopener">xbl.io</a> and sign in with your Microsoft account.</li>
+      <li><b>Activate the account</b> — xbl.io asks for a mobile number before it
+        switches API access on. A key from an unactivated account saves fine here
+        and then returns an empty profile, which looks exactly like a broken key.
+        Virtual/VOIP numbers are refused.</li>
       <li>Open the <b>API Keys</b> page and copy your key.</li>
       <li>Paste it below — it's stored on the Worker, never in the browser.</li>
     </ol>
     <input type="password" id="gm-xbl" placeholder="OpenXBL API key" autocomplete="off" spellcheck="false">
-    <button data-save="xbl_key" data-input="gm-xbl">Connect Xbox</button>
+    <button data-save="xbl_key" data-input="gm-xbl">${again ? 'Save new key' : 'Connect Xbox'}</button>
+      </div>
+    </details>
   </div>`;
 }
 
@@ -126,10 +161,24 @@ function xboxCard(d) {
 
   const p = d.profile || {};
   const recent = d.recent || [];
-  const banner = d.error
-    ? `<div class="gm-banner">Xbox Live didn't answer${d._stale || d.stale ? ' — showing the last snapshot' : ''}.${
-      d.upstream ? `<br><span style="opacity:.8;font-size:11.5px">${esc(String(d.upstream).slice(0, 200))}</span>` : ''}</div>`
-    : '';
+  // OpenXBL refused the key — the one failure the owner can actually fix, so
+  // the form comes back, exactly as PSN does for an expired NPSSO
+  const reauth = d.error === 'reauth';
+  // a throttle is not a breakage — say so plainly, and don't invite a Refresh
+  // that would only spend more of the quota that ran out. Anything else falls
+  // through to the diagnostic banner.
+  const banner = reauth
+    ? `<div class="gm-banner">${d.mode === 'ms'
+      ? 'Your Xbox sign-in expired. Sign in again below to reconnect.'
+      : "Xbox Live wouldn't accept that key. Paste a fresh one below."}</div>`
+    : d.rateLimited
+      ? `<div class="gm-banner">⏳ ${esc(d.error || 'Xbox Live is rate-limiting this key.')}${
+        d._stale || d.stale ? ' Showing the last snapshot.' : ''}</div>`
+      : d.error
+        ? `<div class="gm-banner">Xbox Live didn't answer${d._stale || d.stale ? ' — showing the last snapshot' : ''}.${
+          d.hint ? `<br><b>${esc(String(d.hint).slice(0, 240))}</b>` : ''}${
+          d.upstream ? `<br><span style="opacity:.8;font-size:11.5px">${esc(String(d.upstream).slice(0, 200))}</span>` : ''}</div>`
+        : '';
   const games = recent.length ? recent.map(g => {
     const pct = g.total ? Math.round((num(g.earned) / num(g.total)) * 100) : 0;
     return `<div class="gm-game">
@@ -149,8 +198,12 @@ function xboxCard(d) {
         <div class="sub">${num(p.gamerscore).toLocaleString()} G</div></div>
     </div>
     <div class="gm-body">${banner}${games}
-      <div class="gm-more"><button class="gm-lib-btn" data-lib="xbox">📚 Full library & achievements</button></div>
-    </div>
+      <div class="gm-more" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="gm-lib-btn" data-lib="xbox">📚 Full library &amp; achievements</button>
+        ${reauth ? '' : '<button class="gm-back" data-rekey="xbox">Reconnect</button>'}
+        ${d.mode === 'ms' && !reauth ? '<button class="gm-back" data-msauth="disconnect">Disconnect</button>' : ''}
+      </div>
+      ${reauth ? xboxSetup(true) : ''}</div>
   </div>`;
 }
 
@@ -188,7 +241,10 @@ function psnCard(d) {
         <div class="sub">${num(s.platinum)} platinum${num(s.platinum) === 1 ? '' : 's'}</div></div>
     </div>
     <div class="gm-body">${banner}${tiers}${games}
-      <div class="gm-more"><button class="gm-lib-btn" data-lib="psn">📚 Full library & trophies</button></div>
+      <div class="gm-more" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="gm-lib-btn" data-lib="psn">📚 Full library &amp; trophies</button>
+        ${reauth ? '' : '<button class="gm-back" data-rekey="psn">Change token</button>'}
+      </div>
       ${reauth ? psnSetup() : ''}</div>
   </div>`;
 }
@@ -196,6 +252,11 @@ function psnCard(d) {
 export function mount(root, tools) {
   injectStyle();
   let alive = true;
+  // #appview-body is ONE element every module mounts into, so a listener left
+  // bound here outlives this tile and fires under the next one. Everything this
+  // module binds goes through this signal, and unmount aborts it.
+  const ac = new AbortController();
+  const { signal } = ac;
   let xbox = load(CACHE.xbox, null)?.data || null;
   let psn = load(CACHE.psn, null)?.data || null;
 
@@ -220,14 +281,100 @@ export function mount(root, tools) {
   }
 
   // save handlers for whichever setup form is showing
+  // The Microsoft sign-in, both halves. "open" fetches the authorize URL from
+  // the bridge (the client never builds it, so the client id and scopes live in
+  // one place) and opens it in a new tab. "finish" posts back whatever address
+  // the owner landed on; the bridge pulls the code out and does the exchange.
+  async function msAuth(step, el) {
+    if (step === 'start') {
+      const input = el.closest('.gm-setup')?.querySelector('#gm-msclient');
+      const clientId = (input?.value || '').trim();
+      if (!clientId) { showToast('Paste your Application (client) ID first'); return; }
+      el.disabled = true; el.textContent = 'Starting…';
+      const panel = el.closest('.gm-setup')?.querySelector('#gm-devicecode');
+      try {
+        const res = await fetch('/api/gaming/xbox/msauth', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ clientId }),
+        });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok || !d.userCode) throw new Error(d.error || '');
+        // the code is the whole interaction now — make it big and unmissable
+        if (panel) panel.innerHTML = `<div style="margin:14px 0;padding:14px;border-radius:12px;
+          background:var(--surface-3,rgba(255,255,255,.06));text-align:center">
+          <div style="font-size:12.5px;color:var(--ink-2)">Go to
+            <a href="${esc(d.verifyUrl)}" target="_blank" rel="noopener"><b>${esc(d.verifyUrl.replace(/^https?:\/\//, ''))}</b></a>
+            and enter this code</div>
+          <div style="font:800 30px/1.3 ui-monospace,monospace;letter-spacing:.14em;margin:8px 0;color:var(--ink)">${esc(d.userCode)}</div>
+          <div class="gm-note" id="gm-devicewait" style="margin:0">Waiting for you to finish signing in…</div>
+        </div>`;
+        el.textContent = 'Waiting…';
+        await msPoll(d.deviceCode, Number(d.interval) || 5, Number(d.expiresIn) || 900, panel);
+      } catch (err) {
+        showToast(err.message || 'Could not start the sign-in');
+        el.disabled = false; el.textContent = 'Try again';
+      }
+      return;
+    }
+    if (step === 'disconnect') {
+      const res = await fetch('/api/gaming/xbox/msauth', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ clear: true }),
+      }).catch(() => null);
+      if (res?.ok) { showToast('Xbox disconnected'); await loadAll(); }
+      else showToast('Could not disconnect');
+      return;
+    }
+  }
+
+  /* Ask the bridge every few seconds whether the owner has finished signing in on
+     whatever device they used. Microsoft sets the interval; honouring it (and
+     slow_down) is required, not optional — polling faster gets the flow throttled.
+     Stops on success, on a real error, when the code expires, or when the tile is
+     closed, so it can never outlive the view that started it. */
+  async function msPoll(deviceCode, interval, expiresIn, panel) {
+    const deadline = Date.now() + expiresIn * 1000;
+    let wait = interval;
+    const note = () => panel?.querySelector('#gm-devicewait');
+    while (alive && Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, wait * 1000));
+      if (!alive) return;
+      let d;
+      try {
+        const res = await fetch('/api/gaming/xbox/msauth', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ poll: deviceCode }),
+        });
+        d = await res.json().catch(() => ({}));
+      } catch { continue; } // a dropped request is not a failed sign-in
+      if (d.pending) { if (d.slowDown) wait += 5; continue; }
+      if (d.ok) {
+        showToast(d.gamertag ? `Signed in as ${d.gamertag}` : 'Xbox connected');
+        await loadAll();
+        return;
+      }
+      const el = note();
+      if (el) el.textContent = d.error || 'That sign-in did not complete.';
+      showToast(d.error || 'Could not complete the sign-in');
+      return;
+    }
+    const el = note();
+    if (el) el.textContent = 'That code expired — start the sign-in again.';
+  }
+
   function wireSetup() {
     root.querySelectorAll('[data-save]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const field = btn.dataset.save;
-        // the input that belongs to THIS form — never trust bare ids alone,
-        // a container id collision here once ate every pasted PSN key
-        const input = btn.closest('.gm-setup')?.querySelector('input')
-          || root.querySelector('#' + btn.dataset.input);
+        // The input that belongs to THIS button, resolved in a way that survives
+        // both traps this form has already hit: a bare id can collide with a
+        // CONTAINER's id (which once ate every pasted PSN key), and the Xbox form
+        // now holds two inputs, so "the first input in the form" is wrong too.
+        // So: take the named one, but only if it really is an input; otherwise
+        // fall back to the single-input case.
+        const byId = btn.dataset.input ? root.querySelector('#' + btn.dataset.input) : null;
+        const input = (byId && byId.tagName === 'INPUT') ? byId
+          : btn.closest('.gm-setup')?.querySelector('input');
         const val = (input?.value || '').trim();
         if (!val) { showToast('Paste a key first'); return; }
         btn.disabled = true; btn.textContent = 'Connecting…';
@@ -244,7 +391,7 @@ export function mount(root, tools) {
           showToast('Could not save that key');
           btn.disabled = false; btn.textContent = 'Try again';
         }
-      });
+      }, { signal });
     });
   }
 
@@ -262,6 +409,9 @@ export function mount(root, tools) {
   }
 
   async function setBg(url, name) {
+    // never let a non-URL reach the importer — that is a bug on this side, and
+    // the toast for it reads like the art was at fault
+    if (typeof url !== 'string' || !/^https:\/\//.test(url)) return;
     try {
       const res = await fetch('/api/media/bg/import', {
         method: 'POST',
@@ -271,6 +421,9 @@ export function mount(root, tools) {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || '');
       showToast('Added to your backgrounds — and set as the active one');
+      // the shell read its gallery at boot; tell it to pick the new one up now
+      // rather than on the next reload
+      window.dispatchEvent(new CustomEvent('pd:bg-imported', { detail: { id: body.id } }));
     } catch (err) {
       showToast(`Couldn't import that art${err.message ? ` — ${err.message}` : ''}`);
     }
@@ -339,18 +492,45 @@ export function mount(root, tools) {
       </div>${rows}</div></div>`;
   }
 
+  // Every hit below is matched by CLASS as well as data-attribute, and only
+  // inside this tile. A bare [data-bg] climbs the tree past the tile and lands
+  // on <html data-bg="video|storm|off"> — applyBg() puts it there — so it
+  // matched every click on the page and fired the importer with "video".
+  const own = el => el && root.contains(el) ? el : null;
   root.addEventListener('click', e => {
-    const bg = e.target.closest('[data-bg]');
-    if (bg) { e.stopPropagation(); setBg(decodeURIComponent(bg.dataset.bg), bg.dataset.bgname); return; }
-    const lib = e.target.closest('[data-lib]');
+    const bg = own(e.target.closest('button.gm-bgbtn[data-bg]'));
+    if (bg) {
+      e.stopPropagation();
+      let url = '';
+      try { url = decodeURIComponent(bg.dataset.bg || ''); } catch { url = ''; }
+      setBg(url, bg.dataset.bgname);
+      return;
+    }
+    // the Microsoft sign-in: open the page, then finish with the pasted address
+    const ms = own(e.target.closest('[data-msauth]'));
+    if (ms) {
+      e.preventDefault();
+      msAuth(ms.dataset.msauth, ms);
+      return;
+    }
+    // "Change key" — without this there is NO way back to the key form once a
+    // key is stored, so a dead or wrong key locks the tile permanently
+    const rekey = own(e.target.closest('button[data-rekey]'));
+    if (rekey) {
+      colFor(rekey.dataset.rekey).innerHTML =
+        `<div class="gm-card">${rekey.dataset.rekey === 'xbox' ? xboxSetup(true) : psnSetup()}</div>`;
+      wireSetup();
+      return;
+    }
+    const lib = own(e.target.closest('button[data-lib]'));
     if (lib) { renderLib(lib.dataset.lib); return; }
-    if (e.target.closest('[data-back]')) { paint(); return; }
-    const row = e.target.closest('[data-game]');
+    if (own(e.target.closest('button[data-back]'))) { paint(); return; }
+    const row = own(e.target.closest('.gm-row[data-game]'));
     if (row) {
       const g = libCache[row.dataset.console]?.games?.[Number(row.dataset.game)];
       if (g) renderGame(row.dataset.console, g);
     }
-  });
+  }, { signal });
 
   async function loadAll() {
     paint(); // paint cache first
@@ -364,10 +544,10 @@ export function mount(root, tools) {
     window.dispatchEvent(new Event('pd:data-changed')); // refresh the profile chip
   }
 
-  refreshBtn.addEventListener('click', () => loadAll());
+  refreshBtn.addEventListener('click', () => loadAll(), { signal });
   loadAll();
 
-  return function unmount() { alive = false; };
+  return function unmount() { alive = false; ac.abort(); };
 }
 
 // Compact profile-chip line: gamerscore + trophy level, from the cached

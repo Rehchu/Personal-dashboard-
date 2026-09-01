@@ -4,15 +4,26 @@
 // background gallery. Rather than the phone downloading that file and pushing it
 // back up through the multipart uploader, the Worker pulls it straight from the
 // source into the SAME R2 bucket + index a normal upload lands in, so it becomes
-// an ordinary gallery item with a fresh id.
+// an ordinary gallery item with a fresh id. A still lands the same way — the
+// Gaming tile points this at a game's cover or an unlocked achievement icon —
+// so image/* is accepted alongside video/*, on its own much smaller ceiling.
 //
 // This is deliberately NOT an open proxy. Exactly like serveIcon's ICON_HOSTS
 // and the camera endpoint's host gate in index.js, only a tight allowlist of
 // hosts may be fetched — every other host is refused before any request leaves
 // the Worker, so a signed-in session can never turn this into an SSRF pivot.
 
-const MAX_IMPORT = 200 * 1024 * 1024;   // 200 MB ceiling; a generated loop is only a few MB
-const IMPORT_TIMEOUT_MS = 30000;        // a stalled source must not hang the request forever
+const MAX_IMPORT = 200 * 1024 * 1024;        // 200 MB ceiling; a generated loop is only a few MB
+const MAX_IMPORT_IMAGE = 25 * 1024 * 1024;   // stills need far less: box art / a trophy icon is KBs
+const IMPORT_TIMEOUT_MS = 30000;             // a stalled source must not hang the request forever
+
+// The only content types that may be stored. Deliberately a fixed set, not a
+// wildcard — see the note at the type check in handleBgImport for why SVG in
+// particular must never be on it.
+const IMPORT_TYPES = new Set([
+  'video/mp4', 'video/webm', 'video/quicktime',
+  'image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif',
+]);
 
 // Match index.js's json(): JSON body, never cached.
 const json = (data, status = 200, headers = {}) =>
@@ -71,7 +82,7 @@ export async function handleBgImport(request, env, deps) {
     res = await fetch(target.toString(), {
       redirect: 'follow',
       signal: AbortSignal.timeout(IMPORT_TIMEOUT_MS),
-      headers: { accept: 'video/*,*/*' },
+      headers: { accept: 'video/*,image/*,*/*' },
     });
   } catch (err) {
     const timedOut = err?.name === 'TimeoutError' || err?.name === 'AbortError';
@@ -79,17 +90,31 @@ export async function handleBgImport(request, env, deps) {
   }
   if (!res.ok || !res.body) return json({ error: `source returned ${res.status}` }, 502);
 
-  // require a real video type — this endpoint stores backgrounds, not arbitrary bytes
+  // require a real video or image type — this endpoint stores backgrounds, not
+  // arbitrary bytes. A still is a background too: game art or an unlocked
+  // achievement icon is exactly what the Gaming tile sends here.
+  //
+  // The list is an ALLOWLIST of raster/clip types rather than a `image/*`
+  // pattern, because /media/bg/<id> serves these bytes back from the
+  // dashboard's OWN origin with the type recorded here. `image/svg+xml` is a
+  // document, not a picture: it can carry <script>, and served same-origin that
+  // is stored XSS with a session behind it. SVG never becomes a background.
   const type = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-  if (!/^video\/[a-z0-9.+-]{1,30}$/.test(type)) {
-    return json({ error: 'that URL did not return a video' }, 415);
+  if (!IMPORT_TYPES.has(type)) {
+    return json({ error: 'that URL did not return a supported video or image' }, 415);
   }
+  // a still gets a much smaller ceiling than a clip; both messages name the kind
+  // that was actually fetched so the toast reads true
+  const isImage = type.startsWith('image/');
+  const kind = isImage ? 'image' : 'video';
+  const limit = isImage ? MAX_IMPORT_IMAGE : MAX_IMPORT;
+  const tooBig = () => json({ error: `${kind} is larger than ${limit / (1024 * 1024)} MB` }, 413);
   // reject up front when the source declares an oversized length; the real check
   // is after the stream lands, since the header can be absent or wrong
   const declared = Number(res.headers.get('content-length') || 0);
-  if (declared > MAX_IMPORT) return json({ error: 'video is larger than 200 MB' }, 413);
+  if (declared > limit) return tooBig();
 
-  // Stream straight into R2 — never buffer a 200 MB file in the Worker's memory —
+  // Stream straight into R2 — never buffer a 200 MB clip in the Worker's memory —
   // then read back the true size R2 stored. The contentType can only be set at
   // put time, so it is declared here from the vetted response type.
   const id = newBgId();
@@ -98,12 +123,12 @@ export async function handleBgImport(request, env, deps) {
   try {
     obj = await env.MEDIA.put(key, res.body, { httpMetadata: { contentType: type } });
   } catch {
-    return json({ error: 'could not store the imported video' }, 502);
+    return json({ error: `could not store the imported ${kind}` }, 502);
   }
   // the cap is only truly known once the whole stream is assembled
-  if ((obj?.size ?? 0) > MAX_IMPORT) {
+  if ((obj?.size ?? 0) > limit) {
     await env.MEDIA.delete(key);
-    return json({ error: 'video is larger than 200 MB' }, 413);
+    return tooBig();
   }
   if (!obj?.size) {
     await env.MEDIA.delete(key);
