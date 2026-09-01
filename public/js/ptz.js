@@ -632,7 +632,31 @@ export function mount(root, tools) {
     try { Hls = await loadHlsLib(); } catch (err) { stopVideo(err.message); return; }
     if (!videoOn) return;
     if (!Hls.isSupported()) { stopVideo('This browser cannot play the stream'); return; }
-    hls = new Hls({ lowLatencyMode: true, liveDurationInfinity: true });
+    /* Latency here ACCUMULATES, and that is what made the picture drift behind
+       while the PTZ controls stayed instant — the controls are fresh HTTP on
+       every press, the video is a buffer that only ever grew.
+
+       hls.js defaults maxLiveSyncPlaybackRate to 1, meaning it will never play
+       faster than real time to close a gap. So every stall, every backgrounded
+       tab, every phone that slept, every network hiccup pushed the picture
+       permanently further behind live and nothing ever pulled it back. Combined
+       with liveMaxLatencyDurationCount defaulting to Infinity, there was no
+       ceiling on the drift at all.
+
+       Letting it play at up to 1.5x closes gaps in a few seconds, inaudibly for
+       a silent camera feed; the duration count then caps how far behind it is
+       ever willing to sit. backBufferLength stops a long service growing
+       unbounded memory on the viewing phone.
+
+       (lowLatencyMode is NOT set here: it has been the default since hls.js 1.x,
+       and passing it was a placebo — as was expecting it to do anything while
+       the real problem was drift.) */
+    hls = new Hls({
+      liveDurationInfinity: true,
+      maxLiveSyncPlaybackRate: 1.5,
+      liveMaxLatencyDurationCount: 10,
+      backBufferLength: 30,
+    });
     hls.on(Hls.Events.ERROR, (_ev, data) => { if (data?.fatal) failed('stream error'); });
     hls.on(Hls.Events.FRAG_BUFFERED, () => { if (videoOn) { showMsg(''); vid.classList.add('on'); } });
     hls.loadSource(src);
