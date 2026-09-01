@@ -6,6 +6,15 @@ import { captureBox, inboxList } from './capture.js';
 
 const WX_CACHE_MS = 30 * 60 * 1000;
 
+// Timestamps out of the shop's D1 are SQLite's 'YYYY-MM-DD HH:MM:SS'. Safari
+// will not parse that with a space in it, so normalise to ISO first — otherwise
+// the age reads as blank on the iPad and the briefing loses its urgency.
+const daysSince = ts => {
+  if (!ts) return null;
+  const t = Date.parse(String(ts).replace(' ', 'T'));
+  return Number.isFinite(t) ? Math.max(0, Math.floor((Date.now() - t) / 86400000)) : null;
+};
+
 // Public-domain KJV fallbacks, rotated by day-of-year when the votd API fails.
 const FALLBACK_VERSES = [
   { ref: 'John 3:16', text: 'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.' },
@@ -93,6 +102,42 @@ function wxLook(code) {
   return ['🌡️', 'Weather'];
 }
 
+// Whether a day is workable outdoors, in the order the conditions actually stop
+// a job site: lightning and heavy rain send everyone home, sustained wind stops
+// anything going up high, a freeze stops concrete and adhesives, and a decent
+// chance of rain is worth knowing about even when the day still goes ahead.
+// Thresholds are deliberately conservative — this flags a day to plan around,
+// it does not make the call for you.
+// Open-Meteo daily dates are bare 'YYYY-MM-DD'. new Date() reads those as UTC
+// midnight, which lands on the previous day everywhere west of Greenwich — so
+// build the date locally instead and the weekday labels stay honest in Chicago.
+const dayName = iso => {
+  const [y, m, d] = String(iso).split('-').map(Number);
+  return y && m && d ? new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'short' }) : '';
+};
+
+// null must not become 0 here: Number(null) is 0, which would sail under every
+// threshold below and report a day with no data as a clear one.
+const numOrNaN = v => (v === null || v === undefined || v === '' ? NaN : Number(v));
+
+export function workOutlook(day) {
+  const pop = numOrNaN(day.pop);
+  const wind = numOrNaN(day.wind);
+  const hi = numOrNaN(day.hi);
+  const code = numOrNaN(day.code);
+
+  if (code >= 95) return { tone: 'stop', label: 'storms' };
+  if (pop >= 70) return { tone: 'stop', label: 'rain likely' };
+  if (wind >= 25) return { tone: 'warn', label: `wind ${Math.round(wind)}mph` };
+  if (hi <= 32) return { tone: 'warn', label: 'freezing' };
+  if (code >= 71 && code <= 77) return { tone: 'warn', label: 'snow' };
+  if (pop >= 40) return { tone: 'warn', label: `${Math.round(pop)}% rain` };
+  // Nothing tripped — but only call a day clear if the two numbers that decide
+  // it actually arrived. Silence is not the same as good weather.
+  if (!Number.isFinite(pop) || !Number.isFinite(wind)) return { tone: 'unknown', label: 'no data' };
+  return { tone: 'go', label: 'clear' };
+}
+
 function fallbackVerse() {
   const v = FALLBACK_VERSES[dayOfYear() % FALLBACK_VERSES.length];
   return { date: todayISO(), ref: v.ref, text: v.text, source: 'KJV' };
@@ -109,6 +154,21 @@ function injectStyle() {
     .today-wx { display: flex; align-items: center; gap: 14px; }
     .today-wx-emoji { font-size: 2.4rem; line-height: 1; }
     .today-wx-temp { font-family: var(--font-display); color: var(--ink); font-size: 1.6rem; }
+    .today-week { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(58px, 1fr);
+      gap: 6px; margin: 14px 0 0; overflow-x: auto; scrollbar-width: thin; }
+    .today-day { display: flex; flex-direction: column; align-items: center; gap: 3px;
+      padding: 8px 4px; border-radius: 10px; text-align: center;
+      background: var(--surface-2); border: 1px solid var(--line, rgba(255,255,255,.12));
+      border-top: 3px solid var(--tone); }
+    .today-day.t-go   { --tone: #3f9a5a; }
+    .today-day.t-warn { --tone: #c98a1a; }
+    .today-day.t-stop { --tone: #d64545; }
+    .today-day.t-unknown { --tone: var(--ink-3); }
+    .today-day-n { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-2); }
+    .today-day-i { font-size: 1.1rem; line-height: 1.2; }
+    .today-day-t { font-family: var(--font-display); color: var(--ink); font-size: 1rem; }
+    .today-day-l { font-size: 10px; color: var(--tone); font-weight: 600; line-height: 1.25; }
+    .today-week-note { margin: 10px 0 0; font-size: 13px; }
     .today-verse { margin: 0 0 10px; padding-left: 12px; border-left: 3px solid var(--accent); color: var(--ink-2); font-style: italic; line-height: 1.55; }
     #today-briefing { display: flex; flex-direction: column; gap: 8px; margin: 0 0 16px; }
     #today-briefing:empty { display: none; }
@@ -186,12 +246,25 @@ export function mount(root, tools) {
 
     const shop = load('biz.shop', null)?.data;
     if (shop && shop.configured !== false) {
-      const bits = [];
-      const leads = shop.leads?.count || 0;
+      const waiting = Number(shop.leads?.customer) || 0;
+      const days = daysSince(shop.leads?.oldestCustomerAt);
       const tix = shop.tickets?.length || 0;
-      if (leads) bits.push(`${leads} lead${leads === 1 ? '' : 's'} waiting`);
-      if (tix) bits.push(`${tix} ticket${tix === 1 ? '' : 's'} open`);
-      if (bits.length) lines.push({ ico: '🖥️', text: `At the shop: ${bits.join(' · ')}`, open: 'ops' });
+
+      // A customer who wrote in and has heard nothing back is the only thing on
+      // this screen that costs real money by sitting still, so once it goes
+      // stale it stops sharing a line with everything else and says the number
+      // of days out loud.
+      if (waiting) {
+        const stale = days !== null && days >= 2;
+        lines.push({
+          ico: stale ? '📨' : '✉️',
+          text: stale
+            ? `${waiting} customer${waiting === 1 ? '' : 's'} still waiting on a reply — oldest is ${days} days old.`
+            : `${waiting} new customer inquir${waiting === 1 ? 'y' : 'ies'} to answer.`,
+          open: 'ops',
+        });
+      }
+      if (tix) lines.push({ ico: '🖥️', text: `At the shop: ${tix} ticket${tix === 1 ? '' : 's'} open`, open: 'ops' });
     }
 
     const w = wordsToday();
@@ -208,6 +281,31 @@ export function mount(root, tools) {
   function paintWeather(w) {
     const [emoji, word] = wxLook(w.code);
     wxPanel.hidden = false;
+
+    // A payload cached before the forecast landed has no days array, so the
+    // strip is optional: current conditions still paint and the week fills
+    // itself in on the next fetch rather than blanking the panel.
+    const days = Array.isArray(w.days) ? w.days : [];
+    const strip = days.length ? `
+      <div class="today-week">
+        ${days.map((d, i) => {
+          const o = workOutlook(d);
+          const [ico] = wxLook(d.code);
+          return `<div class="today-day t-${o.tone}">
+            <div class="today-day-n">${i === 0 ? 'Today' : esc(dayName(d.date))}</div>
+            <div class="today-day-i">${ico}</div>
+            <div class="today-day-t">${Number.isFinite(d.hi) ? `${d.hi}°` : '—'}</div>
+            <div class="today-day-l">${esc(o.label)}</div>
+          </div>`;
+        }).join('')}
+      </div>` : '';
+
+    const bad = days.findIndex(d => workOutlook(d).tone === 'stop');
+    const note = !days.length ? ''
+      : bad === -1
+        ? '<p class="muted today-week-note">Nothing in the next 7 days that should stop a day outside.</p>'
+        : `<p class="muted today-week-note">Plan around ${bad === 0 ? 'today' : esc(dayName(days[bad].date))} — ${esc(workOutlook(days[bad]).label)}.</p>`;
+
     wxBox.innerHTML = `
       <div class="today-wx">
         <div class="today-wx-emoji">${emoji}</div>
@@ -215,19 +313,34 @@ export function mount(root, tools) {
           <div class="today-wx-temp">${Number(w.temp)}°F</div>
           <div class="muted">${word} · feels ${Number(w.feels)}° · H ${Number(w.hi)}° / L ${Number(w.lo)}°</div>
         </div>
-      </div>`;
+      </div>
+      ${strip}
+      ${note}`;
   }
 
   async function fetchWeather(lat, lon) {
     try {
+      // wind_speed_unit is explicit: temperature_unit=fahrenheit does not carry
+      // over to wind, and the default km/h would read as a gale at every
+      // threshold below.
       const url = 'https://api.open-meteo.com/v1/forecast'
         + `?latitude=${lat.toFixed(3)}&longitude=${lon.toFixed(3)}`
         + '&current=temperature_2m,apparent_temperature,weather_code'
-        + '&daily=temperature_2m_max,temperature_2m_min'
-        + '&temperature_unit=fahrenheit&timezone=auto';
+        + '&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,weather_code'
+        + '&forecast_days=7'
+        + '&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto';
       const res = await fetch(url, { signal: ac.signal });
       if (!res.ok) throw new Error(res.status);
       const j = await res.json();
+      const d = j.daily || {};
+      const days = (d.time || []).map((date, i) => ({
+        date,
+        hi: Math.round(d.temperature_2m_max?.[i]),
+        lo: Math.round(d.temperature_2m_min?.[i]),
+        pop: d.precipitation_probability_max?.[i] ?? null,
+        wind: d.wind_speed_10m_max?.[i] ?? null,
+        code: d.weather_code?.[i] ?? null,
+      }));
       const data = {
         at: Date.now(),
         temp: Math.round(j.current.temperature_2m),
@@ -235,6 +348,7 @@ export function mount(root, tools) {
         code: j.current.weather_code,
         hi: Math.round(j.daily.temperature_2m_max[0]),
         lo: Math.round(j.daily.temperature_2m_min[0]),
+        days,
       };
       save('today.weather', data);
       if (alive) paintWeather(data);

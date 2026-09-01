@@ -54,13 +54,42 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 // rather than silently vanishing from the queue.
 const DONE = "('completed','cancelled','closed','picked_up')";
 
+// The same rule for inquiries: a lead is waiting until a status says somebody
+// dealt with it, and an unrecognised status stays in the queue rather than
+// quietly vanishing. This used to be a bare COUNT(*) over every inquiry ever
+// received, so the card read "15 leads waiting" and would have kept saying 15
+// no matter how many got answered.
+const LEAD_DONE = "('answered','replied','responded','closed','converted','won','lost','archived','spam','resolved','completed','cancelled')";
+
+// 'internal' inquiries are the shop talking to itself. They are still waiting
+// work, so they stay in `count`, but a real person expecting a reply is the
+// number worth acting on — kept separate so twelve internal notes can never
+// bury two customers asking for a repair quote.
+function leadSummary(groups, newest) {
+  const rows = (groups || []).map(r => ({ type: r.type || 'other', n: r.n || 0, oldest: r.oldest || null }));
+  const sum = list => list.reduce((n, r) => n + r.n, 0);
+  const earliest = list => list.reduce((m, r) => (r.oldest && (!m || r.oldest < m) ? r.oldest : m), null);
+  const customer = rows.filter(r => r.type !== 'internal');
+
+  return {
+    count: sum(rows),
+    customer: sum(customer),
+    oldestCustomerAt: earliest(customer),
+    byType: Object.fromEntries(rows.map(r => [r.type, r.n])),
+    newest: (newest || []).map(l => ({
+      name: l.name, subject: l.subject, type: l.type, ai_priority: l.ai_priority,
+      status: l.status, created_at: l.created_at,
+    })),
+  };
+}
+
 async function shopPulse(env) {
   const hit = cached('shop');
   if (hit) return json(hit);
   if (!env.SHOP_DB) return json({ configured: false });
 
   // one batch, one round trip to the shop's D1
-  const [tickets, leadCount, leads, appt, invoices, taskCount, customerCount] =
+  const [tickets, leadGroups, leads, appt, invoices, taskCount, customerCount] =
     await env.SHOP_DB.batch([
       env.SHOP_DB.prepare(
         `SELECT t.ticket_number, t.status, t.priority,
@@ -70,10 +99,26 @@ async function shopPulse(env) {
          FROM tickets t LEFT JOIN customers c ON c.id = t.customer_id
          WHERE lower(COALESCE(t.status,'')) NOT IN ${DONE}
          ORDER BY t.created_at DESC LIMIT 20`),
-      env.SHOP_DB.prepare('SELECT COUNT(*) AS n FROM inquiries'),
+      // grouped, so one round trip yields the waiting count, the split between
+      // real customers and the shop's own internal notes, and how long the
+      // oldest of each has been sitting there
       env.SHOP_DB.prepare(
-        `SELECT name, subject, ai_priority, status, created_at
-         FROM inquiries ORDER BY created_at DESC LIMIT 5`),
+        `SELECT COALESCE(NULLIF(TRIM(type),''),'other') AS type,
+                COUNT(*) AS n, MIN(created_at) AS oldest
+         FROM inquiries
+         WHERE lower(COALESCE(status,'')) NOT IN ${LEAD_DONE}
+         GROUP BY COALESCE(NULLIF(TRIM(type),''),'other')`),
+      // Real people first, then recency. The shop's own daily summary mail is
+      // ingested back into this table once a day, so a plain ORDER BY
+      // created_at fills all five slots with robot mail and pushes the actual
+      // repair quotes off the panel — which is exactly what it was doing.
+      env.SHOP_DB.prepare(
+        `SELECT name, subject, type, ai_priority, status, created_at
+         FROM inquiries
+         WHERE lower(COALESCE(status,'')) NOT IN ${LEAD_DONE}
+         ORDER BY CASE WHEN COALESCE(type,'') = 'internal' THEN 1 ELSE 0 END,
+                  created_at DESC
+         LIMIT 5`),
       // date is 'YYYY-MM-DD' text, so string comparison IS date comparison
       env.SHOP_DB.prepare(
         `SELECT customer_name, title, type, date, time, duration_minutes, status
@@ -104,13 +149,7 @@ async function shopPulse(env) {
       customer: [t.first_name, t.last_name].filter(Boolean).join(' ') || null,
       ageDays: ageDays(t.date_received, t.created_at),
     })),
-    leads: {
-      count: leadCount.results?.[0]?.n ?? 0,
-      newest: (leads.results || []).map(l => ({
-        name: l.name, subject: l.subject, ai_priority: l.ai_priority,
-        status: l.status, created_at: l.created_at,
-      })),
-    },
+    leads: leadSummary(leadGroups.results, leads.results),
     nextAppointment: appt.results?.[0] || null,
     unpaidInvoices: (invoices.results || []).map(i => ({
       number: i.invoice_number, total: i.total, paid: i.amount_paid,

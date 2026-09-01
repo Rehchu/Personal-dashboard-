@@ -10,6 +10,8 @@ import { handleGaming } from './gaming.js';
 import { handleBgImport } from './bgimport.js';
 import { handleTown } from './town.js';
 import { handleStream } from './stream.js';
+import { handleAgentArchiveSearch, handleAgentKeyIssue, handleAgentQueryLog } from './agentarchive.js';
+import { handleBook } from './book.js';
 
 const COL_RE = /^[a-zA-Z0-9._-]{1,40}$/;
 const ARCHIVE_ID_RE = /^[a-z0-9][a-z0-9._-]{0,39}$/;
@@ -1128,6 +1130,37 @@ export default {
       } catch (err) {
         return json({ error: err?.message || 'background storage unavailable' }, 500);
       }
+    }
+
+    // Ahead of the owner-only archive routes below: the villagers reach this one
+    // with their own per-agent token, never the sync key (which would also mint
+    // a session and open the cameras).
+    // The manuscript Draco is actually writing, read from the private repo.
+    if (path === '/api/book' || path.startsWith('/api/book/')) {
+      if (!authed) return json({ error: 'sign in first' }, 401);
+      try {
+        return await handleBook(url, request, env);
+      } catch {
+        return json({ error: 'the manuscript bridge is unreachable' }, 500);
+      }
+    }
+
+    if (path === '/api/archive/search' && request.method === 'GET') {
+      try {
+        return await handleAgentArchiveSearch(url, request, env);
+      } catch {
+        return json({ error: 'archive search unavailable' }, 500);
+      }
+    }
+
+    if (path === '/api/archive/agents' && request.method === 'POST') {
+      if (!authed) return json({ error: 'sign in first' }, 401);
+      return await handleAgentKeyIssue(request, env);
+    }
+
+    if (path === '/api/archive/agents/log' && request.method === 'GET') {
+      if (!authed) return json({ error: 'sign in first' }, 401);
+      return await handleAgentQueryLog(env);
     }
 
     if (path === '/api/archive' || path.startsWith('/api/archive/')) {
