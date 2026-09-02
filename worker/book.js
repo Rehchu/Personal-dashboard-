@@ -87,16 +87,24 @@ async function readFile(env, book, branch, path, tok) {
 // from being spent on prose that hasn't moved.
 const fileCache = new Map(); // sha -> { words, title }
 
-async function chapterFromEntry(env, book, branch, entry, tok) {
+const EST_BYTES_PER_WORD = 5.6; // markdown prose — good enough for a live counter
+const estWords = bytes => Math.max(0, Math.round((Number(bytes) || 0) / EST_BYTES_PER_WORD));
+
+// Build a chapter/doc entry from a directory LISTING alone — no per-file fetch.
+// The count of chapters is therefore always exact; each word count is estimated
+// from file size, and becomes exact once that chapter has been opened (its real
+// count is then cached by sha). A full refresh costs ~3 GitHub calls per book,
+// so the anonymous 60/hour budget can never blank the view again — and there is
+// no per-file read that could half-fail and cache an empty book as "good".
+function entryFromListing(book, entry) {
   const hit = entry.sha && fileCache.get(entry.sha);
-  if (hit) {
-    return { book: book.key, path: entry.path, file: entry.name, title: hit.title, words: hit.words, bytes: entry.size, url: entry.html_url };
-  }
-  const f = await readFile(env, book, branch, entry.path, tok);
-  if (!f) return null;
-  const rec = { words: words(f.text), title: titleOf(f.text, entry.name) };
-  if (entry.sha) fileCache.set(entry.sha, rec);
-  return { book: book.key, path: entry.path, file: entry.name, title: rec.title, words: rec.words, bytes: f.size, url: f.url };
+  return {
+    book: book.key, path: entry.path, file: entry.name,
+    title: hit?.title || titleOf('', entry.name),
+    words: hit?.words ?? estWords(entry.size),
+    exact: !!hit,
+    bytes: entry.size, url: entry.html_url,
+  };
 }
 
 // { ok: true, ...summary } on success; { ok: false, note } when rate-limited so
@@ -121,13 +129,19 @@ async function summarizeBook(env, book, tok) {
   const files = (Array.isArray(listing) ? listing : [])
     .filter(f => f.type === 'file' && /\.md$/i.test(f.name))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-  const chapters = [];
-  for (const f of files) { const c = await chapterFromEntry(env, book, branch, f, tok); if (c) chapters.push(c); }
+  const chapters = files.map(f => entryFromListing(book, f));
 
+  // The lore/plan docs live at the repo root, so ONE listing of the root
+  // directory covers them all — no per-doc fetch, same budget-safe rule.
   const docs = [];
-  for (const name of book.docs) {
-    const f = await readFile(env, book, branch, name, tok);
-    if (f) docs.push({ book: book.key, path: name, file: name, words: words(f.text), bytes: f.size, url: f.url });
+  const rootRes = await gh(env, `/repos/${book.owner}/${book.repo}/contents?ref=${encodeURIComponent(branch)}`, tok);
+  if (rootRes.ok) {
+    const root = await rootRes.json();
+    const byName = new Map((Array.isArray(root) ? root : []).map(e => [e.name, e]));
+    for (const name of book.docs) {
+      const e = byName.get(name);
+      if (e && e.type === 'file') docs.push(entryFromListing(book, e));
+    }
   }
 
   let last = null;
@@ -189,7 +203,12 @@ export async function handleBook(url, request, env) {
     let file = null;
     for (const br of book.branches) { file = await readFile(env, book, br, want, tok); if (file) break; }
     if (!file) return json({ error: 'could not read that file' }, 404);
-    return json({ book: book.key, path: want, title: titleOf(file.text, want), words: words(file.text), text: file.text, url: file.url });
+    // Reading a chapter is the moment we learn its real count and title — cache
+    // both by blob sha so the next summary shows them exactly instead of the
+    // size estimate, without spending another request.
+    const wc = words(file.text), ttl = titleOf(file.text, want);
+    if (file.sha) fileCache.set(file.sha, { words: wc, title: ttl });
+    return json({ book: book.key, path: want, title: ttl, words: wc, text: file.text, url: file.url });
   }
 
   // GET /api/book — both books, each cached, each falling back to its last good
