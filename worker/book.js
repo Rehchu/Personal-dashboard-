@@ -1,18 +1,22 @@
 // The manuscript bridge — what Draco has actually written.
 //
-// The Book Writing tile has always been a local editor: you type, it saves to
-// this browser. Meanwhile the town's lorekeeper has been committing real
-// chapters to GitHub, and the dashboard had no idea. This reads those repos
-// through the GitHub API and hands the tile a summary.
-//
-// Draco writes TWO books now, so this bridges both:
+// The Book Writing tile has always been a local editor. Meanwhile the town's
+// lorekeeper commits real chapters to GitHub, and this reads them back. Draco
+// writes TWO books now, so this bridges both:
 //   - The Dragon Saga  (Rehchu/Dragons, branch town/draco, chapters/)
-//   - Dark Assassin     (Rehchu/Dark-Assassin, branch town/draco, book-1/)
-// Both repos are PUBLIC, so no credential is needed and the tile works out of
-// the box. A token is optional: set one and the rate limit goes from GitHub's
-// 60 requests an hour for anonymous callers to 5,000. When present it stays in
-// the D1 secrets table beside the camera credentials and is never returned by
-// any route — which is also why this runs in the Worker, not the browser.
+//   - Dark Assassin     (Rehchu/Dark-Assassin, town/draco then main, book-1/)
+//
+// Both repos are PUBLIC, so no credential is needed. GitHub's anonymous budget
+// is only 60 requests an hour, though, and reading two books' worth of chapters
+// on every refresh can exhaust it — which used to blank the whole view to zero.
+// Two defences make that impossible now:
+//   1. Chapters are cached by their git blob SHA, so an unchanged chapter is
+//      never fetched twice.
+//   2. The last GOOD summary of each book is persisted to D1. If a refresh is
+//      ever rate-limited, the bridge serves that last-known state (marked
+//      stale) instead of showing nothing.
+// A token is still optional (POST /api/book/token) and raises the limit to
+// 5,000/hour; it lives in the D1 secrets table and is never returned.
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -20,9 +24,6 @@ const json = (data, status = 200) =>
     headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
   });
 
-// Each book: where it lives, which branch(es) to try (Draco's working branch
-// first, then the default so a freshly-merged seed still shows), where its
-// chapters live, and which supporting files are the bible rather than prose.
 const BOOKS = [
   {
     key: 'dragons', title: 'The Dragon Saga', voice: 'chronicle',
@@ -38,9 +39,6 @@ const BOOKS = [
   },
 ];
 
-// The authorization header is omitted entirely when there is no token — sending
-// `Bearer ` with nothing after it makes GitHub reject the request outright,
-// which would be a worse failure than simply being anonymous.
 const gh = (env, path, token) => fetch(`https://api.github.com${path}`, {
   headers: {
     accept: 'application/vnd.github+json',
@@ -55,16 +53,12 @@ async function token(env) {
   return row?.v || env.GITHUB_TOKEN || '';
 }
 
-// "# The Ashford Breach" -> "The Ashford Breach"; falls back to the filename so
-// a chapter always has something to show even before it has a heading.
 export function titleOf(markdown, file) {
   const line = String(markdown).split('\n').find(l => /^#\s+\S/.test(l));
   if (line) return line.replace(/^#\s+/, '').trim().slice(0, 120);
   return file.replace(/^\d+[-_]?/, '').replace(/\.md$/i, '').replace(/[-_]+/g, ' ').trim();
 }
 
-// Prose word count: strip fenced code and markdown syntax first, so headings and
-// emphasis markers do not inflate the number a writer is watching.
 export function words(markdown) {
   const text = String(markdown)
     .replace(/```[\s\S]*?```/g, ' ')
@@ -75,7 +69,6 @@ export function words(markdown) {
 }
 
 const b64 = s => {
-  // GitHub wraps base64 at 60 chars; atob rejects the newlines.
   const bin = atob(String(s).replace(/\s+/g, ''));
   const bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
   return new TextDecoder().decode(bytes);
@@ -89,42 +82,52 @@ async function readFile(env, book, branch, path, tok) {
   return { text: b64(j.content), size: j.size, sha: j.sha, url: j.html_url };
 }
 
-// Summarise one book: find the first branch that actually has its chapter
-// directory, then count the prose and the bible. A book Draco has not started
-// is not an error — it is a book with no chapters yet, and says so.
+// Word counts keyed by git blob sha: a chapter that has not changed since we
+// last read it is never fetched again. This is what keeps the anonymous budget
+// from being spent on prose that hasn't moved.
+const fileCache = new Map(); // sha -> { words, title }
+
+async function chapterFromEntry(env, book, branch, entry, tok) {
+  const hit = entry.sha && fileCache.get(entry.sha);
+  if (hit) {
+    return { book: book.key, path: entry.path, file: entry.name, title: hit.title, words: hit.words, bytes: entry.size, url: entry.html_url };
+  }
+  const f = await readFile(env, book, branch, entry.path, tok);
+  if (!f) return null;
+  const rec = { words: words(f.text), title: titleOf(f.text, entry.name) };
+  if (entry.sha) fileCache.set(entry.sha, rec);
+  return { book: book.key, path: entry.path, file: entry.name, title: rec.title, words: rec.words, bytes: f.size, url: f.url };
+}
+
+// { ok: true, ...summary } on success; { ok: false, note } when rate-limited so
+// the caller can fall back to the last known good state.
 async function summarizeBook(env, book, tok) {
   const base = { key: book.key, title: book.title, voice: book.voice, repo: `${book.owner}/${book.repo}` };
 
-  let branch = null;
-  let listing = null;
+  let branch = null, listing = null;
   for (const br of book.branches) {
     const res = await gh(env, `/repos/${book.owner}/${book.repo}/contents/${book.chapterDir}?ref=${encodeURIComponent(br)}`, tok);
-    if (res.status === 403 && !tok) {
-      return { ...base, branch: book.branches[0], chapters: [], docs: [], totals: { chapters: 0, words: 0, loreWords: 0 }, rateLimited: true, note: 'GitHub rate-limited this anonymous request. It resets within the hour, or add a token to raise the limit.' };
-    }
+    if (res.status === 403 && !tok) return { ok: false, note: 'GitHub rate limit reached — showing the last known state.' };
     if (res.ok) { branch = br; listing = await res.json(); break; }
-    // 404 just means "not on that branch" — try the next one.
+    // 404 (branch or directory absent) — try the next branch.
   }
-
   if (!branch) {
-    return { ...base, branch: book.branches[0], branchUrl: `https://github.com/${book.owner}/${book.repo}/tree/${book.branches[0]}`, chapters: [], docs: [], totals: { chapters: 0, words: 0, loreWords: 0 }, note: 'Not started yet — no chapters on the working branch.' };
+    return { ok: true, ...base, configured: true, branch: book.branches[0],
+      branchUrl: `https://github.com/${book.owner}/${book.repo}/tree/${book.branches[0]}`,
+      chapters: [], docs: [], totals: { chapters: 0, words: 0, loreWords: 0 },
+      note: 'Not started yet — no chapters on the working branch.' };
   }
 
   const files = (Array.isArray(listing) ? listing : [])
     .filter(f => f.type === 'file' && /\.md$/i.test(f.name))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-
   const chapters = [];
-  for (const f of files) {
-    const file = await readFile(env, book, branch, f.path, tok);
-    if (!file) continue;
-    chapters.push({ book: book.key, path: f.path, file: f.name, title: titleOf(file.text, f.name), words: words(file.text), bytes: file.size, url: file.url });
-  }
+  for (const f of files) { const c = await chapterFromEntry(env, book, branch, f, tok); if (c) chapters.push(c); }
 
   const docs = [];
   for (const name of book.docs) {
-    const file = await readFile(env, book, branch, name, tok);
-    if (file) docs.push({ book: book.key, path: name, file: name, words: words(file.text), bytes: file.size, url: file.url });
+    const f = await readFile(env, book, branch, name, tok);
+    if (f) docs.push({ book: book.key, path: name, file: name, words: words(f.text), bytes: f.size, url: f.url });
   }
 
   let last = null;
@@ -134,23 +137,31 @@ async function summarizeBook(env, book, tok) {
     if (c) last = { message: String(c.commit?.message || '').split('\n')[0].slice(0, 140), at: c.commit?.author?.date || null, url: c.html_url };
   }
 
-  return {
-    ...base,
-    configured: true,
-    branch,
+  return { ok: true, ...base, configured: true, branch,
     branchUrl: `https://github.com/${book.owner}/${book.repo}/tree/${branch}`,
-    chapters,
-    docs,
+    chapters, docs,
     totals: { chapters: chapters.length, words: chapters.reduce((n, c) => n + c.words, 0), loreWords: docs.reduce((n, d) => n + d.words, 0) },
-    lastCommit: last,
-  };
+    lastCommit: last };
 }
 
-// A full refresh costs a dozen API calls per book. Anonymous callers get 60 an
-// hour, so cache far longer when there is no token to spend. Cached per book.
 const CACHE_MS = 5 * 60 * 1000;
 const ANON_CACHE_MS = 15 * 60 * 1000;
-const caches = new Map(); // book.key -> { at, body }
+const memCache = new Map(); // book.key -> { at, body }  (a GOOD body)
+
+// The last good body of each book, persisted so it survives a Worker restart or
+// redeploy — that is what stops a redeploy-plus-rate-limit from blanking the view.
+async function getPersisted(env, key) {
+  try {
+    const row = await env.DB.prepare('SELECT v FROM secrets WHERE k = ?').bind('bookcache_' + key).first();
+    return row ? JSON.parse(row.v) : null;
+  } catch { return null; }
+}
+async function setPersisted(env, key, body) {
+  try {
+    await env.DB.prepare("INSERT INTO secrets (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v")
+      .bind('bookcache_' + key, JSON.stringify(body)).run();
+  } catch { /* persistence is best-effort */ }
+}
 
 export async function handleBook(url, request, env) {
   const path = url.pathname;
@@ -162,19 +173,16 @@ export async function handleBook(url, request, env) {
     await env.DB.prepare(
       `INSERT INTO secrets (k, v) VALUES ('github_token', ?)
        ON CONFLICT(k) DO UPDATE SET v = excluded.v`).bind(t).run();
-    caches.clear();
+    memCache.clear();
     return json({ ok: true });
   }
 
-  // No token is not an error: the repos are public. It only means a smaller rate
-  // budget, which the longer cache below absorbs.
   const tok = await token(env);
 
   if (path === '/api/book/read') {
     const bookKey = url.searchParams.get('book') || 'dragons';
     const book = BOOKS.find(b => b.key === bookKey) || BOOKS[0];
     const want = url.searchParams.get('path') || '';
-    // Only ever inside that book's manuscript: no traversal, no reaching other repos.
     const ok = (want.startsWith(`${book.chapterDir}/`) && /^[\w./-]+\.md$/i.test(want) && !want.includes('..'))
       || book.docs.includes(want);
     if (!ok) return json({ error: 'not part of the manuscript' }, 400);
@@ -184,21 +192,28 @@ export async function handleBook(url, request, env) {
     return json({ book: book.key, path: want, title: titleOf(file.text, want), words: words(file.text), text: file.text, url: file.url });
   }
 
-  // GET /api/book — both books, each cached independently.
+  // GET /api/book — both books, each cached, each falling back to its last good
+  // state rather than ever showing zero.
   const summaries = [];
   for (const book of BOOKS) {
-    const cached = caches.get(book.key);
+    const cached = memCache.get(book.key);
     if (cached && Date.now() - cached.at < (tok ? CACHE_MS : ANON_CACHE_MS)) {
       summaries.push({ ...cached.body, cached: true });
       continue;
     }
-    const body = await summarizeBook(env, book, tok);
-    caches.set(book.key, { at: Date.now(), body });
-    summaries.push(body);
+    const fresh = await summarizeBook(env, book, tok).catch(() => ({ ok: false, note: 'the manuscript bridge hit an error' }));
+    if (fresh.ok) {
+      const { ok, ...body } = fresh;
+      memCache.set(book.key, { at: Date.now(), body });
+      await setPersisted(env, book.key, body);
+      summaries.push(body);
+    } else {
+      const good = cached?.body || await getPersisted(env, book.key);
+      if (good) summaries.push({ ...good, stale: true, note: fresh.note });
+      else summaries.push({ key: book.key, title: book.title, voice: book.voice, chapters: [], docs: [], totals: { chapters: 0, words: 0, loreWords: 0 }, note: fresh.note || 'Temporarily unavailable.' });
+    }
   }
 
-  // Return both under `books`, and spread the primary (the saga) at the top
-  // level so any older caller that reads d.totals / d.chapters still works.
   const primary = summaries[0] || {};
   return json({ ...primary, books: summaries });
 }
