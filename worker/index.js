@@ -74,6 +74,69 @@ async function requireSyncKey(request, env) {
   return null;
 }
 
+/* ---------- front-door audit + rate limit ----------
+   A best-effort record of who tried the front door and when — passphrase
+   sign-ins and camera-credential unlocks. Everything here is wrapped so a
+   storage hiccup can NEVER block a real sign-in: fail open, always. The table
+   is created in code (and by migration 0003) so it exists even before the
+   migration is applied. */
+let authLogReady = false;
+async function ensureAuthLog(env) {
+  if (authLogReady) return;
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS auth_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at INTEGER NOT NULL,
+    ip TEXT,
+    kind TEXT NOT NULL,
+    outcome TEXT NOT NULL
+  )`).run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS auth_log_at ON auth_log (at)').run();
+  authLogReady = true;
+}
+
+function clientIp(request) {
+  return request.headers.get('cf-connecting-ip')
+    || (request.headers.get('x-forwarded-for') || '').split(',')[0].trim()
+    || '';
+}
+
+async function logAuth(env, request, kind, outcome) {
+  try {
+    await ensureAuthLog(env);
+    await env.DB.prepare('INSERT INTO auth_log (at, ip, kind, outcome) VALUES (?, ?, ?, ?)')
+      .bind(Date.now(), clientIp(request), kind, outcome).run();
+  } catch { /* logging is best-effort — never let it break auth */ }
+}
+
+// Too many WRONG passphrases from one IP in a short window earns a cool-down.
+// Fail open: if the count can't be read, or the IP is unknown, allow the try —
+// locking the owner out of their own dashboard is worse than one guess more.
+const LOGIN_MAX_FAILS = 10;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+async function loginBlocked(env, request) {
+  try {
+    const ip = clientIp(request);
+    if (!ip) return false;
+    await ensureAuthLog(env);
+    const since = Date.now() - LOGIN_WINDOW_MS;
+    const row = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM auth_log WHERE kind = 'login' AND outcome = 'bad' AND ip = ? AND at > ?")
+      .bind(ip, since).first();
+    return (row?.n || 0) >= LOGIN_MAX_FAILS;
+  } catch { return false; }
+}
+
+async function handleAuthLog(env) {
+  try {
+    await ensureAuthLog(env);
+    const { results } = await env.DB.prepare(
+      'SELECT at, ip, kind, outcome FROM auth_log ORDER BY at DESC LIMIT 100').all();
+    return json({ entries: results || [] });
+  } catch {
+    return json({ entries: [] });
+  }
+}
+
 /* ---------- sessions ---------- */
 
 async function getSecret(env) {
@@ -1024,13 +1087,21 @@ export default {
     if (path === '/api/health') return json({ ok: true });
 
     if (path === '/api/auth/login' && request.method === 'POST') {
+      if (await loginBlocked(env, request)) {
+        await logAuth(env, request, 'login', 'rate-limited');
+        return json({ error: 'Too many attempts. Wait 15 minutes and try again.' }, 429);
+      }
       const body = await request.json().catch(() => null);
       const key = body?.key;
       if (typeof key !== 'string' || key.length < 6 || key.length > 200) {
         return json({ error: 'passphrase must be 6–200 characters' }, 400);
       }
       const result = await claimOrVerify(env, key);
-      if (result === 'bad') return json({ error: 'wrong passphrase' }, 403);
+      if (result === 'bad') {
+        await logAuth(env, request, 'login', 'bad');
+        return json({ error: 'wrong passphrase' }, 403);
+      }
+      await logAuth(env, request, 'login', result); // 'ok' | 'claimed'
       return json({ ok: true, claimed: result === 'claimed' },
         200, { 'set-cookie': await sessionCookie(env) });
     }
@@ -1172,10 +1243,17 @@ export default {
       }
     }
 
+    if (path === '/api/auth/log' && request.method === 'GET') {
+      if (!authed) return json({ error: 'sign in first' }, 401);
+      return await handleAuthLog(env);
+    }
+
     if (path === '/api/ptz/access') {
       if (!authed) return json({ error: 'sign in first' }, 401);
       try {
-        return await handlePtzAccess(request, env);
+        const res = await handlePtzAccess(request, env);
+        await logAuth(env, request, 'ptz-access', res.status < 400 ? 'granted' : 'denied');
+        return res;
       } catch {
         return json({ error: 'access-token storage unavailable' }, 500);
       }
