@@ -97,7 +97,8 @@ function stripAndCrop(img) {
     const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
     if (a < 40) return true;
     const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
-    return mx > 198 && mx - mn < 16;      // white and checkerboard greys alike
+    if (mx > 198 && mx - mn < 16) return true;   // white and checkerboard greys alike
+    return mx < 64 && mx - mn < 22;              // and a near-black card or frame
   };
   const seen = new Uint8Array(w * h);
   const stack = [];
