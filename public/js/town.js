@@ -580,13 +580,16 @@ export function mount(root, tools) {
     // each district's own business building on its point
     for (const d of Object.values(districts)) {
       scene.push({ y: d.y, draw: () => {
-        const img = art[d.key];
+        // a house district ("house_<id>") reuses the one house building; every
+        // other district has its own art keyed by its name.
+        const isHouse = d.key.startsWith('house_');
+        const img = art[d.key] || (isHouse ? art.house : null);
         if (img) {
           drawSprite(img, d.x, d.y, 100, 128);
         } else {
           ctx.font = '40px system-ui';
           ctx.textAlign = 'center';
-          ctx.fillText('🏛️', d.x, d.y - 46);
+          ctx.fillText(isHouse ? '🏠' : '🏛️', d.x, d.y - 46);
         }
       } });
     }
