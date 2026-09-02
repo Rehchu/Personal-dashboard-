@@ -252,6 +252,16 @@ export function mount(root, tools) {
   const ctx = canvas.getContext('2d');
   const art = {};
   for (const kind of Object.keys(TOWN_ART_SRC)) loadTownArt(kind).then(img => { if (img) art[kind] = img; });
+  // Dyer HQ's interior is a real pixel office, built from the pixel-agents tile
+  // set (MIT, © Pablo De Lucca — see public/townart/office/LICENSE). These load
+  // straight from /public and draw crisp (nearest-neighbour) at each desk.
+  const HQ_KEY = 'plaza';
+  const office = {};
+  for (const name of ['floor', 'wall', 'desk', 'pc', 'chair', 'plant', 'whiteboard']) {
+    const img = new Image();
+    img.src = `/townart/office/${name}.png`;
+    img.decode().then(() => { if (img.naturalWidth) office[name] = img; }).catch(() => {});
+  }
 
   const CELL_H = 210;      // only spaces the district POINTS out; nothing is penned in it
   let districts = {};      // loc key -> {x,y,label,key,clearing} — x/y is where its building stands
@@ -874,7 +884,93 @@ export function mount(root, tools) {
     label(sp.name || '', ox, oy + 28);
   }
 
+  // Dyer HQ from the inside: a pixel office (pixel-agents tiles) where the whole
+  // team sits at desks and works through the day. One desk per villager; whoever
+  // is clocked in at HQ is seated at theirs, the rest sit empty until they return.
+  function drawOffice(now, t) {
+    const { width: W, height: H } = canvas;
+    ctx.imageSmoothingEnabled = false;
+    const wallH = Math.max(64, Math.floor(H / 3));
+
+    // floor tiles
+    if (office.floor) {
+      const s = 4, tw = office.floor.width * s, th = office.floor.height * s;
+      for (let y = wallH; y < H; y += th) for (let x = 0; x < W; x += tw) ctx.drawImage(office.floor, x, y, tw, th);
+    } else { ctx.fillStyle = '#8a8f98'; ctx.fillRect(0, wallH, W, H - wallH); }
+    // wall band
+    if (office.wall) {
+      const ww = office.wall.width * (wallH / office.wall.height);
+      for (let x = 0; x < W; x += ww) ctx.drawImage(office.wall, x, 0, ww, wallH);
+    } else { ctx.fillStyle = '#cfc3ad'; ctx.fillRect(0, 0, W, wallH); }
+    ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(0, wallH - 7, W, 7);
+
+    // wall + corner decor
+    const put = (img, cx, bottom, s) => { if (img) ctx.drawImage(img, cx - img.width * s / 2, bottom - img.height * s, img.width * s, img.height * s); };
+    put(office.whiteboard, W * 0.5, wallH * 0.86, 3);
+    put(office.plant, 34, wallH + 46, 4);
+    put(office.plant, W - 34, wallH + 46, 4);
+
+    // plaque: whose place this is + how many are in
+    const roster = [...sprites.values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    const working = roster.filter(sp => sp.loc === HQ_KEY).length;
+    const pw = 240;
+    ctx.fillStyle = '#7a5a38'; ctx.fillRect(W / 2 - pw / 2, wallH - 48, pw, 34);
+    ctx.fillStyle = '#9a774c'; ctx.fillRect(W / 2 - pw / 2 + 3, wallH - 45, pw - 6, 28);
+    label('Dyer HQ', W / 2, wallH - 33, 12);
+    label(working ? `${working} at work` : 'the office is quiet after hours', W / 2, wallH - 20, 9);
+
+    // desks: a bullpen, one per villager. Row-major draw order means a front
+    // row is painted after the row behind it, so it overlaps correctly.
+    const n = Math.max(roster.length, 1);
+    const cols = Math.min(4, n), rows = Math.ceil(n / cols);
+    const areaY = wallH + 30, areaH = H - wallH - 84, cellW = W / cols, cellH = areaH / rows;
+    roster.forEach((sp, i) => {
+      const cx = (i % cols) * cellW + cellW / 2;
+      const deskBottom = areaY + Math.floor(i / cols) * cellH + cellH * 0.72;
+      drawWorkstation(sp, cx, deskBottom, cellW, t);
+    });
+
+    // the way out (same rect the click handler leaves through) + you by the door
+    const dr = roomDoorRect();
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(dr.x - 5, dr.y - 5, dr.w + 10, dr.h + 5);
+    ctx.fillStyle = '#6b4a2f'; ctx.fillRect(dr.x, dr.y, dr.w, dr.h);
+    ctx.fillStyle = '#8a6540'; ctx.fillRect(dr.x + 4, dr.y + 4, dr.w - 8, dr.h - 4);
+    ctx.fillStyle = '#e8d9a0'; ctx.fillRect(dr.x + dr.w - 12, dr.y + dr.h / 2 - 2, 4, 4);
+    drawOccupant(me, dr.x - 36, dr.y + 24, t);
+    const chip = leaveChip();
+    ctx.fillStyle = 'rgba(253,253,244,0.92)'; ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath(); ctx.roundRect(chip.x, chip.y, chip.w, chip.h, 8); ctx.fill(); ctx.stroke();
+    label('⬅ leave', chip.x + chip.w / 2, chip.y + 17, 11);
+  }
+
+  // one desk: chair behind, the villager (if clocked in) seated, the desk in
+  // front of their legs, a PC on top with its screen on — busy at work.
+  function drawWorkstation(sp, cx, deskBottom, cellW, t) {
+    const dw = office.desk ? office.desk.width : 48, dh = office.desk ? office.desk.height : 32;
+    const s = Math.min(cellW * 0.72, 150) / dw;
+    const dW = dw * s, dH = dh * s, deskY = deskBottom - dH;
+    if (office.chair) { const cs = s * 1.3, cw = office.chair.width * cs, ch = office.chair.height * cs;
+      ctx.drawImage(office.chair, cx - cw / 2, deskY - ch * 0.35, cw, ch); }
+    if (sp.loc === HQ_KEY) {
+      const img = art[`${sp.artKey}_front`] || (sp.artKey && art[sp.artKey]);
+      if (img) {
+        const vh = dH * 2.0, vw = img.width * vh / img.height;
+        const bob = Math.sin((t + sp.hue * 40) / 260) * 1.5;   // a little "typing"
+        ctx.drawImage(img, cx - vw / 2, deskY - vh * 0.60 + bob, vw, vh);
+      } else {
+        ctx.fillStyle = `hsl(${sp.hue} 45% 45%)`;
+        ctx.beginPath(); ctx.arc(cx, deskY - dH * 0.6, 12, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    if (office.desk) ctx.drawImage(office.desk, cx - dW / 2, deskY, dW, dH);
+    else { ctx.fillStyle = '#8a6540'; ctx.fillRect(cx - dW / 2, deskY, dW, dH); }
+    if (office.pc) { const pw = office.pc.width * s, ph = office.pc.height * s;
+      ctx.drawImage(office.pc, cx - pw / 2, deskY - ph * 0.5, pw, ph); }
+    label(String(sp.name || '').slice(0, 12), cx, deskBottom + 12, 9);
+  }
+
   function drawRoom(now, t) {
+    if (inside && inside.key === HQ_KEY) return drawOffice(now, t);
     const { width: W, height: H } = canvas;
     ctx.imageSmoothingEnabled = false;   // same crisp pixels indoors
     const it = interiors[inside.key];
