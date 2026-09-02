@@ -347,6 +347,8 @@ let openSeq = 0;
 async function openModule(id) {
   const mod = MODULES[id];
   if (!mod) return;
+  // remember where we are, so a reload lands back here (within a recency window)
+  try { save('ui.lastView', { id, at: Date.now() }); } catch { /* private mode */ }
   const seq = ++openSeq;
   $('#appview-title').textContent = mod.title;
   // the tab/window title should follow the open module, then restore on close
@@ -395,6 +397,8 @@ function closeModule() {
   if (typeof unmount === 'function') { try { unmount(); } catch { /* noop */ } }
   unmount = null;
   appview.hidden = true;
+  // a deliberate close returns to the home rail: a reload should NOT reopen it
+  try { save('ui.lastView', null); } catch { /* noop */ }
   document.title = 'Dyer HQ — Dashboard';
   // hand the background back to the keyboard/AT (unless the control center is
   // still up over it) and drop the history entry we pushed on open
@@ -1406,6 +1410,17 @@ pollOps();
 paintStatusDots(); // last known answers, instantly, before the network says anything
 refreshStatus();
 boot();
+// Resume where you left off — reopen the last module if it was open recently.
+// Nothing is saved on a first visit or after a deliberate close, so the home
+// rail stays the default; this only catches an accidental reload mid-task.
+try {
+  const lv = load('ui.lastView', null);
+  if (lv && lv.id && MODULES[lv.id] && Date.now() - (lv.at || 0) < 12 * 60 * 60 * 1000) {
+    const idx = TILES.findIndex(t => t.id === lv.id && t.kind === 'module');
+    if (idx >= 0) setFocus(idx, false);
+    openModule(lv.id);
+  }
+} catch { /* noop */ }
 initAchievements(() => consoleMode);
 sync.init();
 applyBg(bgMode);
