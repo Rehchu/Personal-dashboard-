@@ -55,7 +55,24 @@ const TOWN_ART_SRC = {
   char_watch_front: `${HF}hf_20260831_091646_6e80b958-44f2-4743-9ad3-5a81177ed80c.png`,
 };
 
+// Villager sprites that ship WITH the app — a real person's likeness drawn as
+// pixel art — rather than being generated. Apex is Bradly's actual personal
+// trainer. These load straight from /public, already background-free, so they
+// skip the R2 import path the generated sprites use.
+const LOCAL_ART = {
+  char_apex: '/townart/apex_side.png',        // base (side profile; renderer mirrors it)
+  char_apex_front: '/townart/apex_front.png', // walking toward you
+  char_apex_back: '/townart/apex_back.png',   // walking away
+};
+
 async function loadTownArt(kind) {
+  const local = LOCAL_ART[kind];
+  if (local) {
+    const img = new Image();
+    img.src = local;
+    await img.decode().catch(() => {});
+    return img.naturalWidth ? stripAndCrop(img) : null;
+  }
   const get = () => fetch(`/api/town/art/${kind}`);
   let res = await get();
   if (res.status === 404) {
