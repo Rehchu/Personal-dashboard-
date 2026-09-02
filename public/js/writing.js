@@ -178,7 +178,7 @@ export function mount(root, tools) {
 
         <div class="panel" id="wr-saga-panel" hidden>
           <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:4px">
-            <h3 style="flex:1;margin:0">The dragon saga</h3>
+            <h3 style="flex:1;margin:0">Draco's books</h3>
             <a class="btn small" id="wr-saga-branch" href="#" target="_blank" rel="noopener" hidden>open the branch ↗</a>
           </div>
           <p class="muted" style="margin-bottom:14px">
@@ -330,12 +330,40 @@ export function mount(root, tools) {
      survive Draco's next push, and pretending otherwise would lose work. */
   let sagaLoaded = false;
 
-  function sagaRow(c, isDoc) {
+  function sagaRow(c, isDoc, bookKey) {
     const kb = c.bytes ? ` · ${Math.round(c.bytes / 1024)} KB` : '';
-    return `<button class="wr-saga-row" data-read="${esc(c.path)}">
+    return `<button class="wr-saga-row" data-read="${esc(c.path)}" data-book="${esc(bookKey)}">
       <span class="wr-saga-t">${esc(c.title || c.file)}</span>
       <span class="muted wr-saga-m">${c.words.toLocaleString()} words${kb}${isDoc ? ' · notes' : ''}</span>
     </button>`;
+  }
+
+  // One section per book — Draco writes two now (the Dragon Saga and the Dark
+  // Assassin trilogy). A book he has not started yet shows its own note, not an
+  // error, and lights up on its own once he commits a chapter.
+  function bookSection(bk) {
+    const t = bk.totals || { chapters: 0, words: 0, loreWords: 0 };
+    const when = bk.lastCommit?.at ? new Date(bk.lastCommit.at).toLocaleString() : null;
+    return `
+      <section class="wr-saga-book" style="margin-bottom:26px">
+        <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin:0 0 10px">
+          <h3 style="margin:0;font-size:16px">${esc(bk.title || 'Untitled')}</h3>
+          ${bk.voice ? `<span class="muted" style="font-size:12px">${esc(bk.voice)} voice</span>` : ''}
+          ${bk.branchUrl ? `<a class="btn small" style="margin-left:auto" href="${esc(bk.branchUrl)}" target="_blank" rel="noopener">branch ↗</a>` : ''}
+        </div>
+        <div class="stat-row" style="margin-bottom:12px">
+          <div class="stat-tile"><div class="stat-value">${t.chapters}</div><div class="stat-label">chapters</div></div>
+          <div class="stat-tile"><div class="stat-value">${(t.words || 0).toLocaleString()}</div><div class="stat-label">words of prose</div></div>
+          <div class="stat-tile"><div class="stat-value">${(t.loreWords || 0).toLocaleString()}</div><div class="stat-label">words of notes</div></div>
+        </div>
+        ${bk.lastCommit ? `<p class="muted" style="margin:0 0 12px">Last commit${when ? ` ${esc(when)}` : ''} — “${esc(bk.lastCommit.message)}”</p>` : ''}
+        ${(bk.chapters || []).length
+          ? `<div class="wr-saga-list">${bk.chapters.map(c => sagaRow(c, false, bk.key)).join('')}</div>`
+          : `<p class="muted">${esc(bk.note || 'No chapters yet.')}</p>`}
+        ${(bk.docs || []).length
+          ? `<h4 style="margin:16px 0 8px;font-size:13px">Notes &amp; bible</h4>
+             <div class="wr-saga-list">${bk.docs.map(c => sagaRow(c, true, bk.key)).join('')}</div>` : ''}
+      </section>`;
   }
 
   async function renderSaga(force) {
@@ -345,45 +373,26 @@ export function mount(root, tools) {
       const res = await fetch('/api/book', { headers: { accept: 'application/json' } });
       const d = await res.json();
       if (!alive) return;
-
       if (d.error) { box.innerHTML = `<p class="muted">${esc(d.error)}</p>`; return; }
 
-      const link = root.querySelector('#wr-saga-branch');
-      if (d.branchUrl && link) { link.href = d.branchUrl; link.hidden = false; }
-
-      const t = d.totals || { chapters: 0, words: 0, loreWords: 0 };
-      const when = d.lastCommit?.at ? new Date(d.lastCommit.at).toLocaleString() : null;
-
-      box.innerHTML = `
-        <div class="stat-row" style="margin-bottom:16px">
-          <div class="stat-tile"><div class="stat-value">${t.chapters}</div><div class="stat-label">chapters written</div></div>
-          <div class="stat-tile"><div class="stat-value">${(t.words || 0).toLocaleString()}</div><div class="stat-label">words of prose</div></div>
-          <div class="stat-tile"><div class="stat-value">${(t.loreWords || 0).toLocaleString()}</div><div class="stat-label">words of lore &amp; notes</div></div>
-        </div>
-        ${d.lastCommit ? `<p class="muted" style="margin:0 0 14px">Last commit${when ? ` ${esc(when)}` : ''} — “${esc(d.lastCommit.message)}”</p>` : ''}
-        ${(d.chapters || []).length
-          ? `<div class="wr-saga-list">${d.chapters.map(c => sagaRow(c, false)).join('')}</div>`
-          : `<p class="muted">${esc(d.note || 'No chapters on that branch yet.')}</p>`}
-        ${(d.docs || []).length
-          ? `<h3 style="margin:20px 0 8px;font-size:14px">The bible</h3>
-             <div class="wr-saga-list">${d.docs.map(c => sagaRow(c, true)).join('')}</div>` : ''}
-        <div id="wr-saga-read" hidden></div>`;
-
+      const list = Array.isArray(d.books) && d.books.length ? d.books : [d];
+      box.innerHTML = `${list.map(bookSection).join('')}<div id="wr-saga-read" hidden></div>`;
       box.querySelectorAll('[data-read]').forEach(b =>
-        b.addEventListener('click', () => openSaga(b.dataset.read)));
+        b.addEventListener('click', () => openSaga(b.dataset.read, b.dataset.book)));
       sagaLoaded = true;
     } catch {
       if (alive) box.innerHTML = '<p class="muted">Could not reach the manuscript bridge.</p>';
     }
   }
 
-  async function openSaga(path) {
+  async function openSaga(path, bookKey) {
     const pane = root.querySelector('#wr-saga-read');
     if (!pane) return;
     pane.hidden = false;
     pane.innerHTML = '<p class="muted">Opening…</p>';
     try {
-      const res = await fetch(`/api/book/read?path=${encodeURIComponent(path)}`, { headers: { accept: 'application/json' } });
+      const q = `path=${encodeURIComponent(path)}${bookKey ? `&book=${encodeURIComponent(bookKey)}` : ''}`;
+      const res = await fetch(`/api/book/read?${q}`, { headers: { accept: 'application/json' } });
       const d = await res.json();
       if (!alive) return;
       if (d.error) { pane.innerHTML = `<p class="muted">${esc(d.error)}</p>`; return; }
