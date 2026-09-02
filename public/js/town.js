@@ -215,7 +215,7 @@ export function mount(root, tools) {
   root.innerHTML = `
     <div id="town-grid">
       <div>
-        <div class="panel"><h3>The town <span id="town-wx" style="font-weight:400;font-size:12px;color:var(--ink-3)"></span><span id="town-morale" hidden><span class="lbl"></span><span class="bar"><span class="fill"></span></span></span></h3><div id="town-alert" hidden style="margin:0 0 10px;padding:8px 11px;border-radius:8px;font-size:13px;line-height:1.45;background:color-mix(in oklab,#ff8a2b 16%,transparent);border:1px solid color-mix(in oklab,#ff8a2b 45%,transparent);color:var(--ink)"></div><canvas id="town-canvas"></canvas></div>
+        <div class="panel"><h3>The town <span id="town-wx" style="font-weight:400;font-size:12px;color:var(--ink-3)"></span><span id="town-morale" hidden><span class="lbl"></span><span class="bar"><span class="fill"></span></span></span></h3><div id="town-alert" hidden style="margin:0 0 10px;padding:8px 11px;border-radius:8px;font-size:13px;line-height:1.45;background:color-mix(in oklab,#ff8a2b 16%,transparent);border:1px solid color-mix(in oklab,#ff8a2b 45%,transparent);color:var(--ink)"></div><canvas id="town-canvas"></canvas><iframe id="town-pixeloffice" title="Pixel Office" hidden style="display:block;width:100%;height:440px;border:0;border-radius:12px;background:#141a26"></iframe></div>
         <div class="panel" style="margin-top:16px"><h3>Live feed</h3><div class="town-feed" id="town-feed"></div></div>
       </div>
       <div>
@@ -249,6 +249,45 @@ export function mount(root, tools) {
   // the whole village in between, drawn home by a bias toward their own patch.
   // State arrives every 5s; everything between polls is animated locally.
   const canvas = root.querySelector('#town-canvas');
+
+  // ---- Pixel Office: the REAL pixel-agents web app (public/pixeloffice), embedded
+  // and fed the villagers as "agents" over postMessage, so they render at their
+  // desks in its own engine. The 🏢 button swaps it for the map. ----
+  const pixelFrame = root.querySelector('#town-pixeloffice');
+  const officeBtn = document.createElement('button');
+  officeBtn.className = 'btn small';
+  officeBtn.textContent = '🏢 Pixel Office';
+  tools.append(officeBtn);
+  let officeOn = false, pixelReady = false, lastState = null;
+  const pixelSeen = new Set();
+  const pixelPost = m => { try { pixelFrame.contentWindow?.postMessage(m, '*'); } catch { /* frame gone */ } };
+  function feedPixelOffice(state) {
+    if (!officeOn || pixelFrame.hidden || !pixelReady) return;
+    const agents = Array.isArray(state?.agents) ? state.agents : [];
+    const live = new Set();
+    agents.forEach((a, i) => {
+      const id = i + 1; live.add(id);
+      if (!pixelSeen.has(id)) {
+        pixelSeen.add(id);
+        pixelPost({ type: 'agentCreated', id, folderName: String(a.name || `Agent ${id}`), palette: i % 6, hueShift: hashStr(String(a.name || a.id || id)) % 360 });
+      }
+      pixelPost({ type: 'agentStatus', id, status: 'active', awaitingInput: false });
+      if (a.busy) pixelPost({ type: 'agentToolStart', id, toolId: `t${id}`, status: 'running', toolName: 'Edit' });
+      else pixelPost({ type: 'agentToolsClear', id });
+    });
+    for (const id of [...pixelSeen]) if (!live.has(id)) { pixelPost({ type: 'agentClosed', id }); pixelSeen.delete(id); }
+  }
+  pixelFrame.addEventListener('load', () => { pixelReady = true; pixelSeen.clear(); feedPixelOffice(lastState); });
+  officeBtn.addEventListener('click', () => {
+    officeOn = !officeOn;
+    officeBtn.classList.toggle('on', officeOn);
+    canvas.hidden = officeOn;
+    pixelFrame.hidden = !officeOn;
+    if (officeOn) {
+      if (!pixelFrame.src) pixelFrame.src = '/pixeloffice/index.html'; // lazy: only fetch the app on demand
+      feedPixelOffice(lastState);
+    }
+  });
   const ctx = canvas.getContext('2d');
   const art = {};
   for (const kind of Object.keys(TOWN_ART_SRC)) loadTownArt(kind).then(img => { if (img) art[kind] = img; });
@@ -1322,7 +1361,7 @@ export function mount(root, tools) {
       const res = await fetch('/api/town/state', { headers: { accept: 'application/json' } });
       if (!res.ok) throw new Error(String(res.status));
       const d = await res.json();
-      if (alive) paint(d);
+      if (alive) { paint(d); lastState = d.state; feedPixelOffice(d.state); }
     } catch {
       if (alive) paintOffline(null);
     }
