@@ -1157,8 +1157,105 @@ document.querySelectorAll('#pill-nav .pill').forEach(pill => {
 });
 
 /* ---------- keyboard (console feel) ---------- */
+/* ---------- command palette: press / (or Ctrl/⌘K) to jump anywhere ----------
+   Forty modules and no way to jump between them without going back to the home
+   rail. This is one overlay that opens from anywhere — inside a module too — and
+   filters every module (and the app links) as you type. */
+const palStyle = document.createElement('style');
+palStyle.textContent = `
+  #palette { position:fixed; inset:0; z-index:60; display:grid; place-items:start center;
+    padding-top:12vh; background:rgba(3,6,12,.55); backdrop-filter:blur(3px); }
+  #palette[hidden] { display:none; }
+  #palette .pal-box { width:min(560px,92vw); background:var(--panel,#0c1420);
+    border:1px solid color-mix(in oklab,var(--ink-3,#2a3a4e) 55%,transparent);
+    border-radius:14px; box-shadow:0 20px 60px rgba(0,0,0,.5); overflow:hidden; }
+  #pal-input { width:100%; padding:15px 18px; font-size:16px; color:var(--ink,#eef4fa);
+    background:transparent; border:0; outline:none;
+    border-bottom:1px solid color-mix(in oklab,var(--ink-3,#2a3a4e) 40%,transparent); }
+  #pal-list { max-height:52vh; overflow:auto; padding:6px; }
+  .pal-row { display:flex; align-items:center; gap:12px; width:100%; text-align:left;
+    padding:10px 12px; border:0; border-radius:9px; background:transparent;
+    color:var(--ink,#eef4fa); font-size:14.5px; cursor:pointer; }
+  .pal-row .pal-l { flex:1; }
+  .pal-row .pal-k { font-size:11px; color:var(--ink-3,#74869a); text-transform:uppercase; letter-spacing:.08em; }
+  .pal-row.on, .pal-row:hover { background:color-mix(in oklab,var(--accent,#45b8f2) 20%,transparent); }
+  .pal-empty { padding:16px; color:var(--ink-3,#74869a); font-size:14px; }`;
+document.head.append(palStyle);
+
+const palette = document.createElement('div');
+palette.id = 'palette';
+palette.hidden = true;
+palette.innerHTML = `<div class="pal-box" role="dialog" aria-label="Jump to">
+    <input id="pal-input" type="text" placeholder="Jump to a module…   ( / or Ctrl-K )" autocomplete="off" spellcheck="false" aria-label="Jump to">
+    <div id="pal-list" role="listbox"></div></div>`;
+document.body.append(palette);
+const palInput = palette.querySelector('#pal-input');
+const palList = palette.querySelector('#pal-list');
+let palItems = [], palSel = 0;
+
+const palSubseq = (q, s) => { let i = 0; for (const c of s) { if (c === q[i]) i++; if (i === q.length) return true; } return q.length === 0; };
+const palEntries = () => {
+  const mods = Object.entries(MODULES).map(([id, m]) => ({ kind: 'module', id, label: m.title }));
+  const links = TILES.filter(t => t.kind === 'link').map(t => ({ kind: 'link', id: t.id, label: t.label || t.title || t.id, href: t.href || t.url }));
+  return [...mods, ...links];
+};
+const palMatch = q => {
+  q = q.trim().toLowerCase();
+  if (!q) return palEntries();
+  return palEntries()
+    .map(e => ({ e, i: e.label.toLowerCase().indexOf(q) }))
+    .filter(x => x.i >= 0 || palSubseq(q, x.e.label.toLowerCase()))
+    .sort((a, b) => (a.i < 0 ? 99 : a.i) - (b.i < 0 ? 99 : b.i))
+    .map(x => x.e);
+};
+const palMark = () => palList.querySelectorAll('.pal-row').forEach((b, i) => b.classList.toggle('on', i === palSel));
+const palScroll = () => palList.querySelectorAll('.pal-row')[palSel]?.scrollIntoView({ block: 'nearest' });
+const palRender = () => {
+  palList.innerHTML = palItems.length
+    ? palItems.map((e, i) => `<button class="pal-row${i === palSel ? ' on' : ''}" data-i="${i}" role="option">
+        <span class="pal-l">${esc(e.label)}</span><span class="pal-k">${e.kind === 'link' ? 'open ↗' : 'module'}</span></button>`).join('')
+    : '<div class="pal-empty">Nothing matches.</div>';
+  palList.querySelectorAll('.pal-row').forEach(b =>
+    b.addEventListener('click', () => palGo(Number(b.dataset.i))));
+};
+const palFilter = () => { palItems = palMatch(palInput.value); palSel = 0; palRender(); };
+function palGo(i) {
+  const e = palItems[i];
+  palClose();
+  if (!e) return;
+  if (e.kind === 'link' && e.href) window.open(e.href, '_blank', 'noopener');
+  else if (e.kind === 'module') { if (!appview.hidden) closeModule(); openModule(e.id); }
+}
+function palOpen() {
+  if (!palette.hidden) return;
+  if (!ccenter.hidden) hideCC();
+  palInput.value = '';
+  palFilter();
+  palette.hidden = false;
+  setBgInert(true);
+  pushOverlayState();
+  palInput.focus();
+}
+function palClose() {
+  if (palette.hidden) return;
+  palette.hidden = true;
+  if (appview.hidden && ccenter.hidden) setBgInert(false);
+  consumeOverlayState();
+}
+palInput.addEventListener('input', palFilter);
+palInput.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { palClose(); e.preventDefault(); }
+  else if (e.key === 'ArrowDown') { palSel = Math.min(palItems.length - 1, palSel + 1); palMark(); palScroll(); e.preventDefault(); }
+  else if (e.key === 'ArrowUp') { palSel = Math.max(0, palSel - 1); palMark(); palScroll(); e.preventDefault(); }
+  else if (e.key === 'Enter') { palGo(palSel); e.preventDefault(); }
+});
+palette.addEventListener('click', e => { if (e.target === palette) palClose(); });
+
 document.addEventListener('keydown', e => {
   const tag = document.activeElement?.tagName;
+  if (!palette.hidden) return; // the palette owns the keyboard while it is open
+  if ((e.key === 'k' || e.key === 'K') && (e.ctrlKey || e.metaKey)) { palOpen(); e.preventDefault(); return; }
+  if (e.key === '/' && tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT' && !e.ctrlKey && !e.metaKey) { palOpen(); e.preventDefault(); return; }
   if (e.key === 'Escape') {
     if (e.isComposing) return; // don't cancel IME composition into a close
     if (!ccenter.hidden) { hideCC(); return; }
