@@ -179,6 +179,12 @@ function injectStyle() {
       color: var(--ink); font: 600 14px var(--font-body, system-ui); }
     .today-brief:hover { background: color-mix(in oklab, var(--accent) 20%, var(--surface-2)); }
     .today-brief-go { margin-left: auto; color: var(--accent); font-size: 20px; }
+    #today-town { display: flex; flex-direction: column; gap: 8px; margin: 0 0 16px; }
+    #today-town:empty { display: none; }
+    .today-brief.town-digest { align-items: flex-start; font-weight: 500; line-height: 1.45; }
+    .today-brief.town-approve { background: color-mix(in oklab, #c98a1a 16%, var(--surface-2));
+      border-color: color-mix(in oklab, #c98a1a 40%, transparent); }
+    .today-brief.town-approve .today-brief-go { color: #c98a1a; }
     @keyframes today-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
     @media (prefers-reduced-motion: reduce) { #today-greet { animation: none; } }`;
   document.head.append(style);
@@ -199,6 +205,7 @@ export function mount(root, tools) {
     </div>
     <div class="stat-row" id="today-stats"></div>
     <div id="today-briefing"></div>
+    <div id="today-town"></div>
     <div class="grid-2">
       <div class="panel" id="today-wx-panel">
         <h3>Weather</h3>
@@ -276,6 +283,52 @@ export function mount(root, tools) {
     ).join('');
     el.querySelectorAll('[data-open]').forEach(b =>
       b.addEventListener('click', () => window.dispatchEvent(new CustomEvent('pd:open', { detail: b.dataset.open }))));
+  }
+
+  // The town's overnight read, folded into the morning briefing: the one-line
+  // chronicle it wrote while I slept, and — louder, in amber — any decisions the
+  // villagers are waiting on me to approve. Shows the last known read instantly
+  // from cache, then refreshes; it keeps showing that read even when the town is
+  // currently paused or offline, and fails utterly silently like every other
+  // briefing line. Tapping either opens the Dyer Town tile.
+  function renderTown() {
+    const el = root.querySelector('#today-town');
+    if (!el) return;
+
+    const paint = (t) => {
+      if (!el) return;
+      const lines = [];
+      if (t && t.pending > 0) lines.push(
+        `<button class="today-brief town-approve" data-open="town"><span>🏛️</span> ${t.pending} town decision${t.pending === 1 ? '' : 's'} waiting on your approval <span class="today-brief-go">›</span></button>`);
+      if (t && t.text) lines.push(
+        `<button class="today-brief town-digest" data-open="town"><span>🌙</span> <span>Overnight in the town: ${esc(t.text)}</span> <span class="today-brief-go">›</span></button>`);
+      el.innerHTML = lines.join('');
+      el.querySelectorAll('[data-open]').forEach(b =>
+        b.addEventListener('click', () => window.dispatchEvent(new CustomEvent('pd:open', { detail: b.dataset.open }))));
+    };
+
+    paint(load('today.town', null)); // the last known read, instantly
+
+    (async () => {
+      try {
+        const res = await fetch('/api/town/state', { signal: ac.signal });
+        if (!res.ok) return; // not signed in, or no town — keep the cached read
+        const d = await res.json();
+        // state is present even when the town is paused (online:false); that last
+        // snapshot IS the morning read, so use it whenever it exists.
+        if (!alive || !d || !d.state) return;
+        const st = d.state;
+        const pending = (Array.isArray(st.approvals) ? st.approvals : [])
+          .filter(ap => ap && ap.status === 'pending').length;
+        const digs = Array.isArray(st.digests) ? st.digests : [];
+        const latest = digs.length ? digs[digs.length - 1] : null;
+        let text = latest && latest.text ? String(latest.text).trim() : '';
+        if (text.length > 170) text = text.slice(0, 167).trimEnd() + '…';
+        const payload = { pending, text, at: Date.now() };
+        save('today.town', payload);
+        paint(payload);
+      } catch { /* silent — the town may just be off */ }
+    })();
   }
 
   function paintWeather(w) {
@@ -413,6 +466,7 @@ export function mount(root, tools) {
 
   renderStats();
   renderBriefing();
+  renderTown();
   renderWeather();
   renderVerse();
 
