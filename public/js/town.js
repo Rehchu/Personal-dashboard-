@@ -190,7 +190,7 @@ export function mount(root, tools) {
   root.innerHTML = `
     <div id="town-grid">
       <div>
-        <div class="panel"><h3>The town <span id="town-wx" style="font-weight:400;font-size:12px;color:var(--ink-3)"></span><span id="town-morale" hidden><span class="lbl"></span><span class="bar"><span class="fill"></span></span></span></h3><canvas id="town-canvas"></canvas></div>
+        <div class="panel"><h3>The town <span id="town-wx" style="font-weight:400;font-size:12px;color:var(--ink-3)"></span><span id="town-morale" hidden><span class="lbl"></span><span class="bar"><span class="fill"></span></span></span></h3><div id="town-alert" hidden style="margin:0 0 10px;padding:8px 11px;border-radius:8px;font-size:13px;line-height:1.45;background:color-mix(in oklab,#ff8a2b 16%,transparent);border:1px solid color-mix(in oklab,#ff8a2b 45%,transparent);color:var(--ink)"></div><canvas id="town-canvas"></canvas></div>
         <div class="panel" style="margin-top:16px"><h3>Live feed</h3><div class="town-feed" id="town-feed"></div></div>
       </div>
       <div>
@@ -1020,11 +1020,17 @@ export function mount(root, tools) {
       about every 15 seconds.</p>`;
   }
 
+  let townAlert = null; // last plain-language status pushed by the town (or null)
   function paint(d) {
     if (!d.online || !d.state) { paintOffline(d.updatedAt); return; }
     grid.hidden = false;
     offline.hidden = true;
     const s = d.state;
+
+    // a plain-language reason the town looks stuck (model unreachable, etc.)
+    townAlert = s.alert || null;
+    const alertEl = root.querySelector('#town-alert');
+    if (alertEl) { alertEl.textContent = townAlert || ''; alertEl.hidden = !townAlert; }
 
     syncWorld(s);
 
@@ -1230,7 +1236,7 @@ export function mount(root, tools) {
         const poll = await fetch(`/api/town/chat/${id}`).then(r => r.json()).catch(() => null);
         if (poll?.reply) { bubble.textContent = poll.reply; log.scrollTop = log.scrollHeight; return; }
       }
-      bubble.textContent = '(no answer yet — the town may be paused)';
+      bubble.textContent = townAlert || '(no answer yet — the town may be paused)';
     } catch {
       bubble.textContent = '(could not reach the town)';
       showToast('Could not send that message');
