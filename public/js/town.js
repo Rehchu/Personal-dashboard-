@@ -71,7 +71,15 @@ async function loadTownArt(kind) {
     const img = new Image();
     img.src = local;
     await img.decode().catch(() => {});
-    return img.naturalWidth ? stripAndCrop(img) : null;
+    if (!img.naturalWidth) return null;
+    // These frames are ALREADY background-free and tightly cropped, so we do NOT
+    // run stripAndCrop on them: its "near-black is background" rule would flood in
+    // from the edges and eat the trainer's black pants and shoes. Just hand back
+    // a canvas of the image as-is.
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    c.getContext('2d').drawImage(img, 0, 0);
+    return c;
   }
   const get = () => fetch(`/api/town/art/${kind}`);
   let res = await get();
