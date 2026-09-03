@@ -216,7 +216,17 @@ function injectStyle() {
     #town-morale .bar { width:120px; height:8px; border-radius:5px; overflow:hidden;
       background:color-mix(in oklab,var(--ink-3) 24%,transparent);
       border:1px solid color-mix(in oklab,var(--ink-3) 28%,transparent); }
-    #town-morale .fill { display:block; height:100%; border-radius:5px; }`;
+    #town-morale .fill { display:block; height:100%; border-radius:5px; }
+    #town-stats { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 10px; }
+    #town-stats .stat { flex:1 1 auto; min-width:74px; display:flex; flex-direction:column;
+      gap:2px; padding:7px 10px; border-radius:10px; background:var(--surface-2);
+      border:1px solid color-mix(in oklab,var(--ink-3) 20%,transparent); }
+    #town-stats .stat .k { font-size:9.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-3); }
+    #town-stats .stat .v { font-size:18px; font-weight:800; line-height:1; color:var(--ink);
+      font-variant-numeric:tabular-nums; }
+    #town-stats .stat .v small { font-size:11px; font-weight:600; color:var(--ink-3); }
+    #town-stats .stat.work .v { color:#57b86a; }
+    #town-stats .stat.open .v { color:#e0b23a; }`;
   document.head.append(style);
 }
 
@@ -234,7 +244,7 @@ export function mount(root, tools) {
   root.innerHTML = `
     <div id="town-grid">
       <div>
-        <div class="panel"><h3>The town <span id="town-wx" style="font-weight:400;font-size:12px;color:var(--ink-3)"></span><span id="town-morale" hidden><span class="lbl"></span><span class="bar"><span class="fill"></span></span></span></h3><div id="town-alert" hidden style="margin:0 0 10px;padding:8px 11px;border-radius:8px;font-size:13px;line-height:1.45;background:color-mix(in oklab,#ff8a2b 16%,transparent);border:1px solid color-mix(in oklab,#ff8a2b 45%,transparent);color:var(--ink)"></div><canvas id="town-canvas"></canvas><iframe id="town-pixeloffice" title="Pixel Office" hidden style="display:block;width:100%;height:440px;border:0;border-radius:12px;background:#141a26"></iframe></div>
+        <div class="panel"><h3>The town <span id="town-wx" style="font-weight:400;font-size:12px;color:var(--ink-3)"></span><span id="town-morale" hidden><span class="lbl"></span><span class="bar"><span class="fill"></span></span></span></h3><div id="town-stats"></div><div id="town-alert" hidden style="margin:0 0 10px;padding:8px 11px;border-radius:8px;font-size:13px;line-height:1.45;background:color-mix(in oklab,#ff8a2b 16%,transparent);border:1px solid color-mix(in oklab,#ff8a2b 45%,transparent);color:var(--ink)"></div><canvas id="town-canvas"></canvas><iframe id="town-pixeloffice" title="Pixel Office" hidden style="display:block;width:100%;height:440px;border:0;border-radius:12px;background:#141a26"></iframe></div>
         <div class="panel" style="margin-top:16px"><h3>Live feed</h3><div class="town-feed" id="town-feed"></div></div>
       </div>
       <div>
@@ -323,8 +333,8 @@ export function mount(root, tools) {
     img.decode().then(() => { if (img.naturalWidth) office[name] = img; }).catch(() => {});
   }
 
-  const CELL_H = 210;      // only spaces the district POINTS out; nothing is penned in it
   let districts = {};      // loc key -> {x,y,label,key,clearing} — x/y is where its building stands
+  let townCenter = { x: 470, y: 318 };  // the fountain/plaza the town rings — set by syncWorld
   let placedStructs = [];  // structures with computed x/y
   // where the nth structure of a district sits, relative to that district's point
   const STRUCT_OFF = [[-84, 30], [84, 30], [-106, 62], [106, 62], [-44, 78], [44, 78], [-128, 4], [128, 4]];
@@ -390,9 +400,10 @@ export function mount(root, tools) {
     return pts;
   }
 
-  // villagers roam the whole canvas; a margin keeps them (and their name
-  // plates and bubbles) off the very edge
-  const FIELD = 26;
+  // villagers roam the whole canvas; the margin keeps them (and their name
+  // plates and bubbles) inside the town wall that rings the field
+  const WALL = 22;         // stone wall thickness around the field
+  const FIELD = WALL + 16;
   const onField = (x, y) => ({
     x: Math.max(FIELD, Math.min(canvas.width - FIELD, x)),
     y: Math.max(FIELD + 22, Math.min(canvas.height - FIELD, y)),
@@ -418,16 +429,31 @@ export function mount(root, tools) {
     interiors = s.interiors || {};
     const keys = Object.keys(s.map || {});
     if (!keys.length) { mapReady = false; return; }
-    const cols = keys.length > 4 ? 3 : 2;
-    const rows = Math.ceil(keys.length / cols);
-    const W = 900, H = rows * CELL_H;
+    // A village square, not a spreadsheet: the plaza (HQ) stands at the town
+    // centre by the fountain, and every other district rings it, evenly spaced
+    // on an ellipse. The canvas is a fixed landscape so the ring always reads.
+    const W = 940, H = 620;
     if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+    townCenter = { x: W / 2, y: H / 2 + 10 };
     districts = {};
-    keys.forEach((k, i) => {
-      // the grid only spaces the district points out — x/y is the spot its
-      // building's feet stand on, and that's all a district is now
-      const cx = (i % cols) * (W / cols) + W / cols / 2;
-      const cy = Math.floor(i / cols) * CELL_H + 118;
+    const hasPlaza = keys.includes('plaza');
+    if (hasPlaza) {
+      // the HQ building stands just above the fountain, facing the square
+      const cx = townCenter.x, cy = townCenter.y - 104;
+      districts.plaza = { key: 'plaza', x: cx, y: cy, label: s.map.plaza, clearing: makeClearing('plaza', cx, cy) };
+    }
+    const ring = keys.filter(k => k !== 'plaza');
+    const n = ring.length;
+    // radius grows a little with the crowd, but stays inside the walls
+    // ry is capped so the topmost building's roof (≈100px tall) clears the wall
+    const rx = Math.max(200, Math.min(360, 150 + n * 24));
+    const ry = Math.max(140, Math.min(188, 100 + n * 16));
+    ring.forEach((k, i) => {
+      // half-step offset leaves due-north clear so nothing stacks behind the
+      // central plaza (HQ) building
+      const a = -Math.PI / 2 + ((i + 0.5) / Math.max(1, n)) * Math.PI * 2;
+      const cx = townCenter.x + Math.cos(a) * rx;
+      const cy = townCenter.y + Math.sin(a) * ry;
       districts[k] = { key: k, x: cx, y: cy, label: s.map[k], clearing: makeClearing(k, cx, cy) };
     });
     makeDecor();
@@ -435,7 +461,7 @@ export function mount(root, tools) {
     // the owner spawns by the plaza fountain — first visit, or a saved spot
     // that no longer fits the map
     if (!Number.isFinite(me.x) || !Number.isFinite(me.y) || me.x < 0 || me.x > W || me.y < 0 || me.y > H) {
-      me.x = W / 2 + 34; me.y = H / 2 + 22; me.tx = me.x; me.ty = me.y;
+      me.x = townCenter.x + 40; me.y = townCenter.y + 30; me.tx = me.x; me.ty = me.y;
     }
 
     // agent-built structures cluster around their district's point, off to the
@@ -586,14 +612,90 @@ export function mount(root, tools) {
     ctx.fillText(text, x, y);
   }
 
+  // the central fountain: a stone basin, a raised inner bowl of water, a little
+  // spout at the top and rings of ripple spreading out across the pool
+  function drawFountain(cx, cy, t) {
+    // outer basin rim
+    ctx.fillStyle = '#8f887b';
+    ctx.beginPath(); ctx.ellipse(cx, cy + 2, 46, 34, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#a7a094';
+    ctx.beginPath(); ctx.ellipse(cx, cy, 46, 34, 0, 0, Math.PI * 2); ctx.fill();
+    // water
+    ctx.fillStyle = '#4f9fc4';
+    ctx.beginPath(); ctx.ellipse(cx, cy, 37, 26, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#63b4d6';
+    ctx.beginPath(); ctx.ellipse(cx, cy - 1, 33, 22, 0, 0, Math.PI * 2); ctx.fill();
+    // ripples spreading out over the pool
+    for (let k = 0; k < 3; k++) {
+      const r = (t / 30 + k * 8) % 24;
+      ctx.strokeStyle = `rgba(255,255,255,${Math.max(0, 0.5 - r / 32)})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.ellipse(cx, cy, 6 + r * 1.3, 4 + r * 0.9, 0, 0, Math.PI * 2); ctx.stroke();
+    }
+    // stone pedestal + a bobbing spout of water
+    ctx.fillStyle = '#8f887b';
+    ctx.fillRect(cx - 5, cy - 20, 10, 20);
+    ctx.fillStyle = '#a7a094';
+    ctx.beginPath(); ctx.ellipse(cx, cy - 20, 9, 4, 0, 0, Math.PI * 2); ctx.fill();
+    const spout = 8 + Math.sin(t / 160) * 2;
+    ctx.fillStyle = 'rgba(150,210,235,0.85)';
+    ctx.fillRect(cx - 2, cy - 20 - spout, 4, spout);
+    ctx.beginPath(); ctx.arc(cx, cy - 20 - spout, 3, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // the town wall: a grey stone band around the field, brick-coursed, with a
+  // crenellated top edge so the whole village reads as one enclosed square
+  function drawWall(W, H) {
+    const s = WALL;
+    ctx.fillStyle = '#8a8378';
+    ctx.fillRect(0, 0, W, s); ctx.fillRect(0, H - s, W, s);
+    ctx.fillRect(0, 0, s, H); ctx.fillRect(W - s, 0, s, H);
+    // brick courses (seams) + inner shadow
+    ctx.strokeStyle = 'rgba(60,55,48,0.35)'; ctx.lineWidth = 1;
+    for (let x = 0; x < W; x += 16) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, s); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x + 8, H - s); ctx.lineTo(x + 8, H); ctx.stroke();
+    }
+    for (let y = 0; y < H; y += 16) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(s, y); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(W - s, y + 8); ctx.lineTo(W, y + 8); ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(0,0,0,0.16)';
+    ctx.fillRect(s, s, W - 2 * s, 4); ctx.fillRect(s, s, 4, H - 2 * s);
+    // crenellations along the inner lip of the top wall
+    ctx.fillStyle = '#9a9286';
+    for (let x = 6; x < W - 6; x += 26) ctx.fillRect(x, s - 5, 14, 5);
+  }
+
   function draw(now, t) {
     const { width: W, height: H } = canvas;
+    const cx = townCenter.x, cy = townCenter.y;
     ctx.imageSmoothingEnabled = false;   // crisp chunky pixels when scaling
+    // grassy ground, banded so the field has a little depth
     ctx.fillStyle = '#74b64e';
     ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(90,170,70,0.30)';
+    for (let y = 0; y < H; y += 46) ctx.fillRect(0, y, W, 23);
 
-    // no plots — just a worn, slightly brighter clearing around each building,
-    // curved through its blob points so the field has no edges to trap anyone
+    // curved dirt paths spoking out from the plaza to every ringed district —
+    // a gentle bow gives the square its village feel instead of straight rays
+    const paths = Object.values(districts).filter(d => d.key !== 'plaza');
+    const drawPaths = (width, colour) => {
+      ctx.strokeStyle = colour; ctx.lineWidth = width; ctx.lineCap = 'round';
+      for (const d of paths) {
+        const mx = (cx + d.x) / 2, my = (cy + d.y) / 2;
+        const nx = -(d.y - cy), ny = (d.x - cx);              // perpendicular, for the bow
+        const nl = Math.hypot(nx, ny) || 1, bow = 26;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.quadraticCurveTo(mx + (nx / nl) * bow, my + (ny / nl) * bow, d.x, d.y + 8);
+        ctx.stroke();
+      }
+    };
+    drawPaths(20, '#c79b68');   // dirt border
+    drawPaths(13, '#e2c08a');   // lighter, worn centre
+
+    // a worn, slightly brighter clearing around each building
     ctx.fillStyle = '#7bbb53';
     for (const d of Object.values(districts)) {
       const p = d.clearing;
@@ -606,33 +708,21 @@ export function mount(root, tools) {
       ctx.fill();
     }
 
-    // dirt paths from every district to the town center
-    ctx.strokeStyle = '#d9b380';
-    ctx.lineWidth = 16;
-    ctx.lineCap = 'round';
-    for (const d of Object.values(districts)) {
+    // the paved plaza: a ring of stone flags around the central fountain
+    ctx.fillStyle = '#b9b2a6';
+    ctx.beginPath(); ctx.arc(cx, cy, 64, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#a49d90';
+    ctx.beginPath(); ctx.arc(cx, cy, 64, 0, Math.PI * 2);
+    ctx.arc(cx, cy, 52, 0, Math.PI * 2); ctx.fill('evenodd');
+    // flagstone seams
+    ctx.strokeStyle = 'rgba(90,84,74,0.35)'; ctx.lineWidth = 1.5;
+    for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) {
       ctx.beginPath();
-      ctx.moveTo(d.x, d.y + 10);
-      ctx.lineTo(W / 2, H / 2);
+      ctx.moveTo(cx + Math.cos(a) * 34, cy + Math.sin(a) * 34);
+      ctx.lineTo(cx + Math.cos(a) * 63, cy + Math.sin(a) * 63);
       ctx.stroke();
     }
-    ctx.fillStyle = '#d9b380';
-    ctx.beginPath();
-    ctx.arc(W / 2, H / 2, 26, 0, Math.PI * 2);
-    ctx.fill();
-    // the plaza fountain: a pool with slow ripples
-    ctx.fillStyle = '#5aa7c7';
-    ctx.beginPath();
-    ctx.arc(W / 2, H / 2, 12, 0, Math.PI * 2);
-    ctx.fill();
-    for (let k = 0; k < 2; k++) {
-      const r = 3 + ((t / 22 + k * 11) % 12);
-      ctx.strokeStyle = `rgba(255,255,255,${Math.max(0, 0.55 - r / 24)})`;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(W / 2, H / 2, r, 0, Math.PI * 2);
-      ctx.stroke();
-    }
+    drawFountain(cx, cy, t);
 
     // grass tufts and flowers
     for (const g of decor) {
@@ -747,6 +837,10 @@ export function mount(root, tools) {
         ctx.fillText(sp.bubble, bx + 8, sp.y - 29, tw - 16);
       }
     }
+
+    // the enclosing town wall frames everything, drawn last so grass, paths and
+    // strays never bleed onto the stone
+    drawWall(W, H);
   }
 
   // one villager, drawn where they stand — called from the depth-sorted pass
@@ -1232,6 +1326,25 @@ export function mount(root, tools) {
       fill.style.background = m >= 65 ? '#57b86a' : m >= 35 ? '#e0b23a' : '#ff8a92';
     } else {
       moraleEl.hidden = true;
+    }
+
+    // the status strip: a village at a glance — headcount, who's on the job,
+    // open work on the board, morale and the town clock
+    const statsEl = root.querySelector('#town-stats');
+    if (statsEl) {
+      const ags = s.agents || [];
+      const working = ags.filter(a => a.busy).length;
+      const openJobs = (s.jobs || []).filter(j => !j.done && !j.holder).length;
+      const now = new Date();
+      const clock = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      const mPct = Number.isFinite(morale) ? Math.round(Math.max(0, Math.min(100, morale))) : null;
+      const cell = (k, v, cls = '') => `<div class="stat ${cls}"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+      statsEl.innerHTML =
+        cell('Villagers', ags.length) +
+        cell('Working', `${working}<small>/${ags.length}</small>`, 'work') +
+        cell('Open work', openJobs, 'open') +
+        (mPct == null ? '' : cell('Morale', mPct)) +
+        cell('Time', clock);
     }
 
     root.querySelector('#town-agents').innerHTML = (s.agents || []).map(a => {
