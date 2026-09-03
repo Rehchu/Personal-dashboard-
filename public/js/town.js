@@ -217,16 +217,36 @@ function injectStyle() {
       background:color-mix(in oklab,var(--ink-3) 24%,transparent);
       border:1px solid color-mix(in oklab,var(--ink-3) 28%,transparent); }
     #town-morale .fill { display:block; height:100%; border-radius:5px; }
-    #town-stats { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 10px; }
-    #town-stats .stat { flex:1 1 auto; min-width:74px; display:flex; flex-direction:column;
-      gap:2px; padding:7px 10px; border-radius:10px; background:var(--surface-2);
+    /* the village HUD: a game-style header band of stat chips + action buttons,
+       sitting over the map like the reference town */
+    #town-hud { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:0 0 12px;
+      padding:10px 12px; border-radius:14px;
+      background:linear-gradient(180deg, color-mix(in oklab,var(--accent) 12%,var(--surface-2)), var(--surface-2));
+      border:1px solid color-mix(in oklab,var(--ink-3) 26%,transparent);
+      box-shadow:inset 0 1px 0 color-mix(in oklab,#fff 22%,transparent), 0 1px 2px rgba(0,0,0,0.12); }
+    #town-stats { display:flex; flex-wrap:wrap; gap:8px; flex:1 1 340px; margin:0; }
+    #town-stats .stat { flex:1 1 auto; min-width:72px; display:flex; flex-direction:column;
+      gap:2px; padding:6px 10px; border-radius:10px;
+      background:color-mix(in oklab,var(--ink) 6%,var(--surface));
       border:1px solid color-mix(in oklab,var(--ink-3) 20%,transparent); }
-    #town-stats .stat .k { font-size:9.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-3); }
+    #town-stats .stat .k { font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); }
     #town-stats .stat .v { font-size:18px; font-weight:800; line-height:1; color:var(--ink);
       font-variant-numeric:tabular-nums; }
     #town-stats .stat .v small { font-size:11px; font-weight:600; color:var(--ink-3); }
     #town-stats .stat.work .v { color:#57b86a; }
-    #town-stats .stat.open .v { color:#e0b23a; }`;
+    #town-stats .stat.open .v { color:#e0b23a; }
+    #town-hud-actions { display:flex; flex-wrap:wrap; gap:8px; margin-left:auto; }
+    .town-hud-btn { display:inline-flex; align-items:center; gap:6px; padding:8px 12px; border-radius:10px;
+      font-weight:700; font-size:11.5px; letter-spacing:.04em; text-transform:uppercase; cursor:pointer;
+      color:var(--ink); background:color-mix(in oklab,var(--ink) 8%,var(--surface));
+      border:1px solid color-mix(in oklab,var(--ink-3) 32%,transparent);
+      box-shadow:inset 0 1px 0 color-mix(in oklab,#fff 25%,transparent); transition:transform .06s, background .15s; }
+    .town-hud-btn:hover { background:color-mix(in oklab,var(--accent) 22%,var(--surface)); }
+    .town-hud-btn:active { transform:translateY(1px); }
+    .town-hud-btn.on { background:color-mix(in oklab,var(--accent) 32%,var(--surface)); border-color:var(--accent); }
+    @media (max-width:560px){ #town-hud-actions .town-hud-btn span { display:none; } }
+    .town-flash { animation:townFlash 1.1s ease-out; }
+    @keyframes townFlash { 0%{ box-shadow:0 0 0 3px var(--accent); } 100%{ box-shadow:0 0 0 3px transparent; } }`;
   document.head.append(style);
 }
 
@@ -244,7 +264,11 @@ export function mount(root, tools) {
   root.innerHTML = `
     <div id="town-grid">
       <div>
-        <div class="panel"><h3>The town <span id="town-wx" style="font-weight:400;font-size:12px;color:var(--ink-3)"></span><span id="town-morale" hidden><span class="lbl"></span><span class="bar"><span class="fill"></span></span></span></h3><div id="town-stats"></div><div id="town-alert" hidden style="margin:0 0 10px;padding:8px 11px;border-radius:8px;font-size:13px;line-height:1.45;background:color-mix(in oklab,#ff8a2b 16%,transparent);border:1px solid color-mix(in oklab,#ff8a2b 45%,transparent);color:var(--ink)"></div><canvas id="town-canvas"></canvas><iframe id="town-pixeloffice" title="Pixel Office" hidden style="display:block;width:100%;height:440px;border:0;border-radius:12px;background:#141a26"></iframe></div>
+        <div class="panel"><h3>The town <span id="town-wx" style="font-weight:400;font-size:12px;color:var(--ink-3)"></span><span id="town-morale" hidden><span class="lbl"></span><span class="bar"><span class="fill"></span></span></span></h3><div id="town-hud"><div id="town-stats"></div><div id="town-hud-actions">
+      <button class="town-hud-btn" id="hud-who" title="Who's who — jump to the townsfolk">👥 <span>Who's Who</span></button>
+      <button class="town-hud-btn" id="hud-meet" title="Call a town meeting — everyone gathers and answers">📣 <span>Call Meeting</span></button>
+      <button class="town-hud-btn" id="hud-cmd" title="Command Center — the pixel office view">🏢 <span>Command Center</span></button>
+    </div></div><div id="town-alert" hidden style="margin:0 0 10px;padding:8px 11px;border-radius:8px;font-size:13px;line-height:1.45;background:color-mix(in oklab,#ff8a2b 16%,transparent);border:1px solid color-mix(in oklab,#ff8a2b 45%,transparent);color:var(--ink)"></div><canvas id="town-canvas"></canvas><iframe id="town-pixeloffice" title="Pixel Office" hidden style="display:block;width:100%;height:440px;border:0;border-radius:12px;background:#141a26"></iframe></div>
         <div class="panel" style="margin-top:16px"><h3>Live feed</h3><div class="town-feed" id="town-feed"></div></div>
       </div>
       <div>
@@ -319,6 +343,22 @@ export function mount(root, tools) {
       feedPixelOffice(lastState);
     }
   });
+
+  // ---- the village HUD buttons (over the map, like the reference town) ----
+  const flash = el => { if (!el) return; el.classList.remove('town-flash'); void el.offsetWidth; el.classList.add('town-flash'); };
+  root.querySelector('#hud-who')?.addEventListener('click', () => {
+    const panel = root.querySelector('#town-agents')?.closest('.panel');
+    panel?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    flash(panel);
+  });
+  root.querySelector('#hud-meet')?.addEventListener('click', () => root.querySelector('#town-meet')?.click());
+  const hudCmd = root.querySelector('#hud-cmd');
+  hudCmd?.addEventListener('click', () => {
+    officeBtn.click();                                  // reuse the real toggle
+    hudCmd.classList.toggle('on', officeOn);
+    hudCmd.querySelector('span').textContent = officeOn ? 'Back to Map' : 'Command Center';
+  });
+
   const ctx = canvas.getContext('2d');
   const art = {};
   for (const kind of Object.keys(TOWN_ART_SRC)) loadTownArt(kind).then(img => { if (img) art[kind] = img; });
