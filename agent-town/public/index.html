@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dyer Town</title>
+<style>
+  :root {
+    --bg:#0a0e16; --surface:#131c2b; --surface-2:#1b2740; --line:#26344d;
+    --ink:#eaf1fb; --ink-2:#9fb0cc; --ink-3:#6b7c99; --accent:#2fb6c9; --good:#3fae6a; --warn:#e0913a;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 "Segoe UI",system-ui,sans-serif; }
+  header { display:flex; align-items:center; gap:14px; padding:16px 22px; border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,#0e1522,#0a0e16); position:sticky; top:0; z-index:5; }
+  header h1 { margin:0; font-size:20px; letter-spacing:.04em; }
+  header .tick { color:var(--ink-3); font:13px "JetBrains Mono",monospace; }
+  header .sp { flex:1; }
+  button { font:inherit; cursor:pointer; border-radius:9px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); padding:8px 14px; }
+  button.go { background:var(--accent); border-color:transparent; color:#04121a; font-weight:700; }
+  /* the toggle starts disabled until /state answers — without this it renders at
+     full strength with a pointer cursor and looks perfectly clickable while
+     ignoring every click, which is a worse lie than the wrong label was */
+  button:disabled { opacity:.45; cursor:default; }
+  main { display:grid; grid-template-columns: 1.3fr 1fr; gap:16px; padding:18px 22px; max-width:1200px; margin:0 auto; }
+  @media (max-width:860px){ main { grid-template-columns:1fr; } }
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:16px; }
+  h2 { margin:0 0 12px; font-size:13px; text-transform:uppercase; letter-spacing:.12em; color:var(--accent); }
+  .map { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .place { background:var(--surface-2); border:1px solid var(--line); border-radius:11px; padding:10px 12px; min-height:74px; }
+  .place .pn { font-size:12px; color:var(--ink-3); text-transform:uppercase; letter-spacing:.08em; }
+  .place .who { margin-top:6px; display:flex; flex-wrap:wrap; gap:5px; }
+  .pill { font-size:12px; padding:2px 8px; border-radius:999px; background:color-mix(in oklab,var(--accent) 22%,transparent); color:var(--ink); border:1px solid color-mix(in oklab,var(--accent) 40%,transparent); }
+  .agent { padding:9px 0; border-top:1px solid var(--line); }
+  .agent:first-child { border-top:0; }
+  .agent .top { display:flex; align-items:baseline; gap:8px; }
+  .agent .nm { font-weight:700; } .agent .rl { color:var(--ink-3); font-size:12.5px; }
+  .agent .co { margin-left:auto; color:var(--warn); font:13px "JetBrains Mono",monospace; }
+  .agent .last { color:var(--ink-2); font-size:13px; margin-top:2px; }
+  .feed { max-height:340px; overflow:auto; }
+  .ev { padding:6px 0; border-top:1px solid var(--line); font-size:13.5px; }
+  .ev:first-child { border-top:0; }
+  .ev b { color:var(--accent); } .ev .t { color:var(--ink-3); font:11px "JetBrains Mono",monospace; margin-right:6px; }
+  .job { font-size:13px; padding:5px 0; color:var(--ink-2); border-top:1px solid var(--line); }
+  .job:first-child { border-top:0; } .job.done { opacity:.5; }
+  .chat select, .chat input { font:inherit; background:var(--surface-2); color:var(--ink); border:1px solid var(--line); border-radius:9px; padding:8px 10px; }
+  .chat .row { display:flex; gap:8px; margin-top:8px; } .chat input { flex:1; }
+  .chatlog { margin-top:10px; max-height:200px; overflow:auto; display:flex; flex-direction:column; gap:6px; }
+  .msg { padding:7px 11px; border-radius:10px; font-size:13.5px; max-width:85%; }
+  .msg.me { align-self:flex-end; background:var(--surface-2); }
+  .msg.them { align-self:flex-start; background:color-mix(in oklab,var(--accent) 16%,var(--surface-2)); }
+  .stack { display:grid; gap:16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🏙️ Dyer Town</h1>
+  <span class="tick" id="tick">tick 0 · connecting…</span>
+  <span class="sp"></span>
+  <button id="toggle" disabled>…</button>
+</header>
+<main>
+  <div class="stack">
+    <div class="card"><h2>The town</h2><div class="map" id="map"></div></div>
+    <div class="card"><h2>Live feed</h2><div class="feed" id="feed"></div></div>
+  </div>
+  <div class="stack">
+    <div class="card"><h2>Townsfolk</h2><div id="agents"></div></div>
+    <div class="card"><h2>Job board</h2><div id="jobs"></div></div>
+    <div class="card chat"><h2>Talk to someone</h2>
+      <div class="row">
+        <select id="who"></select>
+        <input id="say" placeholder="Say something…" autocomplete="off">
+        <button id="send">Send</button>
+      </div>
+      <div class="chatlog" id="chatlog"></div>
+    </div>
+  </div>
+</main>
+<script>
+  const $ = s => document.querySelector(s);
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  let running = false, agentsCache = [];
+
+  async function refresh() {
+    let d;
+    try { d = await (await fetch('/state')).json(); } catch { return; }
+    running = d.running;
+    $('#tick').textContent = `tick ${d.tick} · ${d.running ? 'live' : 'paused'}`;
+    $('#toggle').textContent = d.running ? 'Pause' : 'Start';
+    $('#toggle').classList.toggle('go', !d.running);
+    $('#toggle').disabled = false; // the town has answered — the button means something now
+
+    // map — people present, plus what's been built (or is going up) there
+    const byLoc = {};
+    for (const a of d.agents) (byLoc[a.loc] ||= []).push(a.name);
+    const stByLoc = {};
+    for (const st of (d.structures || [])) (stByLoc[st.loc] ||= []).push(st);
+    const KIND_ICO = { house: '🏠', shop: '🏪', landmark: '🗼' };
+    $('#map').innerHTML = Object.entries(d.map).map(([k, label]) => `
+      <div class="place"><div class="pn">${esc(label)}</div>
+        <div class="who">${(byLoc[k] || []).map(n => `<span class="pill">${esc(n)}</span>`).join('')}</div>
+        <div class="who">${(stByLoc[k] || []).map(st => `<span class="pill" style="border-color:rgba(224,178,58,.5);background:rgba(224,178,58,.14)" title="${esc(st.name)}">${KIND_ICO[st.kind] || '🏗️'} ${st.progress < 100 ? `${esc(st.name)} ${st.progress}%` : esc(st.name)}</span>`).join('')}</div></div>`).join('');
+
+    // agents — with their latest work evaluation, if a supervisor has spoken
+    $('#agents').innerHTML = d.agents.map(a => `
+      <div class="agent"><div class="top"><span class="nm">${esc(a.name)}</span>
+        <span class="rl">${esc(a.role)} · ${esc(a.loc)}</span><span class="co">${a.coins}c</span></div>
+        <div class="last">${esc(a.last || a.goal)}</div>
+        ${a.eval ? `<div class="last" style="color:#e0b23a">${'★'.repeat(a.eval.rating)}${'☆'.repeat(5 - a.eval.rating)} ${esc(a.eval.by)}: “${esc(a.eval.note)}”</div>` : ''}</div>`).join('');
+
+    // jobs
+    $('#jobs').innerHTML = d.jobs.length ? d.jobs.map(j => `
+      <div class="job ${j.done ? 'done' : ''}">#${j.id} “${esc(j.title)}” · ${j.pay}c · ${j.done ? 'done' : j.holder ? 'in progress' : 'open'}</div>`).join('')
+      : '<div class="job">No jobs yet.</div>';
+
+    // feed
+    $('#feed').innerHTML = d.feed.map(e => `<div class="ev"><span class="t">t${e.tick}</span><b>${esc(e.name)}</b> ${esc(e.text)}</div>`).join('');
+
+    // chat dropdown
+    if (JSON.stringify(agentsCache) !== JSON.stringify(d.agents.map(a => a.id))) {
+      agentsCache = d.agents.map(a => a.id);
+      $('#who').innerHTML = d.agents.map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join('');
+    }
+  }
+
+  $('#toggle').addEventListener('click', async () => {
+    await fetch('/control', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: running ? 'pause' : 'start' }) });
+    refresh();
+  });
+
+  async function send() {
+    const id = $('#who').value, message = $('#say').value.trim();
+    if (!message) return;
+    $('#say').value = '';
+    const log = $('#chatlog');
+    log.insertAdjacentHTML('beforeend', `<div class="msg me">${esc(message)}</div>`);
+    log.scrollTop = log.scrollHeight;
+    const think = document.createElement('div'); think.className = 'msg them'; think.textContent = '…'; log.append(think); log.scrollTop = log.scrollHeight;
+    try {
+      const r = await (await fetch('/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, message }) })).json();
+      think.textContent = r.reply || '…';
+    } catch { think.textContent = '(no answer)'; }
+    log.scrollTop = log.scrollHeight;
+  }
+  $('#send').addEventListener('click', send);
+  $('#say').addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+
+  refresh();
+  setInterval(refresh, 2000);
+</script>
+</body>
+</html>

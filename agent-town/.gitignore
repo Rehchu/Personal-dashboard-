@@ -1,0 +1,18 @@
+# per-PC secrets and state — never committed
+town-key.txt
+cloudflare-token.txt
+MainCloudflare-deploy-token.txt
+town-state.json
+town-state.json.tmp
+# self-update leftovers: the previous engine, the file being checked, the
+# boot-guard marker, and an engine that failed to start here
+*.bak
+*.next.mjs
+*.updated
+*.rejected
+.env
+node_modules/
+# the villagers' own workshops and projects live on the PC, not in this repo
+workshops/
+projects/
+data/

@@ -1,0 +1,12 @@
+# Keep the image small and never bake local data or secrets into it.
+node_modules
+workshop
+town-state.json
+town-state.json.tmp
+cloudflare-token.txt
+.git
+.gitignore
+*.bat
+npm-debug.log
+DEPLOY.md
+README.md

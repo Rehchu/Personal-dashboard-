@@ -1,0 +1,14 @@
+{
+  "name": "dyer-town",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A tiny living town of autonomous agents, powered by your Claude subscription via the Agent SDK.",
+  "scripts": {
+    "start": "node town.mjs",
+    "gastown": "node gastownbridge.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.1.0"
+  }
+}
