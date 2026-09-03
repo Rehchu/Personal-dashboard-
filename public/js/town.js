@@ -16,17 +16,18 @@ const KIND_ICO = { house: '🏠', shop: '🏪', landmark: '🗼' };
 // source URL; the Worker's allowlist vets it), then serves it from R2 forever.
 const HF = 'https://d8j0ntlcm91z4.cloudfront.net/user_3IckDDDwJI3D408OKE8QdQYJgqc/';
 const TOWN_ART_SRC = {
-  // agent-built structures
-  house: `${HF}hf_20260831_013159_667a3d7f-6a3b-492e-a088-a981a010ea68.png`,
-  shop: `${HF}hf_20260831_013159_2da96ad1-1d68-4870-bcaa-2e1a99fd80c6.png`,
-  landmark: `${HF}hf_20260831_013158_5b30c53c-8df7-4742-a7ea-396c67a8dc91.png`,
-  // the districts' businesses
-  repairshop: `${HF}hf_20260831_013158_59eb17e2-6933-4648-9781-6ec14de54f78.png`,
-  chapel: `${HF}hf_20260831_013159_2f94bb47-59ba-4b43-8203-ae01cc5aab0f.png`,
-  gym: `${HF}hf_20260831_013158_ac9cab29-ee51-4a02-b699-62428c6b7cc1.png`,
-  library: `${HF}hf_20260831_013159_462038e3-a9a3-45ac-ab06-1480ca77ff1d.png`,
-  kitchen: `${HF}hf_20260831_013159_141466af-243d-4e88-8fe7-b17bcc1338cf.png`,
-  plaza: `${HF}hf_20260831_013159_032b5a18-f94f-40bc-b493-af14758b0083.png`,
+  // agent-built structures — one matched 16-bit set (Recraft, Sept 3 2026)
+  // (background already removed on Higgsfield, so these arrive transparent)
+  house: `${HF}hf_20260903_061822_bb3dafd4-4c54-4182-9c31-decabbffe061.png`,
+  shop: `${HF}hf_20260903_061829_76e4b0a1-c48a-4c73-b58e-3123a7ccf807.png`,
+  landmark: `${HF}hf_20260903_061733_42681479-765b-488c-82c5-9083b861e3c0.png`,
+  // the districts' businesses (same set)
+  repairshop: `${HF}hf_20260903_061719_934dec88-e929-4076-bd03-ff12e6ab9e26.png`,
+  chapel: `${HF}hf_20260903_061756_1e0cc216-188a-4437-b84a-f3e254b86b0d.png`,
+  gym: `${HF}hf_20260903_061725_15b50d5e-ead9-4f8a-9648-f364372b12fd.png`,
+  library: `${HF}hf_20260903_061740_3975abd8-c9fa-4e3c-887e-81c06903149c.png`,
+  kitchen: `${HF}hf_20260903_061748_5ab0a5b5-5822-4b8b-93cf-82f53f823868.png`,
+  plaza: `${HF}hf_20260903_061812_e52bc46d-ec35-476a-8014-b2d1a600dd33.png`,
   // the townsfolk
   char_ctrl: `${HF}hf_20260831_013238_a909536b-cada-4a2f-89f5-bb2e68b0230b.png`,
   char_arise: `${HF}hf_20260831_013239_a1061fe4-347c-4a41-b7f0-810bd50e9575.png`,
@@ -48,7 +49,7 @@ const TOWN_ART_SRC = {
   char_spork_front: `${HF}hf_20260831_045614_6b331bc8-9ebf-40e8-a5f5-c0a197f8ef2c.png`,
   char_spork_back: `${HF}hf_20260831_045614_ac91fafd-2d15-4bde-b1fe-738172348a51.png`,
   // the Studio district and its two: the metadata smith and the night watchman
-  studio: `${HF}hf_20260831_091646_50182dd1-c2cd-4b49-85cc-c1c569d4b736.png`,
+  studio: `${HF}hf_20260903_061803_e0ebcfa5-2160-469b-b3af-7d9478f5287b.png`,   // the church Media Studio (same set, transparent)
   char_meta: `${HF}hf_20260831_091550_28c0ccfb-7a5f-4abc-bed7-cc2c96047d37.png`,
   char_meta_front: `${HF}hf_20260831_091550_fe9b8097-419b-4f79-bc12-3d33594a8f28.png`,
   char_watch: `${HF}hf_20260831_091646_877caeb9-e0d3-4c9f-9e99-e071269a9705.png`,
@@ -127,19 +128,25 @@ function stripAndCrop(img) {
   // Sample the border ring to decide the card colour. Bias to the light case —
   // only a clearly dark border is treated as a black card — so a stray dark
   // frame can never turn on near-black knockout and eat a sprite's dark pixels.
-  let lightEdge = 0, darkEdge = 0;
+  let lightEdge = 0, darkEdge = 0, clearEdge = 0;
   const edgeLum = (px, py) => {
     const i = (py * w + px) * 4;
-    if (data[i + 3] < 40) return;                 // a transparent edge tells us nothing
+    if (data[i + 3] < 40) { clearEdge++; return; }   // a transparent edge tells us nothing about colour
     const mx = Math.max(data[i], data[i + 1], data[i + 2]);
     if (mx > 170) lightEdge++; else if (mx < 80) darkEdge++;
   };
   for (let px = 0; px < w; px++) { edgeLum(px, 0); edgeLum(px, h - 1); }
   for (let py = 0; py < h; py++) { edgeLum(0, py); edgeLum(w - 1, py); }
   const darkCard = darkEdge > lightEdge * 3;
+  // A genuinely transparent card (background already removed upstream) needs NO
+  // colour knockout at all — only alpha decides. Without this, a white building
+  // (the chapel) that touches the transparent edge would have its walls flooded
+  // away just like a white card, because white is "light".
+  const transparentCard = clearEdge > 2 * (w + h) * 0.9;
   const isBg = i => {
     const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
     if (a < 40) return true;
+    if (transparentCard) return false;              // opaque pixels are all sprite
     const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
     if (darkCard) return mx < 64 && mx - mn < 22;   // black card → near-black only
     return mx > 198 && mx - mn < 16;                // white / checkerboard card → light only
@@ -185,12 +192,47 @@ function injectStyle() {
   const style = document.createElement('style');
   style.id = 'town-style';
   style.textContent = `
-    #town-grid { display:grid; grid-template-columns: 1.3fr 1fr; gap:16px; align-items:start; }
-    @media (max-width: 860px){ #town-grid { grid-template-columns:1fr; } }
-    #town-canvas { display:block; width:100%; border-radius:12px;
+    /* ONE HUD frame holds everything — the header band, the map, and a tabbed
+       side panel. Nothing sprawls outside it (the reference town UI): on desktop
+       the map sits beside the tabs; on a phone the tabs stack under the map. */
+    #town-grid { display:block; }
+    .town-hud-shell { border-radius:16px; overflow:hidden; background:var(--surface);
+      border:1px solid color-mix(in oklab,var(--ink-3) 28%,transparent);
+      box-shadow:0 1px 3px rgba(0,0,0,0.10); }
+    .town-title { display:flex; align-items:center; gap:8px; font-weight:800; font-size:15px;
+      color:var(--ink); white-space:nowrap; }
+    .town-title .wx { font-weight:400; font-size:12px; color:var(--ink-3); }
+    .town-body { display:grid; grid-template-columns: minmax(0,1.35fr) minmax(280px,1fr); align-items:stretch; }
+    .town-view { min-width:0; padding:10px;
+      border-right:1px solid color-mix(in oklab,var(--ink-3) 18%,transparent); }
+    .town-side { min-width:0; display:flex; flex-direction:column; }
+    #town-canvas { display:block; width:100%; height:auto; border-radius:12px;
       background:#74b64e; border:1px solid color-mix(in oklab,var(--ink-3) 28%,transparent);
       image-rendering:pixelated; }
-    .town-feed { max-height:300px; overflow:auto; }
+    .town-tabs { display:flex; flex-wrap:wrap; gap:4px; padding:8px 8px 0;
+      border-bottom:1px solid color-mix(in oklab,var(--ink-3) 18%,transparent); }
+    .town-tab { flex:0 0 auto; display:inline-flex; align-items:center; gap:5px; padding:8px 11px;
+      border-radius:10px 10px 0 0; font-weight:700; font-size:11.5px; letter-spacing:.04em;
+      text-transform:uppercase; color:var(--ink-3); background:transparent; cursor:pointer;
+      border:1px solid transparent; border-bottom:0; white-space:nowrap; }
+    .town-tab:hover { color:var(--ink); background:color-mix(in oklab,var(--ink) 5%,transparent); }
+    .town-tab.on { color:var(--ink); margin-bottom:-1px;
+      background:color-mix(in oklab,var(--accent) 14%,var(--surface));
+      border-color:color-mix(in oklab,var(--ink-3) 24%,transparent);
+      border-bottom:1px solid color-mix(in oklab,var(--accent) 14%,var(--surface)); }
+    .town-tab .badge { display:inline-flex; align-items:center; justify-content:center; min-width:17px;
+      height:17px; padding:0 5px; border-radius:9px; font-size:10px; font-weight:800; color:#fff; background:#e0533a; }
+    .town-tab .badge[hidden] { display:none; }
+    .town-pane { padding:12px; overflow:auto; max-height:560px; }
+    .town-pane[hidden] { display:none; }
+    .town-pane h4 { margin:14px 0 6px; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-3); }
+    .town-feed { max-height:none; }
+    @media (max-width: 860px){
+      .town-body { grid-template-columns:1fr; }
+      .town-view { border-right:0; border-bottom:1px solid color-mix(in oklab,var(--ink-3) 18%,transparent); }
+      .town-pane { max-height:340px; }
+    }
+    @media (max-width: 480px){ .town-tab span { display:none; } .town-tab { padding:8px 10px; font-size:14px; } }
     .town-ev { padding:6px 0; border-top:1px solid color-mix(in oklab,var(--ink-3) 18%,transparent); font-size:13.5px; color:var(--ink-2); }
     .town-ev:first-child { border-top:0; }
     .town-ev b { color:var(--accent); }
@@ -219,18 +261,18 @@ function injectStyle() {
     #town-morale .fill { display:block; height:100%; border-radius:5px; }
     /* the village HUD: a game-style header band of stat chips + action buttons,
        sitting over the map like the reference town */
-    #town-hud { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:0 0 12px;
-      padding:10px 12px; border-radius:14px;
+    #town-hud { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:0;
+      padding:10px 12px; border-radius:0;
       background:linear-gradient(180deg, color-mix(in oklab,var(--accent) 12%,var(--surface-2)), var(--surface-2));
-      border:1px solid color-mix(in oklab,var(--ink-3) 26%,transparent);
-      box-shadow:inset 0 1px 0 color-mix(in oklab,#fff 22%,transparent), 0 1px 2px rgba(0,0,0,0.12); }
-    #town-stats { display:flex; flex-wrap:wrap; gap:8px; flex:1 1 340px; margin:0; }
-    #town-stats .stat { flex:1 1 auto; min-width:72px; display:flex; flex-direction:column;
-      gap:2px; padding:6px 10px; border-radius:10px;
+      border:0; border-bottom:1px solid color-mix(in oklab,var(--ink-3) 26%,transparent);
+      box-shadow:inset 0 1px 0 color-mix(in oklab,#fff 22%,transparent); }
+    #town-stats { display:flex; flex-wrap:wrap; gap:8px; flex:1 1 280px; margin:0; }
+    #town-stats .stat { flex:0 1 auto; min-width:58px; display:flex; flex-direction:column;
+      gap:2px; padding:5px 9px; border-radius:10px;
       background:color-mix(in oklab,var(--ink) 6%,var(--surface));
       border:1px solid color-mix(in oklab,var(--ink-3) 20%,transparent); }
     #town-stats .stat .k { font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); }
-    #town-stats .stat .v { font-size:18px; font-weight:800; line-height:1; color:var(--ink);
+    #town-stats .stat .v { font-size:16px; font-weight:800; line-height:1; color:var(--ink);
       font-variant-numeric:tabular-nums; }
     #town-stats .stat .v small { font-size:11px; font-weight:600; color:var(--ink-3); }
     #town-stats .stat.work .v { color:#57b86a; }
@@ -261,32 +303,58 @@ export function mount(root, tools) {
   refreshBtn.textContent = '⟳ Refresh';
   tools.append(refreshBtn);
 
+  // One HUD frame: the header band (title · stat chips · actions), the map, and a
+  // single tabbed side panel — Feed · Folks · Inbox · Reports · Charter · Talk.
+  // Every element id the painters use is preserved; only the framing changed.
   root.innerHTML = `
     <div id="town-grid">
-      <div>
-        <div class="panel"><h3>The town <span id="town-wx" style="font-weight:400;font-size:12px;color:var(--ink-3)"></span><span id="town-morale" hidden><span class="lbl"></span><span class="bar"><span class="fill"></span></span></span></h3><div id="town-hud"><div id="town-stats"></div><div id="town-hud-actions">
-      <button class="town-hud-btn" id="hud-who" title="Who's who — jump to the townsfolk">👥 <span>Who's Who</span></button>
-      <button class="town-hud-btn" id="hud-meet" title="Call a town meeting — everyone gathers and answers">📣 <span>Call Meeting</span></button>
-      <button class="town-hud-btn" id="hud-cmd" title="Command Center — the pixel office view">🏢 <span>Command Center</span></button>
-    </div></div><div id="town-alert" hidden style="margin:0 0 10px;padding:8px 11px;border-radius:8px;font-size:13px;line-height:1.45;background:color-mix(in oklab,#ff8a2b 16%,transparent);border:1px solid color-mix(in oklab,#ff8a2b 45%,transparent);color:var(--ink)"></div><canvas id="town-canvas"></canvas><iframe id="town-pixeloffice" title="Pixel Office" hidden style="display:block;width:100%;height:440px;border:0;border-radius:12px;background:#141a26"></iframe></div>
-        <div class="panel" style="margin-top:16px"><h3>Live feed</h3><div class="town-feed" id="town-feed"></div></div>
-      </div>
-      <div>
-        <div class="panel"><h3>📋 Corporate inbox</h3><div id="town-approvals"></div></div>
-        <div class="panel" style="margin-top:16px"><h3>Townsfolk</h3><div id="town-agents"></div></div>
-        <div class="panel" style="margin-top:16px"><h3>Work reports</h3><div id="town-reports"></div></div>
-        <div class="panel" id="town-ships-panel" style="margin-top:16px" hidden><h3>🚀 Shipped by the town</h3><div id="town-ships"></div></div>
-        <div class="panel" style="margin-top:16px"><h3>🏛️ Town charter</h3><div id="town-laws"></div></div>
-        <div class="panel" id="town-notes-panel" style="margin-top:16px" hidden><h3>🗒️ Notes desk</h3><div id="town-notes"></div></div>
-        <div class="panel" id="town-cal-panel" style="margin-top:16px" hidden><h3>📅 Community calendar</h3><div id="town-cal"></div></div>
-        <div class="panel" style="margin-top:16px"><h3>Talk to someone</h3>
-          <div class="town-chat-row">
-            <select id="town-who"></select>
-            <input id="town-say" placeholder="Say something…" autocomplete="off" maxlength="500">
-            <button class="btn small" id="town-send">Send</button>
-            <button class="btn small" id="town-meet" title="📣 Call a town meeting — everyone gathers and answers">📣</button>
+      <div class="town-hud-shell">
+        <div id="town-hud">
+          <div class="town-title">🏘️ The town <span id="town-wx" class="wx"></span><span id="town-morale" hidden><span class="lbl"></span><span class="bar"><span class="fill"></span></span></span></div>
+          <div id="town-stats"></div>
+          <div id="town-hud-actions">
+            <button class="town-hud-btn" id="hud-who" title="Who's who — the townsfolk">👥 <span>Who's Who</span></button>
+            <button class="town-hud-btn" id="hud-meet" title="Call a town meeting — everyone gathers and answers">📣 <span>Call Meeting</span></button>
+            <button class="town-hud-btn" id="hud-cmd" title="Command Center — the pixel office view">🏢 <span>Command Center</span></button>
           </div>
-          <div class="town-chatlog" id="town-chatlog"></div>
+        </div>
+        <div id="town-alert" hidden style="margin:10px 10px 0;padding:8px 11px;border-radius:8px;font-size:13px;line-height:1.45;background:color-mix(in oklab,#ff8a2b 16%,transparent);border:1px solid color-mix(in oklab,#ff8a2b 45%,transparent);color:var(--ink)"></div>
+        <div class="town-body">
+          <div class="town-view">
+            <canvas id="town-canvas"></canvas>
+            <iframe id="town-pixeloffice" title="Pixel Office" hidden style="display:block;width:100%;height:440px;border:0;border-radius:12px;background:#141a26"></iframe>
+          </div>
+          <div class="town-side">
+            <div class="town-tabs" role="tablist">
+              <button class="town-tab" role="tab" data-tab="feed">📡 <span>Feed</span></button>
+              <button class="town-tab" role="tab" data-tab="folks">👥 <span>Folks</span></button>
+              <button class="town-tab" role="tab" data-tab="inbox">📋 <span>Inbox</span> <span class="badge" id="tab-badge-inbox" hidden>0</span></button>
+              <button class="town-tab" role="tab" data-tab="reports">📝 <span>Reports</span></button>
+              <button class="town-tab" role="tab" data-tab="charter">🏛️ <span>Charter</span></button>
+              <button class="town-tab" role="tab" data-tab="talk">💬 <span>Talk</span></button>
+            </div>
+            <div class="town-pane" data-pane="feed"><div class="town-feed" id="town-feed"></div></div>
+            <div class="town-pane" data-pane="folks" hidden><div id="town-agents"></div></div>
+            <div class="town-pane" data-pane="inbox" hidden><div id="town-approvals"></div></div>
+            <div class="town-pane" data-pane="reports" hidden>
+              <div id="town-reports"></div>
+              <section id="town-ships-panel" hidden><h4>🚀 Shipped by the town</h4><div id="town-ships"></div></section>
+            </div>
+            <div class="town-pane" data-pane="charter" hidden>
+              <div id="town-laws"></div>
+              <section id="town-notes-panel" hidden><h4>🗒️ Notes desk</h4><div id="town-notes"></div></section>
+              <section id="town-cal-panel" hidden><h4>📅 Community calendar</h4><div id="town-cal"></div></section>
+            </div>
+            <div class="town-pane" data-pane="talk" hidden>
+              <div class="town-chat-row">
+                <select id="town-who"></select>
+                <input id="town-say" placeholder="Say something…" autocomplete="off" maxlength="500">
+                <button class="btn small" id="town-send">Send</button>
+                <button class="btn small" id="town-meet" title="📣 Call a town meeting — everyone gathers and answers">📣</button>
+              </div>
+              <div class="town-chatlog" id="town-chatlog"></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -346,10 +414,26 @@ export function mount(root, tools) {
 
   // ---- the village HUD buttons (over the map, like the reference town) ----
   const flash = el => { if (!el) return; el.classList.remove('town-flash'); void el.offsetWidth; el.classList.add('town-flash'); };
+  // ---- the HUD tabs: one side panel switched by the tab bar; the choice sticks ----
+  const tabBtns = [...root.querySelectorAll('.town-tab[data-tab]')];
+  const panes = [...root.querySelectorAll('.town-pane[data-pane]')];
+  function showTab(name) {
+    if (!panes.some(p => p.dataset.pane === name)) name = 'feed';
+    tabBtns.forEach(b => {
+      const on = b.dataset.tab === name;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    panes.forEach(p => { p.hidden = p.dataset.pane !== name; });
+    save('town.tab', name);
+  }
+  tabBtns.forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+  showTab(load('town.tab', 'feed'));
   root.querySelector('#hud-who')?.addEventListener('click', () => {
-    const panel = root.querySelector('#town-agents')?.closest('.panel');
-    panel?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    flash(panel);
+    showTab('folks');
+    const side = root.querySelector('.town-side');
+    if (window.innerWidth <= 860) side?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    flash(side);
   });
   root.querySelector('#hud-meet')?.addEventListener('click', () => root.querySelector('#town-meet')?.click());
   const hudCmd = root.querySelector('#hud-cmd');
@@ -1457,6 +1541,13 @@ export function mount(root, tools) {
         cell('Open work', openJobs, 'open') +
         (mPct == null ? '' : cell('Morale', mPct)) +
         cell('Time', clock);
+    }
+    // the Inbox tab wears a badge while corporate has something waiting
+    const inboxBadge = root.querySelector('#tab-badge-inbox');
+    if (inboxBadge) {
+      const pending = (s.approvals || []).filter(a => a && a.status === 'pending').length;
+      inboxBadge.textContent = String(pending);
+      inboxBadge.hidden = !pending;
     }
 
     root.querySelector('#town-agents').innerHTML = (s.agents || []).map(a => {

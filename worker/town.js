@@ -111,7 +111,7 @@ export async function handleTown(url, request, env, { authed, syncKeyOk }) {
   if (artMatch && request.method === 'GET') {
     if (!authed) return json({ error: 'sign in first' }, 401);
     if (!ART_KINDS.has(artMatch[1])) return json({ error: 'unknown art kind' }, 404);
-    const obj = await env.MEDIA.get(`town/art/${artMatch[1]}`);
+    const obj = await env.MEDIA.get(`town/art2/${artMatch[1]}`);
     if (!obj) return json({ error: 'no art yet' }, 404);
     return new Response(obj.body, {
       headers: {
@@ -141,7 +141,7 @@ export async function handleTown(url, request, env, { authed, syncKeyOk }) {
     if (!/^image\/[a-z0-9.+-]{1,30}$/.test(type)) return json({ error: 'that URL did not return an image' }, 415);
     const declared = Number(res.headers.get('content-length') || 0);
     if (declared > MAX_ART) return json({ error: 'image too large' }, 413);
-    const key = `town/art/${kind}`;
+    const key = `town/art2/${kind}`;
     let obj;
     try {
       obj = await env.MEDIA.put(key, res.body, { httpMetadata: { contentType: type } });
