@@ -489,6 +489,7 @@ export function mount(root, tools) {
         sp.tx = p.x; sp.ty = p.y;
       }
       sp.name = a.name;
+      sp.busy = !!a.busy;
       sp.face = AGENT_FACES[hashStr(a.id) % AGENT_FACES.length];
       sp.hue = hashStr(a.name || a.id) % 360;
       // in-world hires share one sprite, hue-shifted per person at draw time
@@ -667,9 +668,64 @@ export function mount(root, tools) {
     for (let x = 6; x < W - 6; x += 26) ctx.fillRect(x, s - 5, 14, 5);
   }
 
+  // a small looping animation at each building that says what its resident does —
+  // Max's barbell at the gym, steam over Spork's kitchen, sparks at Ctrl's bench,
+  // and so on. `active` (the resident is busy on the job) makes it livelier; even
+  // idle it keeps a gentle motion so the town always feels lived-in.
+  const TAU = Math.PI * 2;
+  function drawActivity(key, x, y, now, t, active) {
+    const amp = active ? 1 : 0.5;
+    ctx.save();
+    if (key === 'gym') {                       // Max doing reps: a bobbing barbell
+      const by = y - 30 + Math.sin(t / 170) * 8 * amp;
+      ctx.strokeStyle = '#3a3f4a'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(x - 13, by); ctx.lineTo(x + 13, by); ctx.stroke();
+      ctx.fillStyle = '#e0533a';
+      ctx.beginPath(); ctx.arc(x - 13, by, 5, 0, TAU); ctx.arc(x + 13, by, 5, 0, TAU); ctx.fill();
+    } else if (key === 'kitchen') {            // Spork cooking: steam off the pot
+      for (let k = 0; k < 3; k++) {
+        const p = ((t / 22 + k * 8) % 26) / 26;
+        ctx.fillStyle = `rgba(240,240,235,${(1 - p) * 0.55 * amp})`;
+        ctx.beginPath(); ctx.arc(x + Math.sin(now / 300 + k) * 4, y - 14 - p * 26, 2.5 + p * 3, 0, TAU); ctx.fill();
+      }
+    } else if (key === 'repairshop') {         // Ctrl at the bench: solder sparks
+      if (Math.random() < (active ? 0.55 : 0.18)) {
+        for (let k = 0; k < 3; k++) {
+          ctx.fillStyle = ['#ffd94a', '#ff9a3a', '#ffffff'][k % 3];
+          ctx.fillRect(x + 6 + Math.random() * 12 - 6, y - 18 + Math.random() * 10 - 5, 2, 2);
+        }
+      }
+    } else if (key === 'library') {            // Draco writing: a page drifting up
+      const p = ((t / 26) % 34) / 34;
+      ctx.fillStyle = `rgba(250,244,220,${(1 - p) * 0.9})`;
+      ctx.fillRect(x + 15, y - 26 - p * 24, 6, 8);
+    } else if (key === 'studio') {             // Meta editing: a spinning cube + REC
+      const a = now / 600, s = 6, w = s * Math.abs(Math.cos(a));
+      ctx.strokeStyle = '#8ab4ff'; ctx.lineWidth = 1.5;
+      ctx.strokeRect(x + 14 - w, y - 26 - s, w * 2, s * 2);
+      if ((now % 1300) < 750) { ctx.fillStyle = '#ff5a5a'; ctx.beginPath(); ctx.arc(x - 16, y - 26, 3, 0, TAU); ctx.fill(); }
+    } else if (key === 'chapel') {             // Arise: a warm glow over the chapel
+      const g = (0.22 + Math.sin(now / 520) * 0.12) * amp;
+      const grd = ctx.createRadialGradient(x, y - 42, 2, x, y - 42, 30);
+      grd.addColorStop(0, `rgba(255,222,150,${g})`); grd.addColorStop(1, 'rgba(255,222,150,0)');
+      ctx.fillStyle = grd; ctx.beginPath(); ctx.arc(x, y - 42, 30, 0, TAU); ctx.fill();
+    } else if (key === 'landmark') {           // Vigil: a sweeping lantern beam
+      const a = Math.sin(now / 750) * 0.55 - 0.8;
+      ctx.fillStyle = 'rgba(255,240,180,0.16)';
+      ctx.beginPath(); ctx.moveTo(x, y - 72);
+      ctx.lineTo(x + Math.cos(a - 0.28) * 48, y - 72 + Math.sin(a - 0.28) * 48);
+      ctx.lineTo(x + Math.cos(a + 0.28) * 48, y - 72 + Math.sin(a + 0.28) * 48);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+  }
+
   function draw(now, t) {
     const { width: W, height: H } = canvas;
     const cx = townCenter.x, cy = townCenter.y;
+    // which buildings have their resident on the job right now → livelier animation
+    const activeKeys = new Set();
+    for (const sp of sprites.values()) if (sp.busy && sp.loc) activeKeys.add(sp.loc);
     ctx.imageSmoothingEnabled = false;   // crisp chunky pixels when scaling
     // grassy ground, banded so the field has a little depth
     ctx.fillStyle = '#74b64e';
@@ -759,6 +815,8 @@ export function mount(root, tools) {
           ctx.textAlign = 'center';
           ctx.fillText(isHouse ? '🏠' : '🏛️', d.x, d.y - 46);
         }
+        // the building's own little activity animation, over its roof
+        drawActivity(d.key, d.x, d.y, now, t, activeKeys.has(d.key));
       } });
     }
 
