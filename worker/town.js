@@ -35,8 +35,9 @@ const ART_KINDS = new Set([
   'char_ctrl_front', 'char_ctrl_back', 'char_arise_front', 'char_arise_back',
   'char_apex_front', 'char_apex_back', 'char_draco_front', 'char_draco_back',
   'char_spork_front', 'char_spork_back',
-  // the Studio district and its two townsfolk
-  'studio', 'char_meta', 'char_meta_front', 'char_watch', 'char_watch_front',
+  // the Studio district and its two townsfolk (now with back views too)
+  'studio', 'char_meta', 'char_meta_front', 'char_meta_back',
+  'char_watch', 'char_watch_front', 'char_watch_back',
 ]);
 const MAX_ART = 8 * 1024 * 1024;   // a 1k PNG is ~1–2 MB
 function artHostAllowed(host) {

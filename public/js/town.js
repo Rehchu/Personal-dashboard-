@@ -29,31 +29,34 @@ const TOWN_ART_SRC = {
   kitchen: `${HF}hf_20260903_061748_5ab0a5b5-5822-4b8b-93cf-82f53f823868.png`,
   plaza: `${HF}hf_20260903_061812_e52bc46d-ec35-476a-8014-b2d1a600dd33.png`,
   // the townsfolk
-  char_ctrl: `${HF}hf_20260831_013238_a909536b-cada-4a2f-89f5-bb2e68b0230b.png`,
-  char_arise: `${HF}hf_20260831_013239_a1061fe4-347c-4a41-b7f0-810bd50e9575.png`,
-  char_apex: `${HF}hf_20260831_013239_abf91edf-2bcb-4a70-9b62-7c03e148ca53.png`,
-  char_draco: `${HF}hf_20260831_013239_8a9d6aa4-6a6b-4670-b994-19bb5a374f57.png`,
-  char_spork: `${HF}hf_20260831_013239_bb6be375-b53c-4910-b17e-4f4f115ff3a0.png`,
+  // (the same matched 16-bit set as the buildings; side view, transparent)
+  char_ctrl: `${HF}hf_20260903_062543_5b6f7781-2f69-4ea5-9350-84eb221ea927.png`,
+  char_arise: `${HF}hf_20260903_062615_e6e6f212-b147-4c14-8e2b-558cb0bfec95.png`,
+  char_apex: `${HF}hf_20260831_013239_abf91edf-2bcb-4a70-9b62-7c03e148ca53.png`,   // overridden by LOCAL_ART (Max's real likeness)
+  char_draco: `${HF}hf_20260903_062838_8c679066-7b45-4be2-af41-1d1806c9eb35.png`,
+  char_spork: `${HF}hf_20260903_062657_1ef7f7d2-f2c0-449d-ab06-c6db543c8379.png`,
   // one shared sprite for in-world hires (hue-shifted per person) and the owner
   char_hire: `${HF}hf_20260831_042858_d9ce3a7a-9a7b-4556-a6ed-9cb8765f2d0b.png`,
   char_boss: `${HF}hf_20260831_042858_a435ece7-0026-4234-b9fb-afb52907c232.png`,
   // front/back walk sheets per villager (side + a horizontal flip covers the rest)
-  char_ctrl_front: `${HF}hf_20260831_045614_d2c6793a-84d2-40da-ac88-80a474878fc8.png`,
-  char_ctrl_back: `${HF}hf_20260831_045828_13e00ae2-fb3e-490d-aa0a-e11c1cdb69cb.png`,
-  char_arise_front: `${HF}hf_20260831_045828_b9f9ddce-7517-4a29-879e-bf6ef082760d.png`,
-  char_arise_back: `${HF}hf_20260831_045614_900e1b6d-eeba-4311-a611-6b213af2d5a2.png`,
-  char_apex_front: `${HF}hf_20260831_045614_e41bcdde-d69d-483e-acf4-1f8003463a58.png`,
-  char_apex_back: `${HF}hf_20260831_045828_da021acf-6e32-4f3c-8849-e5e46c78b359.png`,
-  char_draco_front: `${HF}hf_20260831_045614_8af1f17e-de88-4b30-b9b4-fa86b6e26a19.png`,
-  char_draco_back: `${HF}hf_20260831_045614_4cb75ea5-6fc7-4127-96a6-3c0620030da7.png`,
-  char_spork_front: `${HF}hf_20260831_045614_6b331bc8-9ebf-40e8-a5f5-c0a197f8ef2c.png`,
-  char_spork_back: `${HF}hf_20260831_045614_ac91fafd-2d15-4bde-b1fe-738172348a51.png`,
+  char_ctrl_front: `${HF}hf_20260903_062551_772266ba-eec7-44b4-8f73-56cfaa25c3c5.png`,
+  char_ctrl_back: `${HF}hf_20260903_062602_78629f6c-b263-4bcd-8d9e-c9c6339ae607.png`,
+  char_arise_front: `${HF}hf_20260903_062629_92b80ab5-7b9b-44f4-9097-257a4ba0a414.png`,
+  char_arise_back: `${HF}hf_20260903_062826_f18462bc-f924-425f-b4cd-3a69eb445297.png`,
+  char_apex_front: `${HF}hf_20260831_045614_e41bcdde-d69d-483e-acf4-1f8003463a58.png`,   // overridden by LOCAL_ART
+  char_apex_back: `${HF}hf_20260831_045828_da021acf-6e32-4f3c-8849-e5e46c78b359.png`,    // overridden by LOCAL_ART
+  char_draco_front: `${HF}hf_20260903_062639_415a52a8-38d1-45a1-a7ea-472af7a3c38a.png`,
+  char_draco_back: `${HF}hf_20260903_062649_50974da2-5eb9-4343-b618-3900b2b5149f.png`,
+  char_spork_front: `${HF}hf_20260903_062846_97541171-7007-46ec-b40b-1ed2063ad867.png`,
+  char_spork_back: `${HF}hf_20260903_062858_b221f5ae-97a0-45dd-b633-16c45908d11f.png`,
   // the Studio district and its two: the metadata smith and the night watchman
   studio: `${HF}hf_20260903_061803_e0ebcfa5-2160-469b-b3af-7d9478f5287b.png`,   // the church Media Studio (same set, transparent)
-  char_meta: `${HF}hf_20260831_091550_28c0ccfb-7a5f-4abc-bed7-cc2c96047d37.png`,
-  char_meta_front: `${HF}hf_20260831_091550_fe9b8097-419b-4f79-bc12-3d33594a8f28.png`,
-  char_watch: `${HF}hf_20260831_091646_877caeb9-e0d3-4c9f-9e99-e071269a9705.png`,
-  char_watch_front: `${HF}hf_20260831_091646_6e80b958-44f2-4743-9ad3-5a81177ed80c.png`,
+  char_meta: `${HF}hf_20260903_062707_0caa46e1-e5f6-41d2-99cc-20173cfb5ace.png`,
+  char_meta_front: `${HF}hf_20260903_062715_4d94e672-4e8b-46a7-88aa-b5e5105bd090.png`,
+  char_meta_back: `${HF}hf_20260903_062724_b3d0a0cf-855f-46a2-9c2e-7030465e9ab1.png`,
+  char_watch: `${HF}hf_20260903_062731_8e610fe8-c527-4708-8c4a-1c9cb67df45c.png`,
+  char_watch_front: `${HF}hf_20260903_062742_adc1f1cc-9f30-4236-8ef7-fdcc82365c24.png`,
+  char_watch_back: `${HF}hf_20260903_062758_ce9f20b5-2658-423a-9a92-ecd5c7b67e2e.png`,
 };
 
 // Villager sprites that ship WITH the app — a real person's likeness drawn as
@@ -141,8 +144,11 @@ function stripAndCrop(img) {
   // A genuinely transparent card (background already removed upstream) needs NO
   // colour knockout at all — only alpha decides. Without this, a white building
   // (the chapel) that touches the transparent edge would have its walls flooded
-  // away just like a white card, because white is "light".
-  const transparentCard = clearEdge > 2 * (w + h) * 0.9;
+  // away just like a white card, because white is "light". A real white/black/
+  // checker card has ZERO transparent border samples, so any transparent
+  // majority proves the background was removed — a sprite whose base touches
+  // the bottom edge must not flip this off (a 90% bar would).
+  const transparentCard = clearEdge > lightEdge + darkEdge;
   const isBg = i => {
     const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
     if (a < 40) return true;
@@ -195,12 +201,16 @@ function injectStyle() {
     /* ONE HUD frame holds everything — the header band, the map, and a tabbed
        side panel. Nothing sprawls outside it (the reference town UI): on desktop
        the map sits beside the tabs; on a phone the tabs stack under the map. */
-    #town-grid { display:block; }
+    /* an author display rule would defeat the hidden attribute (base.css has the
+       same note for #appview) — so every element we toggle with .hidden gets an
+       explicit [hidden] guard: the grid (offline), the canvas and the office. */
+    #town-grid[hidden] { display:none; }
     .town-hud-shell { border-radius:16px; overflow:hidden; background:var(--surface);
       border:1px solid color-mix(in oklab,var(--ink-3) 28%,transparent);
       box-shadow:0 1px 3px rgba(0,0,0,0.10); }
-    .town-title { display:flex; align-items:center; gap:8px; font-weight:800; font-size:15px;
-      color:var(--ink); white-space:nowrap; }
+    .town-title { display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-width:0;
+      font-weight:800; font-size:15px; color:var(--ink); }
+    @media (max-width:480px){ #town-morale .bar { width:72px; } }
     .town-title .wx { font-weight:400; font-size:12px; color:var(--ink-3); }
     .town-body { display:grid; grid-template-columns: minmax(0,1.35fr) minmax(280px,1fr); align-items:stretch; }
     .town-view { min-width:0; padding:10px;
@@ -209,6 +219,9 @@ function injectStyle() {
     #town-canvas { display:block; width:100%; height:auto; border-radius:12px;
       background:#74b64e; border:1px solid color-mix(in oklab,var(--ink-3) 28%,transparent);
       image-rendering:pixelated; }
+    #town-canvas[hidden] { display:none; }
+    #town-pixeloffice { display:block; width:100%; height:440px; border:0; border-radius:12px; background:#141a26; }
+    #town-pixeloffice[hidden] { display:none; }
     .town-tabs { display:flex; flex-wrap:wrap; gap:4px; padding:8px 8px 0;
       border-bottom:1px solid color-mix(in oklab,var(--ink-3) 18%,transparent); }
     .town-tab { flex:0 0 auto; display:inline-flex; align-items:center; gap:5px; padding:8px 11px;
@@ -322,7 +335,7 @@ export function mount(root, tools) {
         <div class="town-body">
           <div class="town-view">
             <canvas id="town-canvas"></canvas>
-            <iframe id="town-pixeloffice" title="Pixel Office" hidden style="display:block;width:100%;height:440px;border:0;border-radius:12px;background:#141a26"></iframe>
+            <iframe id="town-pixeloffice" title="Pixel Office" hidden></iframe>
           </div>
           <div class="town-side">
             <div class="town-tabs" role="tablist">
@@ -425,7 +438,9 @@ export function mount(root, tools) {
       b.setAttribute('aria-selected', on ? 'true' : 'false');
     });
     panes.forEach(p => { p.hidden = p.dataset.pane !== name; });
-    save('town.tab', name);
+    // persist only a real change — the initial restore must not write (every
+    // save fires the store hooks, and a no-op write on every mount is churn)
+    if (load('town.tab', 'feed') !== name) save('town.tab', name);
   }
   tabBtns.forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
   showTab(load('town.tab', 'feed'));
@@ -435,7 +450,10 @@ export function mount(root, tools) {
     if (window.innerWidth <= 860) side?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     flash(side);
   });
-  root.querySelector('#hud-meet')?.addEventListener('click', () => root.querySelector('#town-meet')?.click());
+  root.querySelector('#hud-meet')?.addEventListener('click', () => {
+    showTab('talk');                                    // the meeting plays out in the Talk pane
+    root.querySelector('#town-meet')?.click();
+  });
   const hudCmd = root.querySelector('#hud-cmd');
   hudCmd?.addEventListener('click', () => {
     officeBtn.click();                                  // reuse the real toggle
@@ -1440,6 +1458,7 @@ export function mount(root, tools) {
       me.ty = nearSp.y + 4;
       const who = root.querySelector('#town-who');
       if ([...who.options].some(o => o.value === nearId)) who.value = nearId;
+      showTab('talk');                       // the chat box lives in the Talk pane now
       root.querySelector('#town-say').focus();
       return;
     }
