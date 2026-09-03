@@ -2716,7 +2716,15 @@ async function bridgeTick() {
 // rest (see restWithBridge) instead of once per tick — a tick is minutes long
 // on shift and ~85s off it, which is longer than the dashboard waits for a
 // reply, and "no answer yet — the town may be paused" was the result.
+// It also runs on its own clock (below), because the main loop can sit inside
+// one villager's deep-work session for twenty minutes, and a rest never comes
+// while it does. The owner's message must not wait for the loop to surface:
+// a chat is one cheap model call, and it is fine for it to overlap a session.
 let inboxBusy = false;
+if (DASH_URL && TOWN_KEY) {
+  const inboxTimer = setInterval(() => answerInbox().catch(() => {}), INBOX_POLL_MS);
+  inboxTimer.unref();
+}
 async function answerInbox() {
   if (!DASH_URL || !TOWN_KEY || inboxBusy) return;
   inboxBusy = true;

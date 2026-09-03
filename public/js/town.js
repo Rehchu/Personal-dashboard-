@@ -2015,29 +2015,91 @@ export function mount(root, tools) {
       const res = await fetch('/api/town/state', { headers: { accept: 'application/json' } });
       if (!res.ok) throw new Error(String(res.status));
       const d = await res.json();
-      if (alive) { paint(d); lastState = d.state; feedPixelOffice(d.state); }
+      if (alive) { paint(d); lastState = d.state; feedPixelOffice(d.state); if (d.updatedAt) lastSeenAt = d.updatedAt; }
     } catch {
       if (alive) paintOffline(null);
     }
   }
 
-  // send a message, then poll for the agent's answer — the Mac replies between
-  // ticks, so a few seconds of patience with a visible "…" bubble
+  /* Chat. The Worker keeps an unanswered message until the engine answers it
+     (and an answered one for a week), so a late answer can always be fetched
+     by id. The old version polled for two minutes and then gave up — and the
+     engine, mid way through a villager's twenty-minute work session, answers
+     later than that. So: keep listening for half an hour with an honest
+     status line, remember what is still unanswered across reloads, and pick
+     the answer up whenever it lands. */
+  const PENDING_KEY = 'town.pendingChats';
+  const readPending = () => { try { return JSON.parse(localStorage.getItem(PENDING_KEY) || '[]'); } catch { return []; } };
+  const writePending = list => { try { localStorage.setItem(PENDING_KEY, JSON.stringify(list.slice(-20))); } catch { /* storage unavailable — this tab still listens */ } };
+  const forgetPending = id => writePending(readPending().filter(p => p.id !== id));
+  let lastSeenAt = null; // when the town last pushed state, from /api/town/state
+  const ago = ts => {
+    const m = Math.round((Date.now() - new Date(ts).getTime()) / 60000);
+    return !Number.isFinite(m) ? '' : m < 1 ? 'just now' : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`;
+  };
+  const scrollLog = () => { const log = root.querySelector('#town-chatlog'); if (log) log.scrollTop = log.scrollHeight; };
+
+  function waitingText(p, elapsedMs) {
+    if (elapsedMs < 120000) return p.toAll ? 'the town is gathering at the plaza…' : '…';
+    const who = p.toAll ? 'the town' : (p.name || 'they');
+    const mins = Math.round(elapsedMs / 60000);
+    const seen = lastSeenAt ? ` The town last checked in ${ago(lastSeenAt)}.` : ' The town has not checked in since this page opened.';
+    return `(still waiting — your message is queued at the town, and ${who} will answer when the current task lets go. ${mins} min so far.${seen} This keeps listening, even after a reload.)`;
+  }
+
+  // poll one message until its answer lands: every 3s for two minutes, then
+  // every 10s, for up to 30 minutes (45 for a town meeting)
+  async function awaitReply(p, bubble) {
+    const start = new Date(p.at || Date.now()).getTime();
+    const limit = (p.toAll ? 45 : 30) * 60000;
+    while (alive) {
+      const poll = await fetch(`/api/town/chat/${p.id}`)
+        .then(r => r.ok ? r.json() : (r.status === 404 ? { gone: true } : null))
+        .catch(() => null);
+      if (poll?.reply) { bubble.textContent = poll.reply; forgetPending(p.id); scrollLog(); return; }
+      if (poll?.gone) { bubble.textContent = '(that message is no longer on file at the town)'; forgetPending(p.id); return; }
+      const elapsed = Date.now() - start;
+      if (elapsed > limit) {
+        // still on file at the town; a reload asks again, and the Feed shows the answer when it comes
+        bubble.textContent = townAlert || `(no answer after ${Math.round(limit / 60000)} minutes — the town is not picking up chat right now. Your message stays queued: ${p.toAll ? 'the town' : (p.name || 'they')} will answer the next time the inbox is read, and the Feed will show it.)`;
+        return;
+      }
+      bubble.textContent = waitingText(p, elapsed);
+      await new Promise(r => setTimeout(r, elapsed < 120000 ? 3000 : 10000));
+    }
+  }
+
+  function addChatRow(p) {
+    const log = root.querySelector('#town-chatlog');
+    log.insertAdjacentHTML('beforeend',
+      `<div class="town-msg me">${p.toAll ? '📣 ' : (p.name ? `<b>${esc(p.name)}</b> · ` : '')}${esc(p.message)}</div>`);
+    const bubble = document.createElement('div');
+    bubble.className = 'town-msg them';
+    bubble.style.whiteSpace = 'pre-line'; // a meeting reply is one line per villager
+    bubble.textContent = p.toAll ? 'the town is gathering at the plaza…' : '…';
+    log.append(bubble);
+    scrollLog();
+    return bubble;
+  }
+
+  // messages still unanswered when the page was last closed come back with
+  // their bubbles and keep listening (anything older than a day is let go)
+  function restorePending() {
+    const keep = readPending().filter(p => p && p.id && Date.now() - new Date(p.at || 0).getTime() < 24 * 3600000);
+    writePending(keep);
+    for (const p of keep) awaitReply(p, addChatRow(p));
+  }
+
+  // send a message, then keep listening for the villager's answer
   async function sendChat(toAll = false) {
-    const agentId = toAll ? 'all' : root.querySelector('#town-who').value;
+    const who = root.querySelector('#town-who');
+    const agentId = toAll ? 'all' : who.value;
+    const name = toAll ? '' : (who.selectedOptions?.[0]?.textContent || '').trim();
     const input = root.querySelector('#town-say');
     const message = input.value.trim();
     if (!agentId || !message) return;
     input.value = '';
-    const log = root.querySelector('#town-chatlog');
-    log.insertAdjacentHTML('beforeend',
-      `<div class="town-msg me">${toAll ? '📣 ' : ''}${esc(message)}</div>`);
-    const bubble = document.createElement('div');
-    bubble.className = 'town-msg them';
-    bubble.style.whiteSpace = 'pre-line'; // a meeting reply is one line per villager
-    bubble.textContent = toAll ? 'the town is gathering at the plaza…' : '…';
-    log.append(bubble);
-    log.scrollTop = log.scrollHeight;
+    const bubble = addChatRow({ toAll, name, message });
     try {
       const res = await fetch('/api/town/chat', {
         method: 'POST',
@@ -2046,14 +2108,9 @@ export function mount(root, tools) {
       });
       const { id } = await res.json();
       if (!res.ok || !id) throw new Error();
-      // a meeting takes as long as the whole town answering — poll patiently
-      const polls = toAll ? 80 : 40;   // the engine answers between turns — give it two minutes
-      for (let i = 0; i < polls && alive; i++) {
-        await new Promise(r => setTimeout(r, 3000));
-        const poll = await fetch(`/api/town/chat/${id}`).then(r => r.json()).catch(() => null);
-        if (poll?.reply) { bubble.textContent = poll.reply; log.scrollTop = log.scrollHeight; return; }
-      }
-      bubble.textContent = townAlert || '(no answer yet — the town answers between turns; check it’s running, then try again in a minute)';
+      const p = { id, agentId, name, message, toAll, at: Date.now() };
+      writePending([...readPending(), p]);
+      await awaitReply(p, bubble);
     } catch {
       bubble.textContent = '(could not reach the town)';
       showToast('Could not send that message');
@@ -2071,6 +2128,7 @@ export function mount(root, tools) {
 
   refresh();
   refreshApprovals();
+  restorePending();
   timer = setInterval(() => { refresh(); refreshApprovals(); }, 5000);
 
   return function unmount() {
