@@ -480,7 +480,21 @@ export function mount(root, tools) {
   let placedStructs = [];  // structures with computed x/y
   // where the nth structure of a district sits, relative to that district's point
   const STRUCT_OFF = [[-84, 30], [84, 30], [-106, 62], [106, 62], [-44, 78], [44, 78], [-128, 4], [128, 4]];
-  let decor = [];          // grass tufts and flowers, scattered over the whole field
+  let decor = [];          // flat ground litter (flower clusters, grass tufts), painted under everything
+  let greenery = [];       // trees and shrubs — they STAND, so they sort into the depth pass with the walkers
+  let groundTex = null;    // the grass texture, painted once per world sync onto an offscreen canvas
+  // what the residents have done to the town. All four are OPTIONAL in state —
+  // the Gas Town bridge and older engines never send them — and the map must
+  // look exactly as before when they're missing.
+  let wallProgress = 100;  // s.wall.progress, 0-100: how much of the town wall the villagers have built
+  let rooms = {};          // s.rooms: house key -> extra rooms; their decor lives in interiors['<house>/<slug>']
+  let roomKey = null;      // which interiors[] key drawRoom paints while inside a house that has rooms
+  let roomTabs = [];       // hit-rects of the room tabs along the top of a room, for the click handler
+  // yards[key] props and addons[key] structures hang off each house's district
+  // entry (d.yard, d.addons), validated once in syncWorld
+  const YARD_KINDS = new Set(['bench', 'flowers', 'fence', 'tree', 'bush', 'lantern', 'mailbox', 'pond', 'path', 'sign']);
+  const ADDON_KINDS = new Set(['porch', 'garage', 'tower', 'greenhouse', 'workshop', 'upstairs', 'balcony', 'chimney']);
+  const TOP_KINDS = new Set(['upstairs', 'balcony', 'chimney']);   // these only make sense on top
   const sprites = new Map();
   const bubblesShown = new Set();
   let puffs = [];      // short-lived particles: chimney smoke, walking dust
@@ -513,18 +527,57 @@ export function mount(root, tools) {
 
   // deterministic scatter — the same tuft grows in the same spot every frame,
   // now over the WHOLE field instead of inside a plot
+  // Everything green is precomputed here, once per world sync, never per frame:
+  // the grass texture (an offscreen canvas), the flat ground litter, and the
+  // trees and shrubs. Placement is deterministic (hashStr) so the same bush
+  // grows in the same spot every frame — and kept OFF the plaza disc, off every
+  // building's footprint, and off the wall band, so nothing sprouts on a roof.
   function makeDecor() {
-    decor = [];
+    decor = []; greenery = [];
     const { width: W, height: H } = canvas;
-    const n = Math.max(24, Math.round(W * H / 2200));
+    const cx = townCenter.x, cy = townCenter.y;
+    // hashStr is a plain string hash, so sequential seeds land on a diagonal and
+    // everything clumps; a finalizer mix spreads them evenly across the field
+    const mix = n => { n = Math.imul(n ^ (n >>> 16), 0x45d9f3b); n = Math.imul(n ^ (n >>> 16), 0x45d9f3b); return (n ^ (n >>> 16)) >>> 0; };
+    const clear = (x, y, pad = 0) => {
+      if (Math.hypot(x - cx, y - cy) < 96 + pad) return false;               // the plaza + fountain
+      if (x < WALL + 8 + pad || x > W - WALL - 8 - pad || y < WALL + 8 + pad || y > H - WALL - 8 - pad) return false;
+      for (const d of Object.values(districts)) {                            // every building's footprint
+        if (Math.abs(x - d.x) < 58 + pad && y > d.y - 100 - pad && y < d.y + 24 + pad) return false;
+      }
+      return true;
+    };
+    // the grass itself: a subtle two-tone checker of 14px cells, two greens close
+    // in value so it reads as texture rather than a grid, with a few darker specks
+    const g = document.createElement('canvas');
+    g.width = W; g.height = H;
+    const gx = g.getContext('2d');
+    gx.fillStyle = '#74b64e'; gx.fillRect(0, 0, W, H);
+    const tones = ['#72b44c', '#78ba52', '#6fb049', '#7bbd55'];
+    for (let y = 0; y < H; y += 14) for (let x = 0; x < W; x += 14) {
+      const h = hashStr(`cell:${x}:${y}`);
+      gx.fillStyle = tones[h % tones.length];
+      gx.fillRect(x, y, 14, 14);
+      if (h % 11 === 0) { gx.fillStyle = 'rgba(60,120,45,0.35)'; gx.fillRect(x + (h >>> 4) % 12, y + (h >>> 8) % 12, 2, 2); }
+    }
+    groundTex = g;
+    // flat litter: grass tufts and small flower clusters, all over the field
+    const n = Math.max(40, Math.round(W * H / 2600));
     for (let i = 0; i < n; i++) {
       const h = hashStr(`grass:${i}`);
-      decor.push({
-        x: 6 + h % Math.max(1, W - 12),
-        y: 6 + (h >>> 7) % Math.max(1, H - 12),
-        kind: i % 3 === 2 ? 'flower' : 'tuft',
-        tint: ['#ffd94a', '#ff8bb3', '#fdfdf4'][h % 3],
-      });
+      const x = 6 + mix(h) % Math.max(1, W - 12), y = 6 + mix(h ^ 0x9e3779b9) % Math.max(1, H - 12);
+      if (!clear(x, y)) continue;
+      decor.push({ x, y, kind: i % 4 === 3 ? 'flowers' : 'tuft', seed: h });
+    }
+    // standing greenery: trees and shrubs, sorted into the depth pass later so a
+    // villager walks behind a tree as naturally as behind a house
+    const m = Math.max(30, Math.round(W * H / 6500));   // ~90 candidates; the clear() sieve keeps roughly a third
+    for (let i = 0; i < m; i++) {
+      const h = hashStr(`green:${i}`);
+      const x = 20 + mix(h) % Math.max(1, W - 40), y = 40 + mix(h ^ 0x9e3779b9) % Math.max(1, H - 60);
+      if (!clear(x, y, 14)) continue;
+      const tree = i % 3 !== 1;
+      greenery.push({ x, y, kind: tree ? 'tree' : 'shrub', size: tree ? 0.85 + (h % 5) * 0.09 : 0.8 + (h % 4) * 0.12 });
     }
   }
 
@@ -611,6 +664,33 @@ export function mount(root, tools) {
         cx = townCenter.x + Math.cos(a) * rx; cy = townCenter.y + Math.sin(a) * ry;
       }
       districts[k] = { key: k, x: cx, y: cy, label: s.map[k], clearing: makeClearing(k, cx, cy) };
+    }
+    // What the residents have done to the town — every field OPTIONAL (the Gas
+    // Town bridge and older engines send none of them), validated once here so
+    // the per-frame drawers never see a bad kind or an off-map offset.
+    const obj = v => (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
+    const wp = Number(s.wall && s.wall.progress);
+    wallProgress = Number.isFinite(wp) ? Math.max(0, Math.min(100, wp)) : 100;   // no field → the finished wall
+    rooms = {};
+    for (const [hk, list] of Object.entries(obj(s.rooms))) {
+      if (!districts[hk] || !Array.isArray(list)) continue;
+      rooms[hk] = list.filter(r => r && typeof r.key === 'string').slice(0, 4)
+        .map(r => ({ key: r.key, name: String(r.name || 'Room').slice(0, 18) }));
+    }
+    const yards = obj(s.yards), addons = obj(s.addons);
+    for (const d of Object.values(districts)) {
+      if (!d.key.startsWith('house_')) continue;
+      d.yard = (Array.isArray(yards[d.key]) ? yards[d.key] : [])
+        .filter(it => it && YARD_KINDS.has(it.kind) && Number.isFinite(Number(it.x)) && Number.isFinite(Number(it.y)))
+        .slice(0, 12)
+        .map(it => ({ kind: it.kind, x: Math.max(-90, Math.min(90, Number(it.x))), y: Math.max(-10, Math.min(70, Number(it.y))) }));
+      const bySide = {};
+      for (const a of (Array.isArray(addons[d.key]) ? addons[d.key] : [])) {
+        if (!a || !ADDON_KINDS.has(a.kind)) continue;
+        const side = TOP_KINDS.has(a.kind) ? 'top' : (a.side === 'left' || a.side === 'right' || a.side === 'top') ? a.side : 'right';
+        bySide[side] = { kind: a.kind, side };
+      }
+      d.addons = Object.values(bySide);
     }
     makeDecor();
 
@@ -745,6 +825,7 @@ export function mount(root, tools) {
         && Math.hypot(me.x - pendingEnter.door.x, me.y - pendingEnter.door.y) < 14) {
         inside = pendingEnter;
         pendingEnter = null;
+        roomKey = null; roomTabs = [];     // always arrive in the main room
       }
     }
     // the Test Kitchen's chimney smokes while the town is awake
@@ -752,6 +833,12 @@ export function mount(root, tools) {
     if (kd && now - lastSmoke > 750) {
       lastSmoke = now;
       puffs.push({ kind: 'smoke', x: kd.x + 20 + (Math.random() * 6 - 3), y: kd.y - 90, born: now });
+      // and every house whose resident built a chimney add-on puffs too
+      for (const d of Object.values(districts)) {
+        if (Array.isArray(d.addons) && d.addons.some(a => a.kind === 'chimney')) {
+          puffs.push({ kind: 'smoke', x: d.x + 23 + (Math.random() * 4 - 2), y: d.y - 124, born: now });
+        }
+      }
     }
     puffs = puffs.filter(p => now - p.born < (p.kind === 'smoke' ? 2400 : 550));
     if (inside) drawRoom(now, t); else draw(now, t);
@@ -798,30 +885,202 @@ export function mount(root, tools) {
     ctx.fillStyle = 'rgba(150,210,235,0.85)';
     ctx.fillRect(cx - 2, cy - 20 - spout, 4, spout);
     ctx.beginPath(); ctx.arc(cx, cy - 20 - spout, 3, 0, Math.PI * 2); ctx.fill();
+    // droplets arcing out of the spout on little parabolas, phase-offset so the
+    // fountain is always mid-splash somewhere; they fade as they meet the pool
+    for (let i = 0; i < 8; i++) {
+      const ph = ((t / 900) + i / 8) % 1;
+      const side = i % 2 ? 1 : -1, spread = 14 + (i % 4) * 4;
+      const x = cx + side * ph * spread;
+      const y = (cy - 24 - spout) + ph * 26 - 4 * 15 * ph * (1 - ph);
+      ctx.fillStyle = `rgba(190,230,250,${0.9 - ph * 0.7})`;
+      ctx.beginPath(); ctx.arc(x, y, 1.6 + ph, 0, Math.PI * 2); ctx.fill();
+    }
+    // a shimmering surface: short highlight dashes that drift across the pool
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = 1.2;
+    for (let i = 0; i < 5; i++) {
+      const dx = ((t / 60 + i * 37) % 52) - 26, dy = Math.sin(t / 400 + i) * 6 + (i - 2) * 5;
+      ctx.beginPath(); ctx.moveTo(cx + dx - 4, cy + dy); ctx.lineTo(cx + dx + 4, cy + dy); ctx.stroke();
+    }
   }
 
-  // the town wall: a grey stone band around the field, brick-coursed, with a
-  // crenellated top edge so the whole village reads as one enclosed square
+  // The town wall is something the villagers BUILD (state.wall.progress, 0-100).
+  // It grows clockwise from the top-left corner around the perimeter, with a
+  // permanent gate gap centred on the bottom edge. 0 → an open field with only a
+  // faint survey line; 100 → the full crenellated stone wall. No field → 100, so
+  // the Gas Town bridge and older engines keep the finished look.
+  const GATE = 90;
+  function wallEdges(W, H) {
+    const s = WALL, g = GATE / 2;
+    return [
+      { h: true,  y: 0,     from: 0,         to: W,          top: true },
+      { h: false, x: W - s, from: 0,         to: H },
+      { h: true,  y: H - s, from: W,         to: W / 2 + g },        // bottom, right of the gate
+      { h: true,  y: H - s, from: W / 2 - g, to: 0 },                // bottom, left of the gate
+      { h: false, x: 0,     from: H,         to: 0 },
+    ];
+  }
   function drawWall(W, H) {
-    const s = WALL;
-    ctx.fillStyle = '#8a8378';
-    ctx.fillRect(0, 0, W, s); ctx.fillRect(0, H - s, W, s);
-    ctx.fillRect(0, 0, s, H); ctx.fillRect(W - s, 0, s, H);
-    // brick courses (seams) + inner shadow
+    const s = WALL, p = wallProgress;
+    if (p <= 0) {                                   // nothing built yet: just the survey line
+      ctx.save();
+      ctx.setLineDash([6, 8]); ctx.strokeStyle = 'rgba(40,40,30,0.22)'; ctx.lineWidth = 2;
+      ctx.strokeRect(s / 2, s / 2, W - s, H - s);
+      ctx.restore();
+      return;
+    }
+    const edges = wallEdges(W, H);
+    const total = edges.reduce((n, e) => n + Math.abs(e.to - e.from), 0);
+    let left = total * Math.min(100, p) / 100;
     ctx.strokeStyle = 'rgba(60,55,48,0.35)'; ctx.lineWidth = 1;
-    for (let x = 0; x < W; x += 16) {
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, s); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(x + 8, H - s); ctx.lineTo(x + 8, H); ctx.stroke();
+    for (const e of edges) {
+      if (left <= 0) break;
+      const len = Math.abs(e.to - e.from), seg = Math.min(left, len), dir = Math.sign(e.to - e.from);
+      const a = e.from, b = e.from + dir * seg;
+      const lo = Math.min(a, b), hi = Math.max(a, b);
+      ctx.fillStyle = '#8a8378';
+      if (e.h) {
+        ctx.fillRect(lo, e.y, hi - lo, s);
+        for (let x = lo - (lo % 16); x < hi; x += 16) { ctx.beginPath(); ctx.moveTo(x, e.y); ctx.lineTo(x, e.y + s); ctx.stroke(); }
+        ctx.fillStyle = 'rgba(0,0,0,0.16)';
+        if (e.top) ctx.fillRect(lo, s, hi - lo, 4);
+        if (e.top) { ctx.fillStyle = '#9a9286'; for (let x = lo + 6; x < hi - 12; x += 26) ctx.fillRect(x, s - 5, 14, 5); }
+      } else {
+        ctx.fillRect(e.x, lo, s, hi - lo);
+        for (let y = lo - (lo % 16); y < hi; y += 16) { ctx.beginPath(); ctx.moveTo(e.x, y); ctx.lineTo(e.x + s, y); ctx.stroke(); }
+        if (e.x === 0) { ctx.fillStyle = 'rgba(0,0,0,0.16)'; ctx.fillRect(s, lo, 4, hi - lo); }
+      }
+      left -= seg;
     }
-    for (let y = 0; y < H; y += 16) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(s, y); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(W - s, y + 8); ctx.lineTo(W, y + 8); ctx.stroke();
+    // gate posts once the wall has reached the gate, and a progress note while building
+    const reached = total * p / 100 >= W + H + (W / 2 - GATE / 2);
+    if (reached) {
+      ctx.fillStyle = '#6f6a60';
+      ctx.fillRect(W / 2 - GATE / 2 - 8, H - s - 10, 8, s + 10);
+      ctx.fillRect(W / 2 + GATE / 2, H - s - 10, 8, s + 10);
     }
-    ctx.fillStyle = 'rgba(0,0,0,0.16)';
-    ctx.fillRect(s, s, W - 2 * s, 4); ctx.fillRect(s, s, 4, H - 2 * s);
-    // crenellations along the inner lip of the top wall
-    ctx.fillStyle = '#9a9286';
-    for (let x = 6; x < W - 6; x += 26) ctx.fillRect(x, s - 5, 14, 5);
+    if (p < 100) label(`town wall ${Math.round(p)}% built`, W / 2, H - s - 14, 10);
+  }
+
+  // ---- the greenery and the residents' yard props, all drawn from primitives ----
+  function drawTree(x, y, k = 1) {
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.beginPath(); ctx.ellipse(x, y + 2, 14 * k, 5 * k, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#7a5230'; ctx.fillRect(x - 3 * k, y - 16 * k, 6 * k, 17 * k);
+    ctx.fillStyle = '#3f8f3a'; ctx.beginPath(); ctx.arc(x, y - 24 * k, 16 * k, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#56ac48'; ctx.beginPath(); ctx.arc(x - 4 * k, y - 29 * k, 12 * k, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#7fcb66'; ctx.beginPath(); ctx.arc(x - 8 * k, y - 34 * k, 5 * k, 0, TAU); ctx.fill();
+  }
+  function drawShrub(x, y, k = 1) {
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.beginPath(); ctx.ellipse(x, y + 2, 13 * k, 4 * k, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#3d8a38'; ctx.beginPath(); ctx.ellipse(x, y - 4 * k, 14 * k, 9 * k, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#55a847'; ctx.beginPath(); ctx.ellipse(x - 2 * k, y - 8 * k, 11 * k, 8 * k, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#7fc86a'; ctx.beginPath(); ctx.ellipse(x - 5 * k, y - 12 * k, 5 * k, 3 * k, 0, 0, TAU); ctx.fill();
+  }
+  function drawFlowers(x, y, seed) {
+    const cols = ['#ff6b6b', '#ffd94a', '#ff8bb3', '#fdfdf4', '#a78bfa'];
+    ctx.fillStyle = '#5da33c';
+    ctx.fillRect(x - 3, y + 1, 2, 3); ctx.fillRect(x + 2, y, 2, 4);
+    for (let i = 0; i < 4; i++) {
+      ctx.fillStyle = cols[(seed + i * 7) % cols.length];
+      ctx.fillRect(x - 5 + ((seed >>> (i * 3)) % 10), y - 4 + ((seed >>> (i * 2 + 1)) % 5), 3, 3);
+    }
+  }
+  function drawYardItem(kind, x, y, now, t) {
+    ctx.save();
+    switch (kind) {
+      case 'bench':
+        ctx.fillStyle = '#7a5230'; ctx.fillRect(x - 12, y - 6, 3, 8); ctx.fillRect(x + 9, y - 6, 3, 8);
+        ctx.fillStyle = '#a67c52'; ctx.fillRect(x - 14, y - 9, 28, 4); ctx.fillRect(x - 14, y - 15, 28, 3);
+        break;
+      case 'flowers': drawFlowers(x, y, hashStr(`yf:${x}:${y}`)); drawFlowers(x + 9, y + 3, hashStr(`yg:${x}:${y}`)); break;
+      case 'fence':
+        ctx.fillStyle = '#d9c7a3';
+        for (let i = -2; i <= 2; i++) ctx.fillRect(x + i * 9 - 1, y - 14, 3, 14);
+        ctx.fillRect(x - 20, y - 9, 40, 2); ctx.fillRect(x - 20, y - 4, 40, 2);
+        break;
+      case 'tree': drawTree(x, y, 0.9); break;
+      case 'bush': drawShrub(x, y, 0.9); break;
+      case 'lantern': {
+        const g = ctx.createRadialGradient(x, y - 18, 2, x, y - 18, 22);
+        g.addColorStop(0, 'rgba(255,214,130,0.35)'); g.addColorStop(1, 'rgba(255,214,130,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y - 18, 22, 0, TAU); ctx.fill();
+        ctx.fillStyle = '#4a4a4a'; ctx.fillRect(x - 1, y - 16, 3, 16);
+        ctx.fillStyle = (now % 1400) < 1100 ? '#ffd27a' : '#f4b95a'; ctx.fillRect(x - 4, y - 22, 9, 7);
+        break;
+      }
+      case 'mailbox':
+        ctx.fillStyle = '#6b5030'; ctx.fillRect(x - 1, y - 14, 3, 14);
+        ctx.fillStyle = '#3b6fb6'; ctx.fillRect(x - 6, y - 20, 13, 7);
+        ctx.fillStyle = '#e0533a'; ctx.fillRect(x + 6, y - 24, 2, 5);
+        break;
+      case 'pond':
+        ctx.fillStyle = '#7fc0dc'; ctx.beginPath(); ctx.ellipse(x, y, 18, 10, 0, 0, TAU); ctx.fill();
+        ctx.fillStyle = '#4f9fc4'; ctx.beginPath(); ctx.ellipse(x, y, 15, 8, 0, 0, TAU); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(x - 6 + Math.sin(t / 500) * 3, y - 3, 6, 1.5);
+        break;
+      case 'path':
+        ctx.fillStyle = '#d9b380'; ctx.beginPath(); ctx.ellipse(x, y, 16, 7, 0, 0, TAU); ctx.fill();
+        break;
+      case 'sign':
+        ctx.fillStyle = '#6b5030'; ctx.fillRect(x - 1, y - 16, 3, 16);
+        ctx.fillStyle = '#a67c52'; ctx.fillRect(x - 10, y - 24, 21, 10);
+        ctx.fillStyle = '#3a2a18'; ctx.fillRect(x - 7, y - 21, 14, 1.5); ctx.fillRect(x - 7, y - 17.5, 10, 1.5);
+        break;
+    }
+    ctx.restore();
+  }
+  // structural add-ons adjoining a house: side lean-tos are drawn BEFORE the
+  // house sprite (so the house overlaps their inner edge and they read as
+  // attached); top pieces sit on the roof line and are drawn after it
+  function drawAddon(kind, side, hx, hy) {
+    ctx.save();
+    if (side === 'top') {
+      if (kind === 'upstairs') {
+        ctx.fillStyle = '#b98a63'; ctx.fillRect(hx - 34, hy - 122, 68, 24);
+        ctx.fillStyle = '#7a4d2e'; ctx.beginPath(); ctx.moveTo(hx - 40, hy - 122); ctx.lineTo(hx, hy - 138); ctx.lineTo(hx + 40, hy - 122); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#ffe9a8'; ctx.fillRect(hx - 22, hy - 116, 10, 10); ctx.fillRect(hx + 12, hy - 116, 10, 10);
+      } else if (kind === 'balcony') {
+        ctx.fillStyle = '#8a6a48'; ctx.fillRect(hx - 30, hy - 58, 60, 5);
+        ctx.fillStyle = '#c9a87c'; for (let i = -3; i <= 3; i++) ctx.fillRect(hx + i * 9 - 1, hy - 70, 2, 12);
+        ctx.fillRect(hx - 30, hy - 70, 60, 2);
+      } else if (kind === 'chimney') {
+        ctx.fillStyle = '#8a4a3a'; ctx.fillRect(hx + 18, hy - 120, 10, 24);
+        ctx.fillStyle = '#5a3028'; ctx.fillRect(hx + 16, hy - 124, 14, 5);
+      }
+    } else {
+      const dir = side === 'left' ? -1 : 1, x0 = hx + dir * 46;           // the lean-to's near edge
+      const bx = dir === -1 ? x0 - 36 : x0;                                // its left edge
+      const roof = () => { ctx.fillStyle = '#7a4d2e'; ctx.beginPath(); ctx.moveTo(bx - 3, hy - 40); ctx.lineTo(bx + 18, hy - 52); ctx.lineTo(bx + 39, hy - 40); ctx.closePath(); ctx.fill(); };
+      if (kind === 'porch') {
+        ctx.fillStyle = '#a67c52'; ctx.fillRect(bx, hy - 6, 36, 6);
+        ctx.fillStyle = '#c9a87c'; ctx.fillRect(bx + 3, hy - 40, 4, 34); ctx.fillRect(bx + 29, hy - 40, 4, 34);
+        roof();
+      } else if (kind === 'garage') {
+        ctx.fillStyle = '#b98a63'; ctx.fillRect(bx, hy - 40, 36, 40);
+        ctx.fillStyle = '#5a4a3a'; ctx.fillRect(bx + 5, hy - 26, 26, 26);
+        ctx.fillStyle = '#8a7a6a'; for (let i = 0; i < 4; i++) ctx.fillRect(bx + 5, hy - 22 + i * 6, 26, 1);
+        roof();
+      } else if (kind === 'greenhouse') {
+        ctx.fillStyle = 'rgba(207,233,221,0.9)'; ctx.fillRect(bx, hy - 40, 36, 40);
+        ctx.strokeStyle = 'rgba(70,110,90,0.5)'; ctx.lineWidth = 1;
+        for (let i = 1; i < 4; i++) { ctx.beginPath(); ctx.moveTo(bx + i * 9, hy - 40); ctx.lineTo(bx + i * 9, hy); ctx.stroke(); }
+        for (let i = 1; i < 4; i++) { ctx.beginPath(); ctx.moveTo(bx, hy - i * 10); ctx.lineTo(bx + 36, hy - i * 10); ctx.stroke(); }
+        ctx.fillStyle = 'rgba(120,180,140,0.9)'; ctx.beginPath(); ctx.moveTo(bx - 3, hy - 40); ctx.lineTo(bx + 18, hy - 52); ctx.lineTo(bx + 39, hy - 40); ctx.closePath(); ctx.fill();
+      } else if (kind === 'workshop') {
+        ctx.fillStyle = '#9c7a58'; ctx.fillRect(bx, hy - 40, 36, 40);
+        ctx.fillStyle = '#ffe9a8'; ctx.fillRect(bx + 6, hy - 30, 10, 10);
+        ctx.fillStyle = '#5a3a2a'; ctx.fillRect(bx + 22, hy - 20, 10, 20);
+        ctx.fillStyle = '#d9c7a3'; ctx.fillRect(bx + 20, hy - 34, 14, 6);
+        roof();
+      } else if (kind === 'tower') {
+        const tx = dir === -1 ? x0 - 22 : x0;
+        ctx.fillStyle = '#a8a29a'; ctx.fillRect(tx, hy - 92, 22, 92);
+        ctx.fillStyle = '#7a4d2e'; ctx.beginPath(); ctx.moveTo(tx - 4, hy - 92); ctx.lineTo(tx + 11, hy - 116); ctx.lineTo(tx + 26, hy - 92); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#ffe9a8'; ctx.fillRect(tx + 8, hy - 80, 6, 9); ctx.fillRect(tx + 8, hy - 50, 6, 9);
+      }
+    }
+    ctx.restore();
   }
 
   // a small looping animation at each building that says what its resident does —
@@ -883,11 +1142,9 @@ export function mount(root, tools) {
     const activeKeys = new Set();
     for (const sp of sprites.values()) if (sp.busy && sp.loc) activeKeys.add(sp.loc);
     ctx.imageSmoothingEnabled = false;   // crisp chunky pixels when scaling
-    // grassy ground, banded so the field has a little depth
-    ctx.fillStyle = '#74b64e';
-    ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = 'rgba(90,170,70,0.30)';
-    for (let y = 0; y < H; y += 46) ctx.fillRect(0, y, W, 23);
+    // the grass: a precomputed two-tone texture (see makeDecor), one blit
+    if (groundTex) ctx.drawImage(groundTex, 0, 0);
+    else { ctx.fillStyle = '#74b64e'; ctx.fillRect(0, 0, W, H); }
 
     // curved dirt paths spoking out from the plaza to every ringed district —
     // a gentle bow gives the square its village feel instead of straight rays
@@ -904,6 +1161,7 @@ export function mount(root, tools) {
         ctx.stroke();
       }
     };
+    drawPaths(34, 'rgba(140,200,100,0.55)');   // worn, lighter grass along the verges
     drawPaths(20, '#c79b68');   // dirt border
     drawPaths(13, '#e2c08a');   // lighter, worn centre
 
@@ -936,17 +1194,16 @@ export function mount(root, tools) {
     }
     drawFountain(cx, cy, t);
 
-    // grass tufts and flowers
+    // flat ground litter: grass tufts and little flower clusters
     for (const g of decor) {
       if (g.kind === 'tuft') {
-        ctx.fillStyle = '#5da33c';
+        ctx.fillStyle = '#4e9a34';                 // a shade darker than the turf so it reads
         ctx.fillRect(g.x, g.y, 3, 5);
         ctx.fillRect(g.x + 4, g.y + 2, 3, 4);
+        ctx.fillStyle = '#8fd46a';                 // a lit tip
+        ctx.fillRect(g.x + 2, g.y - 2, 2, 4);
       } else {
-        ctx.fillStyle = g.tint;
-        ctx.fillRect(g.x, g.y, 4, 4);
-        ctx.fillStyle = '#5da33c';
-        ctx.fillRect(g.x + 1, g.y + 4, 2, 3);
+        drawFlowers(g.x, g.y, g.seed);
       }
     }
 
@@ -957,12 +1214,16 @@ export function mount(root, tools) {
     // entry sorts on the y its feet touch, and draws when its turn comes.
     const scene = [];
 
-    // each district's own business building on its point
+    // each district's own business building on its point — a house also draws
+    // the add-ons its resident bolted on (lean-tos before the sprite so it
+    // overlaps them and they read as attached; roof pieces after)
     for (const d of Object.values(districts)) {
       scene.push({ y: d.y, draw: () => {
         // a house district ("house_<id>") reuses the one house building; every
         // other district has its own art keyed by its name.
         const isHouse = d.key.startsWith('house_');
+        const adds = Array.isArray(d.addons) ? d.addons : [];
+        for (const a of adds) if (a.side !== 'top') drawAddon(a.kind, a.side, d.x, d.y);
         const img = art[d.key] || (isHouse ? art.house : null);
         if (img) {
           drawSprite(img, d.x, d.y, 100, 128);
@@ -971,9 +1232,20 @@ export function mount(root, tools) {
           ctx.textAlign = 'center';
           ctx.fillText(isHouse ? '🏠' : '🏛️', d.x, d.y - 46);
         }
+        for (const a of adds) if (a.side === 'top') drawAddon(a.kind, 'top', d.x, d.y);
         // the building's own little activity animation, over its roof
         drawActivity(d.key, d.x, d.y, now, t, activeKeys.has(d.key));
       } });
+      // the resident's yard: each prop sorts on its own feet so walkers weave through
+      for (const it of (Array.isArray(d.yard) ? d.yard : [])) {
+        const px = d.x + it.x, py = d.y + it.y;
+        scene.push({ y: py, draw: () => drawYardItem(it.kind, px, py, now, t) });
+      }
+    }
+    // the trees and shrubs stand in the same pass — a villager walks behind an
+    // oak as naturally as behind a house
+    for (const g of greenery) {
+      scene.push({ y: g.y, draw: () => (g.kind === 'tree' ? drawTree(g.x, g.y, g.size) : drawShrub(g.x, g.y, g.size)) });
     }
 
     // structures the agents put up (or are still putting up)
@@ -1341,7 +1613,9 @@ export function mount(root, tools) {
     if (inside && inside.key === HQ_KEY) return drawOffice(now, t);
     const { width: W, height: H } = canvas;
     ctx.imageSmoothingEnabled = false;   // same crisp pixels indoors
-    const it = interiors[inside.key];
+    // a house with extra rooms paints whichever room's tab is active (roomKey);
+    // the main room is the house's own interior entry
+    const it = interiors[roomKey || inside.key];
     const wall = it?.wall || '#b9a68d';
     const floor = it?.floor || '#96826a';
     const wallH = Math.max(64, Math.floor(H / 3));
@@ -1358,6 +1632,27 @@ export function mount(root, tools) {
     for (let cy = wallH; cy < H; cy += tile) {
       for (let cx = ((cy - wallH) / tile) % 2 ? tile : 0; cx < W; cx += tile * 2) {
         ctx.fillRect(cx, cy, tile, Math.min(tile, H - cy));
+      }
+    }
+
+    // a house with extra rooms gets a row of room tabs along the top of the wall:
+    // the main room first, then each room the resident added. Their hit-rects
+    // are kept for the click handler.
+    roomTabs = [];
+    const extra = (inside.type === 'district' && Array.isArray(rooms[inside.key])) ? rooms[inside.key] : [];
+    if (extra.length) {
+      const tabs = [{ key: inside.key, name: 'Main room' }, ...extra];
+      let tx = 10;
+      ctx.font = '700 11px system-ui'; ctx.textAlign = 'left';
+      for (const tab of tabs) {
+        const on = (roomKey || inside.key) === tab.key;
+        const w = ctx.measureText(tab.name).width + 18;
+        ctx.fillStyle = on ? 'rgba(253,253,244,0.92)' : 'rgba(0,0,0,0.28)';
+        ctx.beginPath(); ctx.roundRect(tx, 8, w, 22, 7); ctx.fill();
+        ctx.fillStyle = on ? '#33281a' : 'rgba(255,255,255,0.9)';
+        ctx.fillText(tab.name, tx + 9, 23);
+        roomTabs.push({ x: tx, y: 8, w, h: 22, key: tab.key });
+        tx += w + 6;
       }
     }
 
@@ -1438,11 +1733,14 @@ export function mount(root, tools) {
     const y = (e.clientY - rect.top) * (canvas.height / rect.height);
     // indoors, the only clickables are the ways out: the chip and the door
     if (inside) {
+      // a room tab along the top switches which room is painted
+      const tab = roomTabs.find(r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
+      if (tab) { roomKey = tab.key === inside.key ? null : tab.key; return; }
       const chip = leaveChip();
       const dr = roomDoorRect();
       if ((x >= chip.x && x <= chip.x + chip.w && y >= chip.y && y <= chip.y + chip.h)
         || (x >= dr.x - 8 && x <= dr.x + dr.w + 8 && y >= dr.y - 8)) {
-        inside = null;                     // back to town, right where we stood
+        inside = null; roomKey = null; roomTabs = [];   // back to town, right where we stood
       }
       return;
     }
