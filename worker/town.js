@@ -35,9 +35,16 @@ const ART_KINDS = new Set([
   'char_ctrl_front', 'char_ctrl_back', 'char_arise_front', 'char_arise_back',
   'char_apex_front', 'char_apex_back', 'char_draco_front', 'char_draco_back',
   'char_spork_front', 'char_spork_back',
-  // the Studio district and its two townsfolk
-  'studio', 'char_meta', 'char_meta_front', 'char_watch', 'char_watch_front',
+  // the Studio district and its two townsfolk (now with back views too)
+  'studio', 'char_meta', 'char_meta_front', 'char_meta_back',
+  'char_watch', 'char_watch_front', 'char_watch_back',
 ]);
+// The R2 key prefix (town/art3/) is the art's cache identity: the browser only
+// asks the Worker to import a kind when a GET for it 404s, so a piece already
+// in R2 is served forever regardless of the source URL in town.js. Whenever the
+// art set changes (new URLs for existing kinds), bump the prefix so every kind
+// re-imports from its new source. History: art → art2 (Sept 3 buildings) → art3
+// (Sept 3 villager sprites, which had been swapped after art2 was already cached).
 const MAX_ART = 8 * 1024 * 1024;   // a 1k PNG is ~1–2 MB
 function artHostAllowed(host) {
   const h = host.toLowerCase();
@@ -111,7 +118,7 @@ export async function handleTown(url, request, env, { authed, syncKeyOk }) {
   if (artMatch && request.method === 'GET') {
     if (!authed) return json({ error: 'sign in first' }, 401);
     if (!ART_KINDS.has(artMatch[1])) return json({ error: 'unknown art kind' }, 404);
-    const obj = await env.MEDIA.get(`town/art/${artMatch[1]}`);
+    const obj = await env.MEDIA.get(`town/art3/${artMatch[1]}`);
     if (!obj) return json({ error: 'no art yet' }, 404);
     return new Response(obj.body, {
       headers: {
@@ -141,7 +148,7 @@ export async function handleTown(url, request, env, { authed, syncKeyOk }) {
     if (!/^image\/[a-z0-9.+-]{1,30}$/.test(type)) return json({ error: 'that URL did not return an image' }, 415);
     const declared = Number(res.headers.get('content-length') || 0);
     if (declared > MAX_ART) return json({ error: 'image too large' }, 413);
-    const key = `town/art/${kind}`;
+    const key = `town/art3/${kind}`;
     let obj;
     try {
       obj = await env.MEDIA.put(key, res.body, { httpMetadata: { contentType: type } });

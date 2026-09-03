@@ -16,43 +16,47 @@ const KIND_ICO = { house: '🏠', shop: '🏪', landmark: '🗼' };
 // source URL; the Worker's allowlist vets it), then serves it from R2 forever.
 const HF = 'https://d8j0ntlcm91z4.cloudfront.net/user_3IckDDDwJI3D408OKE8QdQYJgqc/';
 const TOWN_ART_SRC = {
-  // agent-built structures
-  house: `${HF}hf_20260831_013159_667a3d7f-6a3b-492e-a088-a981a010ea68.png`,
-  shop: `${HF}hf_20260831_013159_2da96ad1-1d68-4870-bcaa-2e1a99fd80c6.png`,
-  landmark: `${HF}hf_20260831_013158_5b30c53c-8df7-4742-a7ea-396c67a8dc91.png`,
-  // the districts' businesses
-  repairshop: `${HF}hf_20260831_013158_59eb17e2-6933-4648-9781-6ec14de54f78.png`,
-  chapel: `${HF}hf_20260831_013159_2f94bb47-59ba-4b43-8203-ae01cc5aab0f.png`,
-  gym: `${HF}hf_20260831_013158_ac9cab29-ee51-4a02-b699-62428c6b7cc1.png`,
-  library: `${HF}hf_20260831_013159_462038e3-a9a3-45ac-ab06-1480ca77ff1d.png`,
-  kitchen: `${HF}hf_20260831_013159_141466af-243d-4e88-8fe7-b17bcc1338cf.png`,
-  plaza: `${HF}hf_20260831_013159_032b5a18-f94f-40bc-b493-af14758b0083.png`,
+  // agent-built structures — one matched 16-bit set (Recraft, Sept 3 2026)
+  // (background already removed on Higgsfield, so these arrive transparent)
+  house: `${HF}hf_20260903_061822_bb3dafd4-4c54-4182-9c31-decabbffe061.png`,
+  shop: `${HF}hf_20260903_061829_76e4b0a1-c48a-4c73-b58e-3123a7ccf807.png`,
+  landmark: `${HF}hf_20260903_061733_42681479-765b-488c-82c5-9083b861e3c0.png`,
+  // the districts' businesses (same set)
+  repairshop: `${HF}hf_20260903_061719_934dec88-e929-4076-bd03-ff12e6ab9e26.png`,
+  chapel: `${HF}hf_20260903_061756_1e0cc216-188a-4437-b84a-f3e254b86b0d.png`,
+  gym: `${HF}hf_20260903_061725_15b50d5e-ead9-4f8a-9648-f364372b12fd.png`,
+  library: `${HF}hf_20260903_061740_3975abd8-c9fa-4e3c-887e-81c06903149c.png`,
+  kitchen: `${HF}hf_20260903_061748_5ab0a5b5-5822-4b8b-93cf-82f53f823868.png`,
+  plaza: `${HF}hf_20260903_061812_e52bc46d-ec35-476a-8014-b2d1a600dd33.png`,
   // the townsfolk
-  char_ctrl: `${HF}hf_20260831_013238_a909536b-cada-4a2f-89f5-bb2e68b0230b.png`,
-  char_arise: `${HF}hf_20260831_013239_a1061fe4-347c-4a41-b7f0-810bd50e9575.png`,
-  char_apex: `${HF}hf_20260831_013239_abf91edf-2bcb-4a70-9b62-7c03e148ca53.png`,
-  char_draco: `${HF}hf_20260831_013239_8a9d6aa4-6a6b-4670-b994-19bb5a374f57.png`,
-  char_spork: `${HF}hf_20260831_013239_bb6be375-b53c-4910-b17e-4f4f115ff3a0.png`,
+  // (the same matched 16-bit set as the buildings; side view, transparent)
+  char_ctrl: `${HF}hf_20260903_062543_5b6f7781-2f69-4ea5-9350-84eb221ea927.png`,
+  char_arise: `${HF}hf_20260903_062615_e6e6f212-b147-4c14-8e2b-558cb0bfec95.png`,
+  char_apex: `${HF}hf_20260831_013239_abf91edf-2bcb-4a70-9b62-7c03e148ca53.png`,   // overridden by LOCAL_ART (Max's real likeness)
+  char_draco: `${HF}hf_20260903_062838_8c679066-7b45-4be2-af41-1d1806c9eb35.png`,
+  char_spork: `${HF}hf_20260903_062657_1ef7f7d2-f2c0-449d-ab06-c6db543c8379.png`,
   // one shared sprite for in-world hires (hue-shifted per person) and the owner
   char_hire: `${HF}hf_20260831_042858_d9ce3a7a-9a7b-4556-a6ed-9cb8765f2d0b.png`,
   char_boss: `${HF}hf_20260831_042858_a435ece7-0026-4234-b9fb-afb52907c232.png`,
   // front/back walk sheets per villager (side + a horizontal flip covers the rest)
-  char_ctrl_front: `${HF}hf_20260831_045614_d2c6793a-84d2-40da-ac88-80a474878fc8.png`,
-  char_ctrl_back: `${HF}hf_20260831_045828_13e00ae2-fb3e-490d-aa0a-e11c1cdb69cb.png`,
-  char_arise_front: `${HF}hf_20260831_045828_b9f9ddce-7517-4a29-879e-bf6ef082760d.png`,
-  char_arise_back: `${HF}hf_20260831_045614_900e1b6d-eeba-4311-a611-6b213af2d5a2.png`,
-  char_apex_front: `${HF}hf_20260831_045614_e41bcdde-d69d-483e-acf4-1f8003463a58.png`,
-  char_apex_back: `${HF}hf_20260831_045828_da021acf-6e32-4f3c-8849-e5e46c78b359.png`,
-  char_draco_front: `${HF}hf_20260831_045614_8af1f17e-de88-4b30-b9b4-fa86b6e26a19.png`,
-  char_draco_back: `${HF}hf_20260831_045614_4cb75ea5-6fc7-4127-96a6-3c0620030da7.png`,
-  char_spork_front: `${HF}hf_20260831_045614_6b331bc8-9ebf-40e8-a5f5-c0a197f8ef2c.png`,
-  char_spork_back: `${HF}hf_20260831_045614_ac91fafd-2d15-4bde-b1fe-738172348a51.png`,
+  char_ctrl_front: `${HF}hf_20260903_062551_772266ba-eec7-44b4-8f73-56cfaa25c3c5.png`,
+  char_ctrl_back: `${HF}hf_20260903_062602_78629f6c-b263-4bcd-8d9e-c9c6339ae607.png`,
+  char_arise_front: `${HF}hf_20260903_062629_92b80ab5-7b9b-44f4-9097-257a4ba0a414.png`,
+  char_arise_back: `${HF}hf_20260903_062826_f18462bc-f924-425f-b4cd-3a69eb445297.png`,
+  char_apex_front: `${HF}hf_20260831_045614_e41bcdde-d69d-483e-acf4-1f8003463a58.png`,   // overridden by LOCAL_ART
+  char_apex_back: `${HF}hf_20260831_045828_da021acf-6e32-4f3c-8849-e5e46c78b359.png`,    // overridden by LOCAL_ART
+  char_draco_front: `${HF}hf_20260903_062639_415a52a8-38d1-45a1-a7ea-472af7a3c38a.png`,
+  char_draco_back: `${HF}hf_20260903_062649_50974da2-5eb9-4343-b618-3900b2b5149f.png`,
+  char_spork_front: `${HF}hf_20260903_062846_97541171-7007-46ec-b40b-1ed2063ad867.png`,
+  char_spork_back: `${HF}hf_20260903_062858_b221f5ae-97a0-45dd-b633-16c45908d11f.png`,
   // the Studio district and its two: the metadata smith and the night watchman
-  studio: `${HF}hf_20260831_091646_50182dd1-c2cd-4b49-85cc-c1c569d4b736.png`,
-  char_meta: `${HF}hf_20260831_091550_28c0ccfb-7a5f-4abc-bed7-cc2c96047d37.png`,
-  char_meta_front: `${HF}hf_20260831_091550_fe9b8097-419b-4f79-bc12-3d33594a8f28.png`,
-  char_watch: `${HF}hf_20260831_091646_877caeb9-e0d3-4c9f-9e99-e071269a9705.png`,
-  char_watch_front: `${HF}hf_20260831_091646_6e80b958-44f2-4743-9ad3-5a81177ed80c.png`,
+  studio: `${HF}hf_20260903_061803_e0ebcfa5-2160-469b-b3af-7d9478f5287b.png`,   // the church Media Studio (same set, transparent)
+  char_meta: `${HF}hf_20260903_062707_0caa46e1-e5f6-41d2-99cc-20173cfb5ace.png`,
+  char_meta_front: `${HF}hf_20260903_062715_4d94e672-4e8b-46a7-88aa-b5e5105bd090.png`,
+  char_meta_back: `${HF}hf_20260903_062724_b3d0a0cf-855f-46a2-9c2e-7030465e9ab1.png`,
+  char_watch: `${HF}hf_20260903_062731_8e610fe8-c527-4708-8c4a-1c9cb67df45c.png`,
+  char_watch_front: `${HF}hf_20260903_062742_adc1f1cc-9f30-4236-8ef7-fdcc82365c24.png`,
+  char_watch_back: `${HF}hf_20260903_062758_ce9f20b5-2658-423a-9a92-ecd5c7b67e2e.png`,
 };
 
 // Villager sprites that ship WITH the app — a real person's likeness drawn as
@@ -127,19 +131,28 @@ function stripAndCrop(img) {
   // Sample the border ring to decide the card colour. Bias to the light case —
   // only a clearly dark border is treated as a black card — so a stray dark
   // frame can never turn on near-black knockout and eat a sprite's dark pixels.
-  let lightEdge = 0, darkEdge = 0;
+  let lightEdge = 0, darkEdge = 0, clearEdge = 0;
   const edgeLum = (px, py) => {
     const i = (py * w + px) * 4;
-    if (data[i + 3] < 40) return;                 // a transparent edge tells us nothing
+    if (data[i + 3] < 40) { clearEdge++; return; }   // a transparent edge tells us nothing about colour
     const mx = Math.max(data[i], data[i + 1], data[i + 2]);
     if (mx > 170) lightEdge++; else if (mx < 80) darkEdge++;
   };
   for (let px = 0; px < w; px++) { edgeLum(px, 0); edgeLum(px, h - 1); }
   for (let py = 0; py < h; py++) { edgeLum(0, py); edgeLum(w - 1, py); }
   const darkCard = darkEdge > lightEdge * 3;
+  // A genuinely transparent card (background already removed upstream) needs NO
+  // colour knockout at all — only alpha decides. Without this, a white building
+  // (the chapel) that touches the transparent edge would have its walls flooded
+  // away just like a white card, because white is "light". A real white/black/
+  // checker card has ZERO transparent border samples, so any transparent
+  // majority proves the background was removed — a sprite whose base touches
+  // the bottom edge must not flip this off (a 90% bar would).
+  const transparentCard = clearEdge > lightEdge + darkEdge;
   const isBg = i => {
     const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
     if (a < 40) return true;
+    if (transparentCard) return false;              // opaque pixels are all sprite
     const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
     if (darkCard) return mx < 64 && mx - mn < 22;   // black card → near-black only
     return mx > 198 && mx - mn < 16;                // white / checkerboard card → light only
@@ -185,12 +198,54 @@ function injectStyle() {
   const style = document.createElement('style');
   style.id = 'town-style';
   style.textContent = `
-    #town-grid { display:grid; grid-template-columns: 1.3fr 1fr; gap:16px; align-items:start; }
-    @media (max-width: 860px){ #town-grid { grid-template-columns:1fr; } }
-    #town-canvas { display:block; width:100%; border-radius:12px;
+    /* ONE HUD frame holds everything — the header band, the map, and a tabbed
+       side panel. Nothing sprawls outside it (the reference town UI): on desktop
+       the map sits beside the tabs; on a phone the tabs stack under the map. */
+    /* an author display rule would defeat the hidden attribute (base.css has the
+       same note for #appview) — so every element we toggle with .hidden gets an
+       explicit [hidden] guard: the grid (offline), the canvas and the office. */
+    #town-grid[hidden] { display:none; }
+    .town-hud-shell { border-radius:16px; overflow:hidden; background:var(--surface);
+      border:1px solid color-mix(in oklab,var(--ink-3) 28%,transparent);
+      box-shadow:0 1px 3px rgba(0,0,0,0.10); }
+    .town-title { display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-width:0;
+      font-weight:800; font-size:15px; color:var(--ink); }
+    @media (max-width:480px){ #town-morale .bar { width:72px; } }
+    .town-title .wx { font-weight:400; font-size:12px; color:var(--ink-3); }
+    .town-body { display:grid; grid-template-columns: minmax(0,1.35fr) minmax(280px,1fr); align-items:stretch; }
+    .town-view { min-width:0; padding:10px;
+      border-right:1px solid color-mix(in oklab,var(--ink-3) 18%,transparent); }
+    .town-side { min-width:0; display:flex; flex-direction:column; }
+    #town-canvas { display:block; width:100%; height:auto; border-radius:12px;
       background:#74b64e; border:1px solid color-mix(in oklab,var(--ink-3) 28%,transparent);
       image-rendering:pixelated; }
-    .town-feed { max-height:300px; overflow:auto; }
+    #town-canvas[hidden] { display:none; }
+    #town-pixeloffice { display:block; width:100%; height:440px; border:0; border-radius:12px; background:#141a26; }
+    #town-pixeloffice[hidden] { display:none; }
+    .town-tabs { display:flex; flex-wrap:wrap; gap:4px; padding:8px 8px 0;
+      border-bottom:1px solid color-mix(in oklab,var(--ink-3) 18%,transparent); }
+    .town-tab { flex:0 0 auto; display:inline-flex; align-items:center; gap:5px; padding:8px 11px;
+      border-radius:10px 10px 0 0; font-weight:700; font-size:11.5px; letter-spacing:.04em;
+      text-transform:uppercase; color:var(--ink-3); background:transparent; cursor:pointer;
+      border:1px solid transparent; border-bottom:0; white-space:nowrap; }
+    .town-tab:hover { color:var(--ink); background:color-mix(in oklab,var(--ink) 5%,transparent); }
+    .town-tab.on { color:var(--ink); margin-bottom:-1px;
+      background:color-mix(in oklab,var(--accent) 14%,var(--surface));
+      border-color:color-mix(in oklab,var(--ink-3) 24%,transparent);
+      border-bottom:1px solid color-mix(in oklab,var(--accent) 14%,var(--surface)); }
+    .town-tab .badge { display:inline-flex; align-items:center; justify-content:center; min-width:17px;
+      height:17px; padding:0 5px; border-radius:9px; font-size:10px; font-weight:800; color:#fff; background:#e0533a; }
+    .town-tab .badge[hidden] { display:none; }
+    .town-pane { padding:12px; overflow:auto; max-height:560px; }
+    .town-pane[hidden] { display:none; }
+    .town-pane h4 { margin:14px 0 6px; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-3); }
+    .town-feed { max-height:none; }
+    @media (max-width: 860px){
+      .town-body { grid-template-columns:1fr; }
+      .town-view { border-right:0; border-bottom:1px solid color-mix(in oklab,var(--ink-3) 18%,transparent); }
+      .town-pane { max-height:340px; }
+    }
+    @media (max-width: 480px){ .town-tab span { display:none; } .town-tab { padding:8px 10px; font-size:14px; } }
     .town-ev { padding:6px 0; border-top:1px solid color-mix(in oklab,var(--ink-3) 18%,transparent); font-size:13.5px; color:var(--ink-2); }
     .town-ev:first-child { border-top:0; }
     .town-ev b { color:var(--accent); }
@@ -216,7 +271,37 @@ function injectStyle() {
     #town-morale .bar { width:120px; height:8px; border-radius:5px; overflow:hidden;
       background:color-mix(in oklab,var(--ink-3) 24%,transparent);
       border:1px solid color-mix(in oklab,var(--ink-3) 28%,transparent); }
-    #town-morale .fill { display:block; height:100%; border-radius:5px; }`;
+    #town-morale .fill { display:block; height:100%; border-radius:5px; }
+    /* the village HUD: a game-style header band of stat chips + action buttons,
+       sitting over the map like the reference town */
+    #town-hud { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:0;
+      padding:10px 12px; border-radius:0;
+      background:linear-gradient(180deg, color-mix(in oklab,var(--accent) 12%,var(--surface-2)), var(--surface-2));
+      border:0; border-bottom:1px solid color-mix(in oklab,var(--ink-3) 26%,transparent);
+      box-shadow:inset 0 1px 0 color-mix(in oklab,#fff 22%,transparent); }
+    #town-stats { display:flex; flex-wrap:wrap; gap:8px; flex:1 1 280px; margin:0; }
+    #town-stats .stat { flex:0 1 auto; min-width:58px; display:flex; flex-direction:column;
+      gap:2px; padding:5px 9px; border-radius:10px;
+      background:color-mix(in oklab,var(--ink) 6%,var(--surface));
+      border:1px solid color-mix(in oklab,var(--ink-3) 20%,transparent); }
+    #town-stats .stat .k { font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); }
+    #town-stats .stat .v { font-size:16px; font-weight:800; line-height:1; color:var(--ink);
+      font-variant-numeric:tabular-nums; }
+    #town-stats .stat .v small { font-size:11px; font-weight:600; color:var(--ink-3); }
+    #town-stats .stat.work .v { color:#57b86a; }
+    #town-stats .stat.open .v { color:#e0b23a; }
+    #town-hud-actions { display:flex; flex-wrap:wrap; gap:8px; margin-left:auto; }
+    .town-hud-btn { display:inline-flex; align-items:center; gap:6px; padding:8px 12px; border-radius:10px;
+      font-weight:700; font-size:11.5px; letter-spacing:.04em; text-transform:uppercase; cursor:pointer;
+      color:var(--ink); background:color-mix(in oklab,var(--ink) 8%,var(--surface));
+      border:1px solid color-mix(in oklab,var(--ink-3) 32%,transparent);
+      box-shadow:inset 0 1px 0 color-mix(in oklab,#fff 25%,transparent); transition:transform .06s, background .15s; }
+    .town-hud-btn:hover { background:color-mix(in oklab,var(--accent) 22%,var(--surface)); }
+    .town-hud-btn:active { transform:translateY(1px); }
+    .town-hud-btn.on { background:color-mix(in oklab,var(--accent) 32%,var(--surface)); border-color:var(--accent); }
+    @media (max-width:560px){ #town-hud-actions .town-hud-btn span { display:none; } }
+    .town-flash { animation:townFlash 1.1s ease-out; }
+    @keyframes townFlash { 0%{ box-shadow:0 0 0 3px var(--accent); } 100%{ box-shadow:0 0 0 3px transparent; } }`;
   document.head.append(style);
 }
 
@@ -231,28 +316,58 @@ export function mount(root, tools) {
   refreshBtn.textContent = '⟳ Refresh';
   tools.append(refreshBtn);
 
+  // One HUD frame: the header band (title · stat chips · actions), the map, and a
+  // single tabbed side panel — Feed · Folks · Inbox · Reports · Charter · Talk.
+  // Every element id the painters use is preserved; only the framing changed.
   root.innerHTML = `
     <div id="town-grid">
-      <div>
-        <div class="panel"><h3>The town <span id="town-wx" style="font-weight:400;font-size:12px;color:var(--ink-3)"></span><span id="town-morale" hidden><span class="lbl"></span><span class="bar"><span class="fill"></span></span></span></h3><div id="town-alert" hidden style="margin:0 0 10px;padding:8px 11px;border-radius:8px;font-size:13px;line-height:1.45;background:color-mix(in oklab,#ff8a2b 16%,transparent);border:1px solid color-mix(in oklab,#ff8a2b 45%,transparent);color:var(--ink)"></div><canvas id="town-canvas"></canvas><iframe id="town-pixeloffice" title="Pixel Office" hidden style="display:block;width:100%;height:440px;border:0;border-radius:12px;background:#141a26"></iframe></div>
-        <div class="panel" style="margin-top:16px"><h3>Live feed</h3><div class="town-feed" id="town-feed"></div></div>
-      </div>
-      <div>
-        <div class="panel"><h3>📋 Corporate inbox</h3><div id="town-approvals"></div></div>
-        <div class="panel" style="margin-top:16px"><h3>Townsfolk</h3><div id="town-agents"></div></div>
-        <div class="panel" style="margin-top:16px"><h3>Work reports</h3><div id="town-reports"></div></div>
-        <div class="panel" id="town-ships-panel" style="margin-top:16px" hidden><h3>🚀 Shipped by the town</h3><div id="town-ships"></div></div>
-        <div class="panel" style="margin-top:16px"><h3>🏛️ Town charter</h3><div id="town-laws"></div></div>
-        <div class="panel" id="town-notes-panel" style="margin-top:16px" hidden><h3>🗒️ Notes desk</h3><div id="town-notes"></div></div>
-        <div class="panel" id="town-cal-panel" style="margin-top:16px" hidden><h3>📅 Community calendar</h3><div id="town-cal"></div></div>
-        <div class="panel" style="margin-top:16px"><h3>Talk to someone</h3>
-          <div class="town-chat-row">
-            <select id="town-who"></select>
-            <input id="town-say" placeholder="Say something…" autocomplete="off" maxlength="500">
-            <button class="btn small" id="town-send">Send</button>
-            <button class="btn small" id="town-meet" title="📣 Call a town meeting — everyone gathers and answers">📣</button>
+      <div class="town-hud-shell">
+        <div id="town-hud">
+          <div class="town-title">🏘️ The town <span id="town-wx" class="wx"></span><span id="town-morale" hidden><span class="lbl"></span><span class="bar"><span class="fill"></span></span></span></div>
+          <div id="town-stats"></div>
+          <div id="town-hud-actions">
+            <button class="town-hud-btn" id="hud-who" title="Who's who — the townsfolk">👥 <span>Who's Who</span></button>
+            <button class="town-hud-btn" id="hud-meet" title="Call a town meeting — everyone gathers and answers">📣 <span>Call Meeting</span></button>
+            <button class="town-hud-btn" id="hud-cmd" title="Command Center — the pixel office view">🏢 <span>Command Center</span></button>
           </div>
-          <div class="town-chatlog" id="town-chatlog"></div>
+        </div>
+        <div id="town-alert" hidden style="margin:10px 10px 0;padding:8px 11px;border-radius:8px;font-size:13px;line-height:1.45;background:color-mix(in oklab,#ff8a2b 16%,transparent);border:1px solid color-mix(in oklab,#ff8a2b 45%,transparent);color:var(--ink)"></div>
+        <div class="town-body">
+          <div class="town-view">
+            <canvas id="town-canvas"></canvas>
+            <iframe id="town-pixeloffice" title="Pixel Office" hidden></iframe>
+          </div>
+          <div class="town-side">
+            <div class="town-tabs" role="tablist">
+              <button class="town-tab" role="tab" data-tab="feed">📡 <span>Feed</span></button>
+              <button class="town-tab" role="tab" data-tab="folks">👥 <span>Folks</span></button>
+              <button class="town-tab" role="tab" data-tab="inbox">📋 <span>Inbox</span> <span class="badge" id="tab-badge-inbox" hidden>0</span></button>
+              <button class="town-tab" role="tab" data-tab="reports">📝 <span>Reports</span></button>
+              <button class="town-tab" role="tab" data-tab="charter">🏛️ <span>Charter</span></button>
+              <button class="town-tab" role="tab" data-tab="talk">💬 <span>Talk</span></button>
+            </div>
+            <div class="town-pane" data-pane="feed"><div class="town-feed" id="town-feed"></div></div>
+            <div class="town-pane" data-pane="folks" hidden><div id="town-agents"></div></div>
+            <div class="town-pane" data-pane="inbox" hidden><div id="town-approvals"></div></div>
+            <div class="town-pane" data-pane="reports" hidden>
+              <div id="town-reports"></div>
+              <section id="town-ships-panel" hidden><h4>🚀 Shipped by the town</h4><div id="town-ships"></div></section>
+            </div>
+            <div class="town-pane" data-pane="charter" hidden>
+              <div id="town-laws"></div>
+              <section id="town-notes-panel" hidden><h4>🗒️ Notes desk</h4><div id="town-notes"></div></section>
+              <section id="town-cal-panel" hidden><h4>📅 Community calendar</h4><div id="town-cal"></div></section>
+            </div>
+            <div class="town-pane" data-pane="talk" hidden>
+              <div class="town-chat-row">
+                <select id="town-who"></select>
+                <input id="town-say" placeholder="Say something…" autocomplete="off" maxlength="500">
+                <button class="btn small" id="town-send">Send</button>
+                <button class="btn small" id="town-meet" title="📣 Call a town meeting — everyone gathers and answers">📣</button>
+              </div>
+              <div class="town-chatlog" id="town-chatlog"></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -309,6 +424,43 @@ export function mount(root, tools) {
       feedPixelOffice(lastState);
     }
   });
+
+  // ---- the village HUD buttons (over the map, like the reference town) ----
+  const flash = el => { if (!el) return; el.classList.remove('town-flash'); void el.offsetWidth; el.classList.add('town-flash'); };
+  // ---- the HUD tabs: one side panel switched by the tab bar; the choice sticks ----
+  const tabBtns = [...root.querySelectorAll('.town-tab[data-tab]')];
+  const panes = [...root.querySelectorAll('.town-pane[data-pane]')];
+  function showTab(name) {
+    if (!panes.some(p => p.dataset.pane === name)) name = 'feed';
+    tabBtns.forEach(b => {
+      const on = b.dataset.tab === name;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    panes.forEach(p => { p.hidden = p.dataset.pane !== name; });
+    // persist only a real change — the initial restore must not write (every
+    // save fires the store hooks, and a no-op write on every mount is churn)
+    if (load('town.tab', 'feed') !== name) save('town.tab', name);
+  }
+  tabBtns.forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+  showTab(load('town.tab', 'feed'));
+  root.querySelector('#hud-who')?.addEventListener('click', () => {
+    showTab('folks');
+    const side = root.querySelector('.town-side');
+    if (window.innerWidth <= 860) side?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    flash(side);
+  });
+  root.querySelector('#hud-meet')?.addEventListener('click', () => {
+    showTab('talk');                                    // the meeting plays out in the Talk pane
+    root.querySelector('#town-meet')?.click();
+  });
+  const hudCmd = root.querySelector('#hud-cmd');
+  hudCmd?.addEventListener('click', () => {
+    officeBtn.click();                                  // reuse the real toggle
+    hudCmd.classList.toggle('on', officeOn);
+    hudCmd.querySelector('span').textContent = officeOn ? 'Back to Map' : 'Command Center';
+  });
+
   const ctx = canvas.getContext('2d');
   const art = {};
   for (const kind of Object.keys(TOWN_ART_SRC)) loadTownArt(kind).then(img => { if (img) art[kind] = img; });
@@ -323,12 +475,26 @@ export function mount(root, tools) {
     img.decode().then(() => { if (img.naturalWidth) office[name] = img; }).catch(() => {});
   }
 
-  const CELL_H = 210;      // only spaces the district POINTS out; nothing is penned in it
   let districts = {};      // loc key -> {x,y,label,key,clearing} — x/y is where its building stands
+  let townCenter = { x: 470, y: 318 };  // the fountain/plaza the town rings — set by syncWorld
   let placedStructs = [];  // structures with computed x/y
   // where the nth structure of a district sits, relative to that district's point
   const STRUCT_OFF = [[-84, 30], [84, 30], [-106, 62], [106, 62], [-44, 78], [44, 78], [-128, 4], [128, 4]];
-  let decor = [];          // grass tufts and flowers, scattered over the whole field
+  let decor = [];          // flat ground litter (flower clusters, grass tufts), painted under everything
+  let greenery = [];       // trees and shrubs — they STAND, so they sort into the depth pass with the walkers
+  let groundTex = null;    // the grass texture, painted once per world sync onto an offscreen canvas
+  // what the residents have done to the town. All four are OPTIONAL in state —
+  // the Gas Town bridge and older engines never send them — and the map must
+  // look exactly as before when they're missing.
+  let wallProgress = 100;  // s.wall.progress, 0-100: how much of the town wall the villagers have built
+  let rooms = {};          // s.rooms: house key -> extra rooms; their decor lives in interiors['<house>/<slug>']
+  let roomKey = null;      // which interiors[] key drawRoom paints while inside a house that has rooms
+  let roomTabs = [];       // hit-rects of the room tabs along the top of a room, for the click handler
+  // yards[key] props and addons[key] structures hang off each house's district
+  // entry (d.yard, d.addons), validated once in syncWorld
+  const YARD_KINDS = new Set(['bench', 'flowers', 'fence', 'tree', 'bush', 'lantern', 'mailbox', 'pond', 'path', 'sign']);
+  const ADDON_KINDS = new Set(['porch', 'garage', 'tower', 'greenhouse', 'workshop', 'upstairs', 'balcony', 'chimney']);
+  const TOP_KINDS = new Set(['upstairs', 'balcony', 'chimney']);   // these only make sense on top
   const sprites = new Map();
   const bubblesShown = new Set();
   let puffs = [];      // short-lived particles: chimney smoke, walking dust
@@ -361,18 +527,57 @@ export function mount(root, tools) {
 
   // deterministic scatter — the same tuft grows in the same spot every frame,
   // now over the WHOLE field instead of inside a plot
+  // Everything green is precomputed here, once per world sync, never per frame:
+  // the grass texture (an offscreen canvas), the flat ground litter, and the
+  // trees and shrubs. Placement is deterministic (hashStr) so the same bush
+  // grows in the same spot every frame — and kept OFF the plaza disc, off every
+  // building's footprint, and off the wall band, so nothing sprouts on a roof.
   function makeDecor() {
-    decor = [];
+    decor = []; greenery = [];
     const { width: W, height: H } = canvas;
-    const n = Math.max(24, Math.round(W * H / 2200));
+    const cx = townCenter.x, cy = townCenter.y;
+    // hashStr is a plain string hash, so sequential seeds land on a diagonal and
+    // everything clumps; a finalizer mix spreads them evenly across the field
+    const mix = n => { n = Math.imul(n ^ (n >>> 16), 0x45d9f3b); n = Math.imul(n ^ (n >>> 16), 0x45d9f3b); return (n ^ (n >>> 16)) >>> 0; };
+    const clear = (x, y, pad = 0) => {
+      if (Math.hypot(x - cx, y - cy) < 96 + pad) return false;               // the plaza + fountain
+      if (x < WALL + 8 + pad || x > W - WALL - 8 - pad || y < WALL + 8 + pad || y > H - WALL - 8 - pad) return false;
+      for (const d of Object.values(districts)) {                            // every building's footprint
+        if (Math.abs(x - d.x) < 58 + pad && y > d.y - 100 - pad && y < d.y + 24 + pad) return false;
+      }
+      return true;
+    };
+    // the grass itself: a subtle two-tone checker of 14px cells, two greens close
+    // in value so it reads as texture rather than a grid, with a few darker specks
+    const g = document.createElement('canvas');
+    g.width = W; g.height = H;
+    const gx = g.getContext('2d');
+    gx.fillStyle = '#74b64e'; gx.fillRect(0, 0, W, H);
+    const tones = ['#72b44c', '#78ba52', '#6fb049', '#7bbd55'];
+    for (let y = 0; y < H; y += 14) for (let x = 0; x < W; x += 14) {
+      const h = hashStr(`cell:${x}:${y}`);
+      gx.fillStyle = tones[h % tones.length];
+      gx.fillRect(x, y, 14, 14);
+      if (h % 11 === 0) { gx.fillStyle = 'rgba(60,120,45,0.35)'; gx.fillRect(x + (h >>> 4) % 12, y + (h >>> 8) % 12, 2, 2); }
+    }
+    groundTex = g;
+    // flat litter: grass tufts and small flower clusters, all over the field
+    const n = Math.max(40, Math.round(W * H / 2600));
     for (let i = 0; i < n; i++) {
       const h = hashStr(`grass:${i}`);
-      decor.push({
-        x: 6 + h % Math.max(1, W - 12),
-        y: 6 + (h >>> 7) % Math.max(1, H - 12),
-        kind: i % 3 === 2 ? 'flower' : 'tuft',
-        tint: ['#ffd94a', '#ff8bb3', '#fdfdf4'][h % 3],
-      });
+      const x = 6 + mix(h) % Math.max(1, W - 12), y = 6 + mix(h ^ 0x9e3779b9) % Math.max(1, H - 12);
+      if (!clear(x, y)) continue;
+      decor.push({ x, y, kind: i % 4 === 3 ? 'flowers' : 'tuft', seed: h });
+    }
+    // standing greenery: trees and shrubs, sorted into the depth pass later so a
+    // villager walks behind a tree as naturally as behind a house
+    const m = Math.max(30, Math.round(W * H / 6500));   // ~90 candidates; the clear() sieve keeps roughly a third
+    for (let i = 0; i < m; i++) {
+      const h = hashStr(`green:${i}`);
+      const x = 20 + mix(h) % Math.max(1, W - 40), y = 40 + mix(h ^ 0x9e3779b9) % Math.max(1, H - 60);
+      if (!clear(x, y, 14)) continue;
+      const tree = i % 3 !== 1;
+      greenery.push({ x, y, kind: tree ? 'tree' : 'shrub', size: tree ? 0.85 + (h % 5) * 0.09 : 0.8 + (h % 4) * 0.12 });
     }
   }
 
@@ -390,9 +595,10 @@ export function mount(root, tools) {
     return pts;
   }
 
-  // villagers roam the whole canvas; a margin keeps them (and their name
-  // plates and bubbles) off the very edge
-  const FIELD = 26;
+  // villagers roam the whole canvas; the margin keeps them (and their name
+  // plates and bubbles) inside the town wall that rings the field
+  const WALL = 22;         // stone wall thickness around the field
+  const FIELD = WALL + 16;
   const onField = (x, y) => ({
     x: Math.max(FIELD, Math.min(canvas.width - FIELD, x)),
     y: Math.max(FIELD + 22, Math.min(canvas.height - FIELD, y)),
@@ -418,24 +624,80 @@ export function mount(root, tools) {
     interiors = s.interiors || {};
     const keys = Object.keys(s.map || {});
     if (!keys.length) { mapReady = false; return; }
-    const cols = keys.length > 4 ? 3 : 2;
-    const rows = Math.ceil(keys.length / cols);
-    const W = 900, H = rows * CELL_H;
+    // A village square, not a spreadsheet: the plaza (HQ) stands at the town
+    // centre by the fountain, and every other district rings it, evenly spaced
+    // on an ellipse. The canvas is a fixed landscape so the ring always reads.
+    const W = 940, H = 620;
     if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+    townCenter = { x: W / 2, y: H / 2 + 10 };
     districts = {};
-    keys.forEach((k, i) => {
-      // the grid only spaces the district points out — x/y is the spot its
-      // building's feet stand on, and that's all a district is now
-      const cx = (i % cols) * (W / cols) + W / cols / 2;
-      const cy = Math.floor(i / cols) * CELL_H + 118;
-      districts[k] = { key: k, x: cx, y: cy, label: s.map[k], clearing: makeClearing(k, cx, cy) };
+    // The villagers design the town: `layout[key] = {x,y}` (0–100 field coords)
+    // is where they chose to put a building. We honor it; anything not yet placed
+    // falls back to a tidy ring around the plaza.
+    const layout = (s.layout && typeof s.layout === 'object') ? s.layout : {};
+    const padX = 66, topY = WALL + 104, botY = H - WALL - 30;   // keep roofs and name plates on-canvas
+    const toPx = p => ({
+      x: Math.max(padX, Math.min(W - padX, (Number(p.x) || 50) / 100 * W)),
+      y: Math.max(topY, Math.min(botY, (Number(p.y) || 50) / 100 * H)),
     });
+
+    // the plaza (HQ) always stands just above the central fountain — the one
+    // fixed point the square is built around; agents move everything else
+    const hasPlaza = keys.includes('plaza');
+    if (hasPlaza) {
+      const cx = townCenter.x, cy = townCenter.y - 104;
+      districts.plaza = { key: 'plaza', x: cx, y: cy, label: s.map.plaza, clearing: makeClearing('plaza', cx, cy) };
+    }
+    // ring only the buildings nobody has placed yet
+    const ring = keys.filter(k => k !== 'plaza' && !layout[k]);
+    const n = ring.length;
+    const rx = Math.max(200, Math.min(360, 150 + n * 24));
+    const ry = Math.max(140, Math.min(188, 100 + n * 16));   // capped so a roof clears the top wall
+    let ri = 0;
+    for (const k of keys) {
+      if (k === 'plaza') continue;
+      let cx, cy;
+      if (layout[k]) {
+        const p = toPx(layout[k]); cx = p.x; cy = p.y;         // the spot its resident chose
+      } else {
+        const a = -Math.PI / 2 + ((ri + 0.5) / Math.max(1, n)) * Math.PI * 2; ri++;
+        cx = townCenter.x + Math.cos(a) * rx; cy = townCenter.y + Math.sin(a) * ry;
+      }
+      districts[k] = { key: k, x: cx, y: cy, label: s.map[k], clearing: makeClearing(k, cx, cy) };
+    }
+    // What the residents have done to the town — every field OPTIONAL (the Gas
+    // Town bridge and older engines send none of them), validated once here so
+    // the per-frame drawers never see a bad kind or an off-map offset.
+    const obj = v => (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
+    const wp = Number(s.wall && s.wall.progress);
+    wallProgress = Number.isFinite(wp) ? Math.max(0, Math.min(100, wp)) : 100;   // no field → the finished wall
+    rooms = {};
+    for (const [hk, list] of Object.entries(obj(s.rooms))) {
+      if (!districts[hk] || !Array.isArray(list)) continue;
+      rooms[hk] = list.filter(r => r && typeof r.key === 'string').slice(0, 4)
+        .map(r => ({ key: r.key, name: String(r.name || 'Room').slice(0, 18) }));
+    }
+    const yards = obj(s.yards), addons = obj(s.addons);
+    for (const d of Object.values(districts)) {
+      if (!d.key.startsWith('house_')) continue;
+      d.yard = (Array.isArray(yards[d.key]) ? yards[d.key] : [])
+        .filter(it => it && YARD_KINDS.has(it.kind) && Number.isFinite(Number(it.x)) && Number.isFinite(Number(it.y)))
+        .slice(0, 12)
+        .map(it => ({ kind: it.kind, x: Math.max(-90, Math.min(90, Number(it.x))), y: Math.max(-10, Math.min(70, Number(it.y))) }));
+      const bySide = {};
+      for (const a of (Array.isArray(addons[d.key]) ? addons[d.key] : [])) {
+        if (!a || !ADDON_KINDS.has(a.kind)) continue;
+        const side = TOP_KINDS.has(a.kind) ? 'top' : (a.side === 'left' || a.side === 'right' || a.side === 'top') ? a.side : 'right';
+        bySide[side] = { kind: a.kind, side };
+      }
+      d.addons = Object.values(bySide);
+    }
     makeDecor();
 
     // the owner spawns by the plaza fountain — first visit, or a saved spot
     // that no longer fits the map
     if (!Number.isFinite(me.x) || !Number.isFinite(me.y) || me.x < 0 || me.x > W || me.y < 0 || me.y > H) {
-      me.x = W / 2 + 34; me.y = H / 2 + 22; me.tx = me.x; me.ty = me.y;
+      me.x = townCenter.x + 40; me.y = townCenter.y + 30; me.tx = me.x; me.ty = me.y;
     }
 
     // agent-built structures cluster around their district's point, off to the
@@ -463,6 +725,7 @@ export function mount(root, tools) {
         sp.tx = p.x; sp.ty = p.y;
       }
       sp.name = a.name;
+      sp.busy = !!a.busy;
       sp.face = AGENT_FACES[hashStr(a.id) % AGENT_FACES.length];
       sp.hue = hashStr(a.name || a.id) % 360;
       // in-world hires share one sprite, hue-shifted per person at draw time
@@ -562,6 +825,7 @@ export function mount(root, tools) {
         && Math.hypot(me.x - pendingEnter.door.x, me.y - pendingEnter.door.y) < 14) {
         inside = pendingEnter;
         pendingEnter = null;
+        roomKey = null; roomTabs = [];     // always arrive in the main room
       }
     }
     // the Test Kitchen's chimney smokes while the town is awake
@@ -569,6 +833,12 @@ export function mount(root, tools) {
     if (kd && now - lastSmoke > 750) {
       lastSmoke = now;
       puffs.push({ kind: 'smoke', x: kd.x + 20 + (Math.random() * 6 - 3), y: kd.y - 90, born: now });
+      // and every house whose resident built a chimney add-on puffs too
+      for (const d of Object.values(districts)) {
+        if (Array.isArray(d.addons) && d.addons.some(a => a.kind === 'chimney')) {
+          puffs.push({ kind: 'smoke', x: d.x + 23 + (Math.random() * 4 - 2), y: d.y - 124, born: now });
+        }
+      }
     }
     puffs = puffs.filter(p => now - p.born < (p.kind === 'smoke' ? 2400 : 550));
     if (inside) drawRoom(now, t); else draw(now, t);
@@ -586,14 +856,316 @@ export function mount(root, tools) {
     ctx.fillText(text, x, y);
   }
 
+  // the central fountain: a stone basin, a raised inner bowl of water, a little
+  // spout at the top and rings of ripple spreading out across the pool
+  function drawFountain(cx, cy, t) {
+    // outer basin rim
+    ctx.fillStyle = '#8f887b';
+    ctx.beginPath(); ctx.ellipse(cx, cy + 2, 46, 34, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#a7a094';
+    ctx.beginPath(); ctx.ellipse(cx, cy, 46, 34, 0, 0, Math.PI * 2); ctx.fill();
+    // water
+    ctx.fillStyle = '#4f9fc4';
+    ctx.beginPath(); ctx.ellipse(cx, cy, 37, 26, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#63b4d6';
+    ctx.beginPath(); ctx.ellipse(cx, cy - 1, 33, 22, 0, 0, Math.PI * 2); ctx.fill();
+    // ripples spreading out over the pool
+    for (let k = 0; k < 3; k++) {
+      const r = (t / 30 + k * 8) % 24;
+      ctx.strokeStyle = `rgba(255,255,255,${Math.max(0, 0.5 - r / 32)})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.ellipse(cx, cy, 6 + r * 1.3, 4 + r * 0.9, 0, 0, Math.PI * 2); ctx.stroke();
+    }
+    // stone pedestal + a bobbing spout of water
+    ctx.fillStyle = '#8f887b';
+    ctx.fillRect(cx - 5, cy - 20, 10, 20);
+    ctx.fillStyle = '#a7a094';
+    ctx.beginPath(); ctx.ellipse(cx, cy - 20, 9, 4, 0, 0, Math.PI * 2); ctx.fill();
+    const spout = 8 + Math.sin(t / 160) * 2;
+    ctx.fillStyle = 'rgba(150,210,235,0.85)';
+    ctx.fillRect(cx - 2, cy - 20 - spout, 4, spout);
+    ctx.beginPath(); ctx.arc(cx, cy - 20 - spout, 3, 0, Math.PI * 2); ctx.fill();
+    // droplets arcing out of the spout on little parabolas, phase-offset so the
+    // fountain is always mid-splash somewhere; they fade as they meet the pool
+    for (let i = 0; i < 8; i++) {
+      const ph = ((t / 900) + i / 8) % 1;
+      const side = i % 2 ? 1 : -1, spread = 14 + (i % 4) * 4;
+      const x = cx + side * ph * spread;
+      const y = (cy - 24 - spout) + ph * 26 - 4 * 15 * ph * (1 - ph);
+      ctx.fillStyle = `rgba(190,230,250,${0.9 - ph * 0.7})`;
+      ctx.beginPath(); ctx.arc(x, y, 1.6 + ph, 0, Math.PI * 2); ctx.fill();
+    }
+    // a shimmering surface: short highlight dashes that drift across the pool
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = 1.2;
+    for (let i = 0; i < 5; i++) {
+      const dx = ((t / 60 + i * 37) % 52) - 26, dy = Math.sin(t / 400 + i) * 6 + (i - 2) * 5;
+      ctx.beginPath(); ctx.moveTo(cx + dx - 4, cy + dy); ctx.lineTo(cx + dx + 4, cy + dy); ctx.stroke();
+    }
+  }
+
+  // The town wall is something the villagers BUILD (state.wall.progress, 0-100).
+  // It grows clockwise from the top-left corner around the perimeter, with a
+  // permanent gate gap centred on the bottom edge. 0 → an open field with only a
+  // faint survey line; 100 → the full crenellated stone wall. No field → 100, so
+  // the Gas Town bridge and older engines keep the finished look.
+  const GATE = 90;
+  function wallEdges(W, H) {
+    const s = WALL, g = GATE / 2;
+    return [
+      { h: true,  y: 0,     from: 0,         to: W,          top: true },
+      { h: false, x: W - s, from: 0,         to: H },
+      { h: true,  y: H - s, from: W,         to: W / 2 + g },        // bottom, right of the gate
+      { h: true,  y: H - s, from: W / 2 - g, to: 0 },                // bottom, left of the gate
+      { h: false, x: 0,     from: H,         to: 0 },
+    ];
+  }
+  function drawWall(W, H) {
+    const s = WALL, p = wallProgress;
+    if (p <= 0) {                                   // nothing built yet: just the survey line
+      ctx.save();
+      ctx.setLineDash([6, 8]); ctx.strokeStyle = 'rgba(40,40,30,0.22)'; ctx.lineWidth = 2;
+      ctx.strokeRect(s / 2, s / 2, W - s, H - s);
+      ctx.restore();
+      return;
+    }
+    const edges = wallEdges(W, H);
+    const total = edges.reduce((n, e) => n + Math.abs(e.to - e.from), 0);
+    let left = total * Math.min(100, p) / 100;
+    ctx.strokeStyle = 'rgba(60,55,48,0.35)'; ctx.lineWidth = 1;
+    for (const e of edges) {
+      if (left <= 0) break;
+      const len = Math.abs(e.to - e.from), seg = Math.min(left, len), dir = Math.sign(e.to - e.from);
+      const a = e.from, b = e.from + dir * seg;
+      const lo = Math.min(a, b), hi = Math.max(a, b);
+      ctx.fillStyle = '#8a8378';
+      if (e.h) {
+        ctx.fillRect(lo, e.y, hi - lo, s);
+        for (let x = lo - (lo % 16); x < hi; x += 16) { ctx.beginPath(); ctx.moveTo(x, e.y); ctx.lineTo(x, e.y + s); ctx.stroke(); }
+        ctx.fillStyle = 'rgba(0,0,0,0.16)';
+        if (e.top) ctx.fillRect(lo, s, hi - lo, 4);
+        if (e.top) { ctx.fillStyle = '#9a9286'; for (let x = lo + 6; x < hi - 12; x += 26) ctx.fillRect(x, s - 5, 14, 5); }
+      } else {
+        ctx.fillRect(e.x, lo, s, hi - lo);
+        for (let y = lo - (lo % 16); y < hi; y += 16) { ctx.beginPath(); ctx.moveTo(e.x, y); ctx.lineTo(e.x + s, y); ctx.stroke(); }
+        if (e.x === 0) { ctx.fillStyle = 'rgba(0,0,0,0.16)'; ctx.fillRect(s, lo, 4, hi - lo); }
+      }
+      left -= seg;
+    }
+    // gate posts once the wall has reached the gate, and a progress note while building
+    const reached = total * p / 100 >= W + H + (W / 2 - GATE / 2);
+    if (reached) {
+      ctx.fillStyle = '#6f6a60';
+      ctx.fillRect(W / 2 - GATE / 2 - 8, H - s - 10, 8, s + 10);
+      ctx.fillRect(W / 2 + GATE / 2, H - s - 10, 8, s + 10);
+    }
+    if (p < 100) label(`town wall ${Math.round(p)}% built`, W / 2, H - s - 14, 10);
+  }
+
+  // ---- the greenery and the residents' yard props, all drawn from primitives ----
+  function drawTree(x, y, k = 1) {
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.beginPath(); ctx.ellipse(x, y + 2, 14 * k, 5 * k, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#7a5230'; ctx.fillRect(x - 3 * k, y - 16 * k, 6 * k, 17 * k);
+    ctx.fillStyle = '#3f8f3a'; ctx.beginPath(); ctx.arc(x, y - 24 * k, 16 * k, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#56ac48'; ctx.beginPath(); ctx.arc(x - 4 * k, y - 29 * k, 12 * k, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#7fcb66'; ctx.beginPath(); ctx.arc(x - 8 * k, y - 34 * k, 5 * k, 0, TAU); ctx.fill();
+  }
+  function drawShrub(x, y, k = 1) {
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.beginPath(); ctx.ellipse(x, y + 2, 13 * k, 4 * k, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#3d8a38'; ctx.beginPath(); ctx.ellipse(x, y - 4 * k, 14 * k, 9 * k, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#55a847'; ctx.beginPath(); ctx.ellipse(x - 2 * k, y - 8 * k, 11 * k, 8 * k, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#7fc86a'; ctx.beginPath(); ctx.ellipse(x - 5 * k, y - 12 * k, 5 * k, 3 * k, 0, 0, TAU); ctx.fill();
+  }
+  function drawFlowers(x, y, seed) {
+    const cols = ['#ff6b6b', '#ffd94a', '#ff8bb3', '#fdfdf4', '#a78bfa'];
+    ctx.fillStyle = '#5da33c';
+    ctx.fillRect(x - 3, y + 1, 2, 3); ctx.fillRect(x + 2, y, 2, 4);
+    for (let i = 0; i < 4; i++) {
+      ctx.fillStyle = cols[(seed + i * 7) % cols.length];
+      ctx.fillRect(x - 5 + ((seed >>> (i * 3)) % 10), y - 4 + ((seed >>> (i * 2 + 1)) % 5), 3, 3);
+    }
+  }
+  function drawYardItem(kind, x, y, now, t) {
+    ctx.save();
+    switch (kind) {
+      case 'bench':
+        ctx.fillStyle = '#7a5230'; ctx.fillRect(x - 12, y - 6, 3, 8); ctx.fillRect(x + 9, y - 6, 3, 8);
+        ctx.fillStyle = '#a67c52'; ctx.fillRect(x - 14, y - 9, 28, 4); ctx.fillRect(x - 14, y - 15, 28, 3);
+        break;
+      case 'flowers': drawFlowers(x, y, hashStr(`yf:${x}:${y}`)); drawFlowers(x + 9, y + 3, hashStr(`yg:${x}:${y}`)); break;
+      case 'fence':
+        ctx.fillStyle = '#d9c7a3';
+        for (let i = -2; i <= 2; i++) ctx.fillRect(x + i * 9 - 1, y - 14, 3, 14);
+        ctx.fillRect(x - 20, y - 9, 40, 2); ctx.fillRect(x - 20, y - 4, 40, 2);
+        break;
+      case 'tree': drawTree(x, y, 0.9); break;
+      case 'bush': drawShrub(x, y, 0.9); break;
+      case 'lantern': {
+        const g = ctx.createRadialGradient(x, y - 18, 2, x, y - 18, 22);
+        g.addColorStop(0, 'rgba(255,214,130,0.35)'); g.addColorStop(1, 'rgba(255,214,130,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y - 18, 22, 0, TAU); ctx.fill();
+        ctx.fillStyle = '#4a4a4a'; ctx.fillRect(x - 1, y - 16, 3, 16);
+        ctx.fillStyle = (now % 1400) < 1100 ? '#ffd27a' : '#f4b95a'; ctx.fillRect(x - 4, y - 22, 9, 7);
+        break;
+      }
+      case 'mailbox':
+        ctx.fillStyle = '#6b5030'; ctx.fillRect(x - 1, y - 14, 3, 14);
+        ctx.fillStyle = '#3b6fb6'; ctx.fillRect(x - 6, y - 20, 13, 7);
+        ctx.fillStyle = '#e0533a'; ctx.fillRect(x + 6, y - 24, 2, 5);
+        break;
+      case 'pond':
+        ctx.fillStyle = '#7fc0dc'; ctx.beginPath(); ctx.ellipse(x, y, 18, 10, 0, 0, TAU); ctx.fill();
+        ctx.fillStyle = '#4f9fc4'; ctx.beginPath(); ctx.ellipse(x, y, 15, 8, 0, 0, TAU); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(x - 6 + Math.sin(t / 500) * 3, y - 3, 6, 1.5);
+        break;
+      case 'path':
+        ctx.fillStyle = '#d9b380'; ctx.beginPath(); ctx.ellipse(x, y, 16, 7, 0, 0, TAU); ctx.fill();
+        break;
+      case 'sign':
+        ctx.fillStyle = '#6b5030'; ctx.fillRect(x - 1, y - 16, 3, 16);
+        ctx.fillStyle = '#a67c52'; ctx.fillRect(x - 10, y - 24, 21, 10);
+        ctx.fillStyle = '#3a2a18'; ctx.fillRect(x - 7, y - 21, 14, 1.5); ctx.fillRect(x - 7, y - 17.5, 10, 1.5);
+        break;
+    }
+    ctx.restore();
+  }
+  // structural add-ons adjoining a house: side lean-tos are drawn BEFORE the
+  // house sprite (so the house overlaps their inner edge and they read as
+  // attached); top pieces sit on the roof line and are drawn after it
+  function drawAddon(kind, side, hx, hy) {
+    ctx.save();
+    if (side === 'top') {
+      if (kind === 'upstairs') {
+        ctx.fillStyle = '#b98a63'; ctx.fillRect(hx - 34, hy - 122, 68, 24);
+        ctx.fillStyle = '#7a4d2e'; ctx.beginPath(); ctx.moveTo(hx - 40, hy - 122); ctx.lineTo(hx, hy - 138); ctx.lineTo(hx + 40, hy - 122); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#ffe9a8'; ctx.fillRect(hx - 22, hy - 116, 10, 10); ctx.fillRect(hx + 12, hy - 116, 10, 10);
+      } else if (kind === 'balcony') {
+        ctx.fillStyle = '#8a6a48'; ctx.fillRect(hx - 30, hy - 58, 60, 5);
+        ctx.fillStyle = '#c9a87c'; for (let i = -3; i <= 3; i++) ctx.fillRect(hx + i * 9 - 1, hy - 70, 2, 12);
+        ctx.fillRect(hx - 30, hy - 70, 60, 2);
+      } else if (kind === 'chimney') {
+        ctx.fillStyle = '#8a4a3a'; ctx.fillRect(hx + 18, hy - 120, 10, 24);
+        ctx.fillStyle = '#5a3028'; ctx.fillRect(hx + 16, hy - 124, 14, 5);
+      }
+    } else {
+      const dir = side === 'left' ? -1 : 1, x0 = hx + dir * 46;           // the lean-to's near edge
+      const bx = dir === -1 ? x0 - 36 : x0;                                // its left edge
+      const roof = () => { ctx.fillStyle = '#7a4d2e'; ctx.beginPath(); ctx.moveTo(bx - 3, hy - 40); ctx.lineTo(bx + 18, hy - 52); ctx.lineTo(bx + 39, hy - 40); ctx.closePath(); ctx.fill(); };
+      if (kind === 'porch') {
+        ctx.fillStyle = '#a67c52'; ctx.fillRect(bx, hy - 6, 36, 6);
+        ctx.fillStyle = '#c9a87c'; ctx.fillRect(bx + 3, hy - 40, 4, 34); ctx.fillRect(bx + 29, hy - 40, 4, 34);
+        roof();
+      } else if (kind === 'garage') {
+        ctx.fillStyle = '#b98a63'; ctx.fillRect(bx, hy - 40, 36, 40);
+        ctx.fillStyle = '#5a4a3a'; ctx.fillRect(bx + 5, hy - 26, 26, 26);
+        ctx.fillStyle = '#8a7a6a'; for (let i = 0; i < 4; i++) ctx.fillRect(bx + 5, hy - 22 + i * 6, 26, 1);
+        roof();
+      } else if (kind === 'greenhouse') {
+        ctx.fillStyle = 'rgba(207,233,221,0.9)'; ctx.fillRect(bx, hy - 40, 36, 40);
+        ctx.strokeStyle = 'rgba(70,110,90,0.5)'; ctx.lineWidth = 1;
+        for (let i = 1; i < 4; i++) { ctx.beginPath(); ctx.moveTo(bx + i * 9, hy - 40); ctx.lineTo(bx + i * 9, hy); ctx.stroke(); }
+        for (let i = 1; i < 4; i++) { ctx.beginPath(); ctx.moveTo(bx, hy - i * 10); ctx.lineTo(bx + 36, hy - i * 10); ctx.stroke(); }
+        ctx.fillStyle = 'rgba(120,180,140,0.9)'; ctx.beginPath(); ctx.moveTo(bx - 3, hy - 40); ctx.lineTo(bx + 18, hy - 52); ctx.lineTo(bx + 39, hy - 40); ctx.closePath(); ctx.fill();
+      } else if (kind === 'workshop') {
+        ctx.fillStyle = '#9c7a58'; ctx.fillRect(bx, hy - 40, 36, 40);
+        ctx.fillStyle = '#ffe9a8'; ctx.fillRect(bx + 6, hy - 30, 10, 10);
+        ctx.fillStyle = '#5a3a2a'; ctx.fillRect(bx + 22, hy - 20, 10, 20);
+        ctx.fillStyle = '#d9c7a3'; ctx.fillRect(bx + 20, hy - 34, 14, 6);
+        roof();
+      } else if (kind === 'tower') {
+        const tx = dir === -1 ? x0 - 22 : x0;
+        ctx.fillStyle = '#a8a29a'; ctx.fillRect(tx, hy - 92, 22, 92);
+        ctx.fillStyle = '#7a4d2e'; ctx.beginPath(); ctx.moveTo(tx - 4, hy - 92); ctx.lineTo(tx + 11, hy - 116); ctx.lineTo(tx + 26, hy - 92); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#ffe9a8'; ctx.fillRect(tx + 8, hy - 80, 6, 9); ctx.fillRect(tx + 8, hy - 50, 6, 9);
+      }
+    }
+    ctx.restore();
+  }
+
+  // a small looping animation at each building that says what its resident does —
+  // Max's barbell at the gym, steam over Spork's kitchen, sparks at Ctrl's bench,
+  // and so on. `active` (the resident is busy on the job) makes it livelier; even
+  // idle it keeps a gentle motion so the town always feels lived-in.
+  const TAU = Math.PI * 2;
+  function drawActivity(key, x, y, now, t, active) {
+    const amp = active ? 1 : 0.5;
+    ctx.save();
+    if (key === 'gym') {                       // Max doing reps: a bobbing barbell
+      const by = y - 30 + Math.sin(t / 170) * 8 * amp;
+      ctx.strokeStyle = '#3a3f4a'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(x - 13, by); ctx.lineTo(x + 13, by); ctx.stroke();
+      ctx.fillStyle = '#e0533a';
+      ctx.beginPath(); ctx.arc(x - 13, by, 5, 0, TAU); ctx.arc(x + 13, by, 5, 0, TAU); ctx.fill();
+    } else if (key === 'kitchen') {            // Spork cooking: steam off the pot
+      for (let k = 0; k < 3; k++) {
+        const p = ((t / 22 + k * 8) % 26) / 26;
+        ctx.fillStyle = `rgba(240,240,235,${(1 - p) * 0.55 * amp})`;
+        ctx.beginPath(); ctx.arc(x + Math.sin(now / 300 + k) * 4, y - 14 - p * 26, 2.5 + p * 3, 0, TAU); ctx.fill();
+      }
+    } else if (key === 'repairshop') {         // Ctrl at the bench: solder sparks
+      if (Math.random() < (active ? 0.55 : 0.18)) {
+        for (let k = 0; k < 3; k++) {
+          ctx.fillStyle = ['#ffd94a', '#ff9a3a', '#ffffff'][k % 3];
+          ctx.fillRect(x + 6 + Math.random() * 12 - 6, y - 18 + Math.random() * 10 - 5, 2, 2);
+        }
+      }
+    } else if (key === 'library') {            // Draco writing: a page drifting up
+      const p = ((t / 26) % 34) / 34;
+      ctx.fillStyle = `rgba(250,244,220,${(1 - p) * 0.9})`;
+      ctx.fillRect(x + 15, y - 26 - p * 24, 6, 8);
+    } else if (key === 'studio') {             // Meta editing: a spinning cube + REC
+      const a = now / 600, s = 6, w = s * Math.abs(Math.cos(a));
+      ctx.strokeStyle = '#8ab4ff'; ctx.lineWidth = 1.5;
+      ctx.strokeRect(x + 14 - w, y - 26 - s, w * 2, s * 2);
+      if ((now % 1300) < 750) { ctx.fillStyle = '#ff5a5a'; ctx.beginPath(); ctx.arc(x - 16, y - 26, 3, 0, TAU); ctx.fill(); }
+    } else if (key === 'chapel') {             // Arise: a warm glow over the chapel
+      const g = (0.22 + Math.sin(now / 520) * 0.12) * amp;
+      const grd = ctx.createRadialGradient(x, y - 42, 2, x, y - 42, 30);
+      grd.addColorStop(0, `rgba(255,222,150,${g})`); grd.addColorStop(1, 'rgba(255,222,150,0)');
+      ctx.fillStyle = grd; ctx.beginPath(); ctx.arc(x, y - 42, 30, 0, TAU); ctx.fill();
+    } else if (key === 'landmark') {           // Vigil: a sweeping lantern beam
+      const a = Math.sin(now / 750) * 0.55 - 0.8;
+      ctx.fillStyle = 'rgba(255,240,180,0.16)';
+      ctx.beginPath(); ctx.moveTo(x, y - 72);
+      ctx.lineTo(x + Math.cos(a - 0.28) * 48, y - 72 + Math.sin(a - 0.28) * 48);
+      ctx.lineTo(x + Math.cos(a + 0.28) * 48, y - 72 + Math.sin(a + 0.28) * 48);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+  }
+
   function draw(now, t) {
     const { width: W, height: H } = canvas;
+    const cx = townCenter.x, cy = townCenter.y;
+    // which buildings have their resident on the job right now → livelier animation
+    const activeKeys = new Set();
+    for (const sp of sprites.values()) if (sp.busy && sp.loc) activeKeys.add(sp.loc);
     ctx.imageSmoothingEnabled = false;   // crisp chunky pixels when scaling
-    ctx.fillStyle = '#74b64e';
-    ctx.fillRect(0, 0, W, H);
+    // the grass: a precomputed two-tone texture (see makeDecor), one blit
+    if (groundTex) ctx.drawImage(groundTex, 0, 0);
+    else { ctx.fillStyle = '#74b64e'; ctx.fillRect(0, 0, W, H); }
 
-    // no plots — just a worn, slightly brighter clearing around each building,
-    // curved through its blob points so the field has no edges to trap anyone
+    // curved dirt paths spoking out from the plaza to every ringed district —
+    // a gentle bow gives the square its village feel instead of straight rays
+    const paths = Object.values(districts).filter(d => d.key !== 'plaza');
+    const drawPaths = (width, colour) => {
+      ctx.strokeStyle = colour; ctx.lineWidth = width; ctx.lineCap = 'round';
+      for (const d of paths) {
+        const mx = (cx + d.x) / 2, my = (cy + d.y) / 2;
+        const nx = -(d.y - cy), ny = (d.x - cx);              // perpendicular, for the bow
+        const nl = Math.hypot(nx, ny) || 1, bow = 26;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.quadraticCurveTo(mx + (nx / nl) * bow, my + (ny / nl) * bow, d.x, d.y + 8);
+        ctx.stroke();
+      }
+    };
+    drawPaths(34, 'rgba(140,200,100,0.55)');   // worn, lighter grass along the verges
+    drawPaths(20, '#c79b68');   // dirt border
+    drawPaths(13, '#e2c08a');   // lighter, worn centre
+
+    // a worn, slightly brighter clearing around each building
     ctx.fillStyle = '#7bbb53';
     for (const d of Object.values(districts)) {
       const p = d.clearing;
@@ -606,45 +1178,32 @@ export function mount(root, tools) {
       ctx.fill();
     }
 
-    // dirt paths from every district to the town center
-    ctx.strokeStyle = '#d9b380';
-    ctx.lineWidth = 16;
-    ctx.lineCap = 'round';
-    for (const d of Object.values(districts)) {
+    // the paved plaza: a ring of stone flags around the central fountain
+    ctx.fillStyle = '#b9b2a6';
+    ctx.beginPath(); ctx.arc(cx, cy, 64, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#a49d90';
+    ctx.beginPath(); ctx.arc(cx, cy, 64, 0, Math.PI * 2);
+    ctx.arc(cx, cy, 52, 0, Math.PI * 2); ctx.fill('evenodd');
+    // flagstone seams
+    ctx.strokeStyle = 'rgba(90,84,74,0.35)'; ctx.lineWidth = 1.5;
+    for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) {
       ctx.beginPath();
-      ctx.moveTo(d.x, d.y + 10);
-      ctx.lineTo(W / 2, H / 2);
+      ctx.moveTo(cx + Math.cos(a) * 34, cy + Math.sin(a) * 34);
+      ctx.lineTo(cx + Math.cos(a) * 63, cy + Math.sin(a) * 63);
       ctx.stroke();
     }
-    ctx.fillStyle = '#d9b380';
-    ctx.beginPath();
-    ctx.arc(W / 2, H / 2, 26, 0, Math.PI * 2);
-    ctx.fill();
-    // the plaza fountain: a pool with slow ripples
-    ctx.fillStyle = '#5aa7c7';
-    ctx.beginPath();
-    ctx.arc(W / 2, H / 2, 12, 0, Math.PI * 2);
-    ctx.fill();
-    for (let k = 0; k < 2; k++) {
-      const r = 3 + ((t / 22 + k * 11) % 12);
-      ctx.strokeStyle = `rgba(255,255,255,${Math.max(0, 0.55 - r / 24)})`;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(W / 2, H / 2, r, 0, Math.PI * 2);
-      ctx.stroke();
-    }
+    drawFountain(cx, cy, t);
 
-    // grass tufts and flowers
+    // flat ground litter: grass tufts and little flower clusters
     for (const g of decor) {
       if (g.kind === 'tuft') {
-        ctx.fillStyle = '#5da33c';
+        ctx.fillStyle = '#4e9a34';                 // a shade darker than the turf so it reads
         ctx.fillRect(g.x, g.y, 3, 5);
         ctx.fillRect(g.x + 4, g.y + 2, 3, 4);
+        ctx.fillStyle = '#8fd46a';                 // a lit tip
+        ctx.fillRect(g.x + 2, g.y - 2, 2, 4);
       } else {
-        ctx.fillStyle = g.tint;
-        ctx.fillRect(g.x, g.y, 4, 4);
-        ctx.fillStyle = '#5da33c';
-        ctx.fillRect(g.x + 1, g.y + 4, 2, 3);
+        drawFlowers(g.x, g.y, g.seed);
       }
     }
 
@@ -655,12 +1214,16 @@ export function mount(root, tools) {
     // entry sorts on the y its feet touch, and draws when its turn comes.
     const scene = [];
 
-    // each district's own business building on its point
+    // each district's own business building on its point — a house also draws
+    // the add-ons its resident bolted on (lean-tos before the sprite so it
+    // overlaps them and they read as attached; roof pieces after)
     for (const d of Object.values(districts)) {
       scene.push({ y: d.y, draw: () => {
         // a house district ("house_<id>") reuses the one house building; every
         // other district has its own art keyed by its name.
         const isHouse = d.key.startsWith('house_');
+        const adds = Array.isArray(d.addons) ? d.addons : [];
+        for (const a of adds) if (a.side !== 'top') drawAddon(a.kind, a.side, d.x, d.y);
         const img = art[d.key] || (isHouse ? art.house : null);
         if (img) {
           drawSprite(img, d.x, d.y, 100, 128);
@@ -669,7 +1232,20 @@ export function mount(root, tools) {
           ctx.textAlign = 'center';
           ctx.fillText(isHouse ? '🏠' : '🏛️', d.x, d.y - 46);
         }
+        for (const a of adds) if (a.side === 'top') drawAddon(a.kind, 'top', d.x, d.y);
+        // the building's own little activity animation, over its roof
+        drawActivity(d.key, d.x, d.y, now, t, activeKeys.has(d.key));
       } });
+      // the resident's yard: each prop sorts on its own feet so walkers weave through
+      for (const it of (Array.isArray(d.yard) ? d.yard : [])) {
+        const px = d.x + it.x, py = d.y + it.y;
+        scene.push({ y: py, draw: () => drawYardItem(it.kind, px, py, now, t) });
+      }
+    }
+    // the trees and shrubs stand in the same pass — a villager walks behind an
+    // oak as naturally as behind a house
+    for (const g of greenery) {
+      scene.push({ y: g.y, draw: () => (g.kind === 'tree' ? drawTree(g.x, g.y, g.size) : drawShrub(g.x, g.y, g.size)) });
     }
 
     // structures the agents put up (or are still putting up)
@@ -747,6 +1323,10 @@ export function mount(root, tools) {
         ctx.fillText(sp.bubble, bx + 8, sp.y - 29, tw - 16);
       }
     }
+
+    // the enclosing town wall frames everything, drawn last so grass, paths and
+    // strays never bleed onto the stone
+    drawWall(W, H);
   }
 
   // one villager, drawn where they stand — called from the depth-sorted pass
@@ -1033,7 +1613,9 @@ export function mount(root, tools) {
     if (inside && inside.key === HQ_KEY) return drawOffice(now, t);
     const { width: W, height: H } = canvas;
     ctx.imageSmoothingEnabled = false;   // same crisp pixels indoors
-    const it = interiors[inside.key];
+    // a house with extra rooms paints whichever room's tab is active (roomKey);
+    // the main room is the house's own interior entry
+    const it = interiors[roomKey || inside.key];
     const wall = it?.wall || '#b9a68d';
     const floor = it?.floor || '#96826a';
     const wallH = Math.max(64, Math.floor(H / 3));
@@ -1050,6 +1632,27 @@ export function mount(root, tools) {
     for (let cy = wallH; cy < H; cy += tile) {
       for (let cx = ((cy - wallH) / tile) % 2 ? tile : 0; cx < W; cx += tile * 2) {
         ctx.fillRect(cx, cy, tile, Math.min(tile, H - cy));
+      }
+    }
+
+    // a house with extra rooms gets a row of room tabs along the top of the wall:
+    // the main room first, then each room the resident added. Their hit-rects
+    // are kept for the click handler.
+    roomTabs = [];
+    const extra = (inside.type === 'district' && Array.isArray(rooms[inside.key])) ? rooms[inside.key] : [];
+    if (extra.length) {
+      const tabs = [{ key: inside.key, name: 'Main room' }, ...extra];
+      let tx = 10;
+      ctx.font = '700 11px system-ui'; ctx.textAlign = 'left';
+      for (const tab of tabs) {
+        const on = (roomKey || inside.key) === tab.key;
+        const w = ctx.measureText(tab.name).width + 18;
+        ctx.fillStyle = on ? 'rgba(253,253,244,0.92)' : 'rgba(0,0,0,0.28)';
+        ctx.beginPath(); ctx.roundRect(tx, 8, w, 22, 7); ctx.fill();
+        ctx.fillStyle = on ? '#33281a' : 'rgba(255,255,255,0.9)';
+        ctx.fillText(tab.name, tx + 9, 23);
+        roomTabs.push({ x: tx, y: 8, w, h: 22, key: tab.key });
+        tx += w + 6;
       }
     }
 
@@ -1130,11 +1733,14 @@ export function mount(root, tools) {
     const y = (e.clientY - rect.top) * (canvas.height / rect.height);
     // indoors, the only clickables are the ways out: the chip and the door
     if (inside) {
+      // a room tab along the top switches which room is painted
+      const tab = roomTabs.find(r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
+      if (tab) { roomKey = tab.key === inside.key ? null : tab.key; return; }
       const chip = leaveChip();
       const dr = roomDoorRect();
       if ((x >= chip.x && x <= chip.x + chip.w && y >= chip.y && y <= chip.y + chip.h)
         || (x >= dr.x - 8 && x <= dr.x + dr.w + 8 && y >= dr.y - 8)) {
-        inside = null;                     // back to town, right where we stood
+        inside = null; roomKey = null; roomTabs = [];   // back to town, right where we stood
       }
       return;
     }
@@ -1150,6 +1756,7 @@ export function mount(root, tools) {
       me.ty = nearSp.y + 4;
       const who = root.querySelector('#town-who');
       if ([...who.options].some(o => o.value === nearId)) who.value = nearId;
+      showTab('talk');                       // the chat box lives in the Talk pane now
       root.querySelector('#town-say').focus();
       return;
     }
@@ -1232,6 +1839,32 @@ export function mount(root, tools) {
       fill.style.background = m >= 65 ? '#57b86a' : m >= 35 ? '#e0b23a' : '#ff8a92';
     } else {
       moraleEl.hidden = true;
+    }
+
+    // the status strip: a village at a glance — headcount, who's on the job,
+    // open work on the board, morale and the town clock
+    const statsEl = root.querySelector('#town-stats');
+    if (statsEl) {
+      const ags = s.agents || [];
+      const working = ags.filter(a => a.busy).length;
+      const openJobs = (s.jobs || []).filter(j => !j.done && !j.holder).length;
+      const now = new Date();
+      const clock = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      const mPct = Number.isFinite(morale) ? Math.round(Math.max(0, Math.min(100, morale))) : null;
+      const cell = (k, v, cls = '') => `<div class="stat ${cls}"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+      statsEl.innerHTML =
+        cell('Villagers', ags.length) +
+        cell('Working', `${working}<small>/${ags.length}</small>`, 'work') +
+        cell('Open work', openJobs, 'open') +
+        (mPct == null ? '' : cell('Morale', mPct)) +
+        cell('Time', clock);
+    }
+    // the Inbox tab wears a badge while corporate has something waiting
+    const inboxBadge = root.querySelector('#tab-badge-inbox');
+    if (inboxBadge) {
+      const pending = (s.approvals || []).filter(a => a && a.status === 'pending').length;
+      inboxBadge.textContent = String(pending);
+      inboxBadge.hidden = !pending;
     }
 
     root.querySelector('#town-agents').innerHTML = (s.agents || []).map(a => {
