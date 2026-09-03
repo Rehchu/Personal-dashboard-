@@ -2047,13 +2047,13 @@ export function mount(root, tools) {
       const { id } = await res.json();
       if (!res.ok || !id) throw new Error();
       // a meeting takes as long as the whole town answering — poll patiently
-      const polls = toAll ? 80 : 20;
+      const polls = toAll ? 80 : 40;   // the engine answers between turns — give it two minutes
       for (let i = 0; i < polls && alive; i++) {
         await new Promise(r => setTimeout(r, 3000));
         const poll = await fetch(`/api/town/chat/${id}`).then(r => r.json()).catch(() => null);
         if (poll?.reply) { bubble.textContent = poll.reply; log.scrollTop = log.scrollHeight; return; }
       }
-      bubble.textContent = townAlert || '(no answer yet — the town may be paused)';
+      bubble.textContent = townAlert || '(no answer yet — the town answers between turns; check it’s running, then try again in a minute)';
     } catch {
       bubble.textContent = '(could not reach the town)';
       showToast('Could not send that message');
