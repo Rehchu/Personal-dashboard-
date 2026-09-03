@@ -436,26 +436,40 @@ export function mount(root, tools) {
     if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
     townCenter = { x: W / 2, y: H / 2 + 10 };
     districts = {};
+    // The villagers design the town: `layout[key] = {x,y}` (0–100 field coords)
+    // is where they chose to put a building. We honor it; anything not yet placed
+    // falls back to a tidy ring around the plaza.
+    const layout = (s.layout && typeof s.layout === 'object') ? s.layout : {};
+    const padX = 66, topY = WALL + 104, botY = H - WALL - 30;   // keep roofs and name plates on-canvas
+    const toPx = p => ({
+      x: Math.max(padX, Math.min(W - padX, (Number(p.x) || 50) / 100 * W)),
+      y: Math.max(topY, Math.min(botY, (Number(p.y) || 50) / 100 * H)),
+    });
+
+    // the plaza (HQ) always stands just above the central fountain — the one
+    // fixed point the square is built around; agents move everything else
     const hasPlaza = keys.includes('plaza');
     if (hasPlaza) {
-      // the HQ building stands just above the fountain, facing the square
       const cx = townCenter.x, cy = townCenter.y - 104;
       districts.plaza = { key: 'plaza', x: cx, y: cy, label: s.map.plaza, clearing: makeClearing('plaza', cx, cy) };
     }
-    const ring = keys.filter(k => k !== 'plaza');
+    // ring only the buildings nobody has placed yet
+    const ring = keys.filter(k => k !== 'plaza' && !layout[k]);
     const n = ring.length;
-    // radius grows a little with the crowd, but stays inside the walls
-    // ry is capped so the topmost building's roof (≈100px tall) clears the wall
     const rx = Math.max(200, Math.min(360, 150 + n * 24));
-    const ry = Math.max(140, Math.min(188, 100 + n * 16));
-    ring.forEach((k, i) => {
-      // half-step offset leaves due-north clear so nothing stacks behind the
-      // central plaza (HQ) building
-      const a = -Math.PI / 2 + ((i + 0.5) / Math.max(1, n)) * Math.PI * 2;
-      const cx = townCenter.x + Math.cos(a) * rx;
-      const cy = townCenter.y + Math.sin(a) * ry;
+    const ry = Math.max(140, Math.min(188, 100 + n * 16));   // capped so a roof clears the top wall
+    let ri = 0;
+    for (const k of keys) {
+      if (k === 'plaza') continue;
+      let cx, cy;
+      if (layout[k]) {
+        const p = toPx(layout[k]); cx = p.x; cy = p.y;         // the spot its resident chose
+      } else {
+        const a = -Math.PI / 2 + ((ri + 0.5) / Math.max(1, n)) * Math.PI * 2; ri++;
+        cx = townCenter.x + Math.cos(a) * rx; cy = townCenter.y + Math.sin(a) * ry;
+      }
       districts[k] = { key: k, x: cx, y: cy, label: s.map[k], clearing: makeClearing(k, cx, cy) };
-    });
+    }
     makeDecor();
 
     // the owner spawns by the plaza fountain — first visit, or a saved spot
