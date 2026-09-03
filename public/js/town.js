@@ -303,7 +303,9 @@ export function mount(root, tools) {
     canvas.hidden = officeOn;
     pixelFrame.hidden = !officeOn;
     if (officeOn) {
-      if (!pixelFrame.src) pixelFrame.src = '/pixeloffice/index.html'; // lazy: only fetch the app on demand
+      // lazy: only fetch the app on demand. The ?v tag busts a cached index.html
+      // so a new office build (e.g. the transport fix) is always picked up.
+      if (!pixelFrame.src) pixelFrame.src = '/pixeloffice/index.html?v=2';
       feedPixelOffice(lastState);
     }
   });
