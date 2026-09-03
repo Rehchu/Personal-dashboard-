@@ -1,0 +1,35 @@
+# Dyer Town on Fly.io — one always-on Machine, no public ports (the town binds
+# 127.0.0.1 and pushes its state to your Cloudflare dashboard, exactly as on the PC).
+# Rename `app` to something unique, and set `primary_region` to the Fly region
+# nearest you, before the first deploy.
+
+app = "dyer-town"
+primary_region = "iad"   # e.g. iad (Virginia), ord (Chicago), lax (Los Angeles)
+
+[build]
+
+[env]
+  TOWN_DATA_DIR = "/data"
+  HOME = "/data/home"
+  # Where the town pushes its live state. Public value, same as on the PC.
+  DASH_URL = "https://lifehq.dyer-hq.workers.dev"
+  # Secrets (Claude token, sync passphrase, optional Cloudflare + GitHub tokens)
+  # are set with `fly secrets set …`, NEVER written here.
+  #
+  # Optional knobs — uncomment to change:
+  # TOWN_BENCHES = "1"      # fewer simultaneous deep-work sessions = less RAM
+  # TOWN_TICK_MS = "6000"   # slower pace = lighter on your usage allowance
+  # TOWN_MODEL   = "claude-haiku-4-5-20251001"   # a cheaper town
+
+# The town's world + workshops + ~/.claude session files persist here across
+# redeploys. Create it once with: fly volumes create town_data --size 5
+[mounts]
+  source = "town_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1024mb"
+  # A cushion for the peak when several villagers do deep work at once. Bump the
+  # memory to 2048mb (and/or set TOWN_BENCHES=1) if you see out-of-memory kills.
+  swap_size_mb = 1024
