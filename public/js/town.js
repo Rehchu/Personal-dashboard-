@@ -106,9 +106,15 @@ async function loadTownArt(kind) {
 
 // The generator doesn't always honor "transparent background" — pieces can
 // arrive on a white or checkerboard card. Flood-fill from the edges and erase
-// only the light background CONNECTED to the border, so white highlights
-// inside a sprite survive; then crop to the pixels that remain so every piece
-// draws at its true size instead of floating in a big empty square.
+// only the background CONNECTED to the border, then crop to the pixels that
+// remain so every piece draws at its true size instead of floating in a square.
+//
+// The knockout keys off ONE card colour, decided from the border. A white or
+// checkerboard card knocks out light only; a black card knocks out near-black
+// only. This matters: with both rules always on, the flood would leak from a
+// light card THROUGH a dark edge and eat the sprite's own dark parts — that is
+// what left the villagers' houses with their roofs/bases missing (and Apex's
+// black pants before them).
 function stripAndCrop(img) {
   const c = document.createElement('canvas');
   c.width = img.naturalWidth; c.height = img.naturalHeight;
@@ -118,12 +124,25 @@ function stripAndCrop(img) {
   try { d = x.getImageData(0, 0, c.width, c.height); } catch { return img; }
   const { data } = d;
   const w = c.width, h = c.height;
+  // Sample the border ring to decide the card colour. Bias to the light case —
+  // only a clearly dark border is treated as a black card — so a stray dark
+  // frame can never turn on near-black knockout and eat a sprite's dark pixels.
+  let lightEdge = 0, darkEdge = 0;
+  const edgeLum = (px, py) => {
+    const i = (py * w + px) * 4;
+    if (data[i + 3] < 40) return;                 // a transparent edge tells us nothing
+    const mx = Math.max(data[i], data[i + 1], data[i + 2]);
+    if (mx > 170) lightEdge++; else if (mx < 80) darkEdge++;
+  };
+  for (let px = 0; px < w; px++) { edgeLum(px, 0); edgeLum(px, h - 1); }
+  for (let py = 0; py < h; py++) { edgeLum(0, py); edgeLum(w - 1, py); }
+  const darkCard = darkEdge > lightEdge * 3;
   const isBg = i => {
     const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
     if (a < 40) return true;
     const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
-    if (mx > 198 && mx - mn < 16) return true;   // white and checkerboard greys alike
-    return mx < 64 && mx - mn < 22;              // and a near-black card or frame
+    if (darkCard) return mx < 64 && mx - mn < 22;   // black card → near-black only
+    return mx > 198 && mx - mn < 16;                // white / checkerboard card → light only
   };
   const seen = new Uint8Array(w * h);
   const stack = [];
@@ -284,7 +303,9 @@ export function mount(root, tools) {
     canvas.hidden = officeOn;
     pixelFrame.hidden = !officeOn;
     if (officeOn) {
-      if (!pixelFrame.src) pixelFrame.src = '/pixeloffice/index.html'; // lazy: only fetch the app on demand
+      // lazy: only fetch the app on demand. The ?v tag busts a cached index.html
+      // so a new office build (e.g. the transport fix) is always picked up.
+      if (!pixelFrame.src) pixelFrame.src = '/pixeloffice/index.html?v=2';
       feedPixelOffice(lastState);
     }
   });

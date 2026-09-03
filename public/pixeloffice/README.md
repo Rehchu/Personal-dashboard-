@@ -13,3 +13,16 @@ webview-ui with `vite build --base=/pixeloffice/`):
 - src/transport/index.ts: keep the window-message bridge in production, so the
   parent page can post agent messages into the office.
 Everything else is upstream, unmodified.
+
+## Post-build patch (assets/index-*.js)
+
+Upstream's transport still *also* opens a WebSocket to `wss://<host>/ws` in
+browser mode and drives the connection-status banner from it. There is no such
+socket server behind the dashboard, so the office sat forever on "Reconnecting…"
+even though our window-message bridge was already delivering the villagers. So
+the built transport factory `C()` is patched directly in the bundle to skip the
+socket entirely and return an always-"connected" transport that delivers `window`
+`message` events (Dyer HQ's villager feed + browserMock's office assets) straight
+to its handlers. If this SPA is ever rebuilt from source, make the same change in
+src/transport/index.ts (return the postMessage transport in browser mode) instead
+of re-patching the minified output.
