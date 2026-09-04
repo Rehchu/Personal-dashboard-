@@ -1252,7 +1252,19 @@ end with a 2-3 sentence plain-text summary, in character, of what you actually m
         canUseTool: bashGate(agent),
         // the town's own passphrase never enters a work session; the scoped
         // Cloudflare token only does when the owner has set one up
-        env: { ...sessionEnv, ...(CF_TOKEN ? { CLOUDFLARE_API_TOKEN: CF_TOKEN } : {}) },
+        env: {
+          ...sessionEnv,
+          // A headless git has NO author identity, so the villager's `git commit`
+          // dies with "Please tell me who you are" and nothing they build ever
+          // lands — which is exactly why Draco reported he "can't commit to
+          // anything". Give each villager their own author line (env vars beat
+          // needing `git config` in every clone); the owner sees who wrote what.
+          GIT_AUTHOR_NAME: `${agent.name} (Dyer Town)`,
+          GIT_AUTHOR_EMAIL: `${agent.id}@dyertown.local`,
+          GIT_COMMITTER_NAME: `${agent.name} (Dyer Town)`,
+          GIT_COMMITTER_EMAIL: `${agent.id}@dyertown.local`,
+          ...(CF_TOKEN ? { CLOUDFLARE_API_TOKEN: CF_TOKEN } : {}),
+        },
       },
     })) {
       if (msg?.type === 'result' && typeof msg.result === 'string' && msg.result.trim()) text = msg.result;
