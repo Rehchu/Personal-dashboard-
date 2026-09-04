@@ -106,6 +106,20 @@ const DATA_ROOT = process.env.TOWN_DATA_DIR || DIR;
 // robust choice: forcing a specific id (the old default was 'claude-opus-4-8')
 // makes every call die with "Claude Code process exited with code 1" on a plan
 // that doesn't include that exact model. Low effort by default: frugal thinking.
+// Subscription auth for the SDK. The SDK spawns its own bundled CLI, and on a
+// Claude subscription that CLI needs an explicit token — the interactive
+// `claude login` alone isn't enough (it died with "Could not resolve
+// authentication method"). `claude setup-token` prints a token to
+// `export CLAUDE_CODE_OAUTH_TOKEN=...`; if that isn't already in the environment,
+// read it from claude-oauth-token.txt beside this file and set it. The SDK
+// subprocess inherits our env, so this is what lets the town think. Works the
+// same whether started by run-town.sh/.bat or a bare `node town.mjs`.
+if (!process.env.CLAUDE_CODE_OAUTH_TOKEN) {
+  try {
+    const tok = readFileSync(join(DIR, 'claude-oauth-token.txt'), 'utf8').trim();
+    if (tok) { process.env.CLAUDE_CODE_OAUTH_TOKEN = tok; console.log('  auth: using the token in claude-oauth-token.txt'); }
+  } catch { /* no token file — rely on CLAUDE_CODE_OAUTH_TOKEN in the env, or an API key */ }
+}
 const MODEL = (process.env.TOWN_MODEL || '').trim();
 const EFFORT = (process.env.TOWN_EFFORT || '').trim();
 // Pass `model` and `effort` to the SDK ONLY when explicitly set; otherwise send

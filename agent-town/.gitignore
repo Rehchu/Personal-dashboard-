@@ -1,5 +1,6 @@
 # per-PC secrets and state — never committed
 town-key.txt
+claude-oauth-token.txt
 cloudflare-token.txt
 MainCloudflare-deploy-token.txt
 town-state.json
