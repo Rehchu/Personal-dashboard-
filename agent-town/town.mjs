@@ -114,6 +114,16 @@ const EFFORT = (process.env.TOWN_EFFORT || '').trim();
 // an `effort` a model doesn't accept, makes the CLI exit 1 on every call.
 const modelOpt = MODEL ? { model: MODEL } : {};
 const effortOpt = EFFORT ? { effort: EFFORT } : {};
+// THE auth fix. The Agent SDK spawns its own bundled CLI with setting-sources
+// defaulted to NONE, so on a Claude subscription (no ANTHROPIC_API_KEY) that CLI
+// never reads the `claude login` session and dies with "Could not resolve
+// authentication method" — which reached us only as "process exited with code 1".
+// Loading the user (and project/local) settings makes it find the login, exactly
+// as a plain `claude -p "..."` does by default. Override with TOWN_SETTING_SOURCES
+// (comma-separated) or set it empty to send none.
+const SETTING_SOURCES = (process.env.TOWN_SETTING_SOURCES ?? 'user,project,local')
+  .split(',').map(s => s.trim()).filter(Boolean);
+const authOpt = SETTING_SOURCES.length ? { settingSources: SETTING_SOURCES } : {};
 /* Every numeric knob comes through here, and a bad value is LOUD, never silent.
 
    These are hand-typed into a .bat on a PC that then runs unattended for weeks,
@@ -787,7 +797,7 @@ async function runModel(prompt) {
   for (let attempt = 0; ; attempt++) {
     let text = '';
     try {
-      for await (const msg of query({ prompt, options: { ...modelOpt, ...effortOpt, maxTurns: 1, allowedTools: [] } })) {
+      for await (const msg of query({ prompt, options: { ...modelOpt, ...effortOpt, ...authOpt, maxTurns: 1, allowedTools: [] } })) {
         if (msg?.type === 'result' && typeof msg.result === 'string') text = msg.result;
         else if (msg?.type === 'assistant' && Array.isArray(msg.message?.content)) {
           for (const b of msg.message.content) if (b?.type === 'text' && b.text) text += b.text;
@@ -1193,7 +1203,7 @@ end with a 2-3 sentence plain-text summary, in character, of what you actually m
     for await (const msg of query({
       prompt,
       options: {
-        ...modelOpt, ...effortOpt, maxTurns: DEEP_TURNS, cwd: dir,
+        ...modelOpt, ...effortOpt, ...authOpt, maxTurns: DEEP_TURNS, cwd: dir,
         allowedTools: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash'],
         // 'default' (not bypass) so the gate below is actually consulted
         permissionMode: 'default',
