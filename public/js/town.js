@@ -1949,14 +1949,22 @@ export function mount(root, tools) {
         showTab('talk'); root.querySelector('#town-say').focus();
         return;
       }
-      // a building in this region → step inside its painted room
+      // a building in this region → step inside its painted room. Inside its
+      // footprint wins; otherwise the nearest door within reach.
+      let bHit = null, bD = Infinity;
       for (const d of Object.values(districts)) {
         if (d.region !== village.region || !d.box) continue;
-        if (x >= d.box.x && x <= d.box.x + d.box.w && y >= d.box.y && y <= d.box.y + d.box.h) {
-          inside = { type: 'district', key: d.key, name: d.label, interior: d.interior, owner: 'Dyer Town', loc: d.key };
-          return;
-        }
+        const inBox = x >= d.box.x && x <= d.box.x + d.box.w && y >= d.box.y && y <= d.box.y + d.box.h;
+        if (inBox) { bHit = d; break; }
+        const dd = Math.hypot(x - d.x, y - d.y);
+        if (dd < 44 && dd < bD) { bD = dd; bHit = d; }
       }
+      if (bHit) {
+        inside = { type: 'district', key: bHit.key, name: bHit.label, interior: bHit.interior, owner: 'Dyer Town', loc: bHit.key };
+        return;
+      }
+      // empty ground → walk the owner there
+      pendingEnter = null; me.tx = x; me.ty = y;
       return;
     }
     // indoors, the only clickables are the ways out: the chip and the door
