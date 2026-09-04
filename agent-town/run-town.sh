@@ -16,7 +16,9 @@ export DASH_URL="${DASH_URL:-https://lifehq.dyer-hq.workers.dev}"
 # always exists on your plan). Export a specific id to force one, e.g.
 # TOWN_MODEL=claude-haiku-4-5-20251001 (cheapest) or a claude-opus-* (most capable).
 export TOWN_MODEL="${TOWN_MODEL:-}"
-export TOWN_EFFORT="${TOWN_EFFORT:-low}"
+# Leave TOWN_EFFORT unset too — some models reject an effort setting and the
+# call then fails. Set it (e.g. low) only with a model you know accepts it.
+export TOWN_EFFORT="${TOWN_EFFORT:-}"
 export TOWN_PORT="${TOWN_PORT:-8787}"
 # Tells town.mjs a launcher will restart it, so it never forks a successor of
 # its own after a self-update (that is only for towns started by hand).
