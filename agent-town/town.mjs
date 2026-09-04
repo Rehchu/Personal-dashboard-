@@ -239,6 +239,10 @@ const slugId = id => String(id).toLowerCase()
 // shell, so it is the single biggest way a typo could spend the owner's plan
 const DEEP_TURNS = envNum('TOWN_DEEP_TURNS', 30, { min: 1, max: 200, int: true });
 const DEEP_COOLDOWN = envNum('TOWN_DEEP_COOLDOWN', 8, { min: 0, max: 10000, int: true }); // ticks between an agent's sessions
+// A chat is now a small TOOL session so a villager can open, read, edit and
+// commit their real repo while talking to the owner (see chatWith). Kept modest
+// so a reply stays quick; raise TOWN_CHAT_TURNS for heavier in-chat edits.
+const CHAT_TURNS = envNum('TOWN_CHAT_TURNS', 12, { min: 1, max: 80, int: true });
 
 /* ---------------- the world ---------------- */
 
@@ -2514,6 +2518,13 @@ async function canonBrief(agent) {
   return `\nYOUR CANON — the real, current contents of your own repositories, read straight off disk. This is the SOURCE OF TRUTH about your own work. Never invent, rename, or contradict a character, place, title, or plot point that appears here. If the owner asks about something not shown, say you will open the file and check rather than guessing:\n${brief}\n`;
 }
 
+// A chat with the owner is a small TOOL session, not a tool-less prompt: the
+// villager has their REAL workshop open, so "what's in chapter one?" is answered
+// by opening chapter one, and "add the prologue" is written, committed and
+// pushed here and now. That is the whole point of an agent that owns a repo. The
+// same gate as a work session (bashGate) keeps them inside their own folder, and
+// a tool-less canon-grounded reply is the fallback so a chat is never silent —
+// and, either way, they are told never to describe a file they did not open.
 async function chatWith(id, message) {
   const agent = agentById(id);
   if (!agent) return "There's no one here by that name.";
@@ -2521,12 +2532,76 @@ async function chatWith(id, message) {
   const work = (agent.worklog && agent.worklog.length)
     ? `\nYour worklog — concrete things you have actually done lately:\n${agent.worklog.slice(-6).map(w => `t${w.tick}: ${w.text}`).join('\n')}`
     : '';
-  const reply = await runModel(`You are ${agent.name}, the town ${agent.role}. ${agent.personality}.
+  const persona = `You are ${agent.name}, the town ${agent.role}. ${agent.personality}.
 Your goal: ${agent.goal}. You are at ${MAP[agent.loc].label}.
-Recent memory:\n${agent.memory.slice(-8).join('\n') || '(new in town)'}${work}${canon}
+Recent memory:\n${agent.memory.slice(-8).join('\n') || '(new in town)'}${work}${canon}`;
+  const dir = join(WORKSHOP, agent.id);
+  const haveWorkshop = existsSync(dir);
+
+  let reply = '';
+  if (haveWorkshop) {
+    // grounded, tool-using reply: open the real files, do the real edit
+    const prompt = `${persona}
+
+YOUR WORKSHOP IS OPEN — your real repositories are right here in this folder.
+Answer the owner from what is ACTUALLY on disk, never from memory or guesswork:
+if they ask about a file, a chapter, a plan, a bug — OPEN IT (Read/Glob/Grep)
+and answer from what is really there. If they ask you to CHANGE something —
+write a chapter, fix a file, add a section — DO IT NOW: edit the real file, and
+if the folder is a git repo, commit on your branch "town/${agent.id}" and push
+it with "git push -u origin town/${agent.id}". NEVER describe, quote, or claim a
+title/character/scene/file you have not opened this turn — the files are the
+record and the owner can read them. If you truly cannot open something, say so
+plainly.
 
 The OWNER — your boss, corporate — speaks to you: “${message}”
-Reply in character, one or two sentences. Ground every specific — names, titles, plot, plans — in YOUR CANON above; never contradict or rename anything already there, and if you are not sure of something, say you will open your files and check rather than making it up. If they ask what your plans are, give the real next step from your canon and worklog, not a vague or invented one. If they're asking you to do something, say plainly what you'll do first — you are on the clock right after this to actually do it.`);
+
+Do the real work first, then reply in character in ONE to THREE plain sentences
+saying what you actually found or actually did (and, if you changed a file, that
+you committed it). Be honest and specific. Never invent.`;
+    let text = '', last = '';
+    try {
+      for await (const msg of query({
+        prompt: onceUser(prompt),
+        options: {
+          ...modelOpt, ...effortOpt, ...authOpt, maxTurns: CHAT_TURNS, cwd: dir,
+          allowedTools: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash'],
+          permissionMode: 'default',
+          canUseTool: bashGate(agent),
+          env: {
+            ...sessionEnv,
+            GIT_AUTHOR_NAME: `${agent.name} (Dyer Town)`,
+            GIT_AUTHOR_EMAIL: `${agent.id}@dyertown.local`,
+            GIT_COMMITTER_NAME: `${agent.name} (Dyer Town)`,
+            GIT_COMMITTER_EMAIL: `${agent.id}@dyertown.local`,
+            ...(CF_TOKEN ? { CLOUDFLARE_API_TOKEN: CF_TOKEN } : {}),
+          },
+        },
+      })) {
+        if (msg?.type === 'result' && typeof msg.result === 'string' && msg.result.trim()) text = msg.result;
+        else if (msg?.type === 'assistant' && Array.isArray(msg.message?.content)) {
+          const said = msg.message.content.filter(b => b?.type === 'text' && b.text).map(b => b.text).join(' ').trim();
+          if (said) last = said;
+        }
+      }
+    } catch (err) {
+      console.error('  chat error:', err?.message || err);
+    }
+    reply = (text || last).trim();
+  }
+
+  // Fallback (no workshop on disk, or the tool session gave nothing): a tool-less
+  // reply grounded ONLY in the canon snapshot, so chat still works and still
+  // never invents.
+  if (!reply) {
+    reply = (await runModel(`${persona}
+
+The OWNER — your boss, corporate — speaks to you: “${message}”
+Reply in character, one or two sentences, grounded ONLY in your canon above.
+Never contradict or rename anything already there; if you are not sure of
+something, say you will open your files and check rather than making it up.`)) || '';
+  }
+
   const line = reply || '…';
   social(agent); // a visit from the owner is company too
   // the visitor's words go into memory too — a promise made in chat must
