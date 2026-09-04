@@ -785,6 +785,11 @@ export function mount(root, tools) {
           village.obstacles[region].push({ x: wq.x / 100 * W, y: wq.y / 100 * H, w: wq.w / 100 * W, h: wq.h / 100 * H });
         }
       }
+      // The nav cost grid bakes these obstacles in, so it MUST be rebuilt now that
+      // they've been (re)built. Without this, a grid cached during an earlier frame
+      // — before obstacles existed — sticks around with nothing blocked, and
+      // villagers walk straight through buildings and across the water.
+      village.nav = {};
     } else {
     // The villagers design the town: `layout[key] = {x,y}` (0–100 field coords)
     // is where they chose to put a building. We honor it; anything not yet placed
