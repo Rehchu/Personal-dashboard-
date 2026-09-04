@@ -104,6 +104,29 @@ const VILLAGE_SCENERY = {
   observatory: ['outskirts', 54,   51.5, 11.5, 30,  'observatory',  'Observatory'],
   boathouse:   ['outskirts', 68.5, 68.5, 23,  23,   'boathouse',    'Boathouse'],
 };
+// who to show INSIDE each building when you walk in — so the resident is always
+// there to talk to, whatever the sim has them doing on the map at that moment.
+// Keys are district keys (VILLAGE_SPOTS); values are agent ids.
+const VILLAGE_RESIDENT = {
+  library: 'draco', chapel: 'arise', kitchen: 'spork', gym: 'apex',
+  studio: 'meta', repairshop: 'ctrl',
+  house_meta: 'meta', house_watch: 'watch', house_spork: 'spork',
+  house_draco: 'draco', house_apex: 'apex', house_arise: 'arise', house_ctrl: 'ctrl',
+};
+// Open water on the painted maps — villagers and the player route AROUND it, never
+// across (%-space x,y,w,h, same as the building boxes). The centre river keeps gaps
+// at its two bridges so people can still cross; the outskirts lake is the east shore.
+const VILLAGE_WATER = {
+  center: [
+    { x: 51, y: 0,  w: 8, h: 24 },   // river — top run, above the rope bridge (gap ~24–34%)
+    { x: 53, y: 34, w: 9, h: 30 },   // river — middle, between the two bridges (gap ~64–74%)
+    { x: 57, y: 74, w: 8, h: 11 },   // river — short bottom run, below the plank bridge
+  ],
+  outskirts: [
+    { x: 82, y: 0,  w: 18, h: 40 },  // lake — north shore
+    { x: 90, y: 40, w: 10, h: 60 },  // lake — south shore (kept clear of the boathouse door)
+  ],
+};
 
 async function loadTownArt(kind) {
   const local = LOCAL_ART[kind];
@@ -724,6 +747,13 @@ export function mount(root, tools) {
         if (!d.box || !village.obstacles[d.region]) continue;
         village.obstacles[d.region].push({ x: d.box.x + 4, y: d.box.y, w: Math.max(2, d.box.w - 8), h: d.box.h * 0.72 });
       }
+      // the river (centre) and the lake (outskirts) are obstacles too, so nobody
+      // strolls across the water — they route to a bridge or around the shore
+      for (const region of ['center', 'outskirts']) {
+        for (const wq of (VILLAGE_WATER[region] || [])) {
+          village.obstacles[region].push({ x: wq.x / 100 * W, y: wq.y / 100 * H, w: wq.w / 100 * W, h: wq.h / 100 * H });
+        }
+      }
     } else {
     // The villagers design the town: `layout[key] = {x,y}` (0–100 field coords)
     // is where they chose to put a building. We honor it; anything not yet placed
@@ -960,7 +990,9 @@ export function mount(root, tools) {
   // the next point a sprite should step toward (a waypoint if a route is needed)
   function stepTarget(sp) {
     if (!villageOn()) return { x: sp.tx, y: sp.ty };
-    const region = (districts[sp.loc] && districts[sp.loc].region) || 'center';
+    // the player walks in whichever district is on screen; a villager in the one
+    // their current location belongs to
+    const region = sp.isMe ? village.region : ((districts[sp.loc] && districts[sp.loc].region) || 'center');
     const k = `${Math.round(sp.tx)},${Math.round(sp.ty)},${region}`;
     if (sp.routeKey !== k) {
       sp.routeKey = k;
@@ -1415,15 +1447,27 @@ export function mount(root, tools) {
     const s = Math.max(W / img.width, H / img.height);   // cover-fit the 16:9 room plate
     const dw = img.width * s, dh = img.height * s;
     ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
-    // whoever lives or works here, standing in the room — click one to talk
+    // Who's in the room: the building's own resident (so you can ALWAYS find them
+    // to talk to when you walk in), plus anyone else the sim has standing here.
     village.roomOccupants = [];
-    const occ = [...sprites.entries()].filter(([, sp]) => sp.loc === inside.key);
+    const here = new Map();
+    const resId = VILLAGE_RESIDENT[inside.key] || VILLAGE_RESIDENT[inside.interior];
+    if (resId && sprites.has(resId)) here.set(resId, sprites.get(resId));
+    for (const [id, sp] of sprites) if (sp.loc === inside.key) here.set(id, sp);
+    const occ = [...here.entries()];
+    // The room plate is "zoomed in" (one room fills the canvas) while a map sprite
+    // is only ~46px — so people looked tiny indoors. Scale them up to room scale.
+    const SCALE = 3.0;
     occ.forEach(([id, sp], i) => {
-      const rx = W * (0.36 + 0.28 * ((i + 0.5) / Math.max(1, occ.length)));
-      const ry = H * 0.80;
-      drawWalker({ ...sp, x: rx, y: ry, moving: false, axis: 'down', dir: 1 }, t, t);
-      label(sp.name || '', rx, ry + 26);
-      village.roomOccupants.push({ id, x: rx - 24, y: ry - 46, w: 48, h: 64 });
+      const rx = W * (0.5 + (i - (occ.length - 1) / 2) * 0.17);
+      const ry = H * 0.82;
+      ctx.save();
+      ctx.translate(rx, ry);
+      ctx.scale(SCALE, SCALE);
+      drawWalker({ ...sp, x: 0, y: 0, moving: false, axis: 'down', dir: 1 }, t, t);
+      ctx.restore();
+      label(sp.name || '', rx, ry + 12 * SCALE + 16, 12);
+      village.roomOccupants.push({ id, x: rx - 24 * SCALE, y: ry - 36 * SCALE, w: 48 * SCALE, h: 50 * SCALE });
     });
     if (occ.length) label('tap a villager to talk', W / 2, H - 14, 10);
     label(String(inside.name || '').slice(0, 26), W / 2, 30, 13);
@@ -2083,11 +2127,14 @@ export function mount(root, tools) {
       }
       if (bHit) {
         inside = { type: 'district', key: bHit.key, name: bHit.label, interior: bHit.interior, owner: 'Dyer Town', loc: bHit.key };
-        // step in and be ready to talk to whoever's there
-        const resident = [...sprites.entries()].find(([, sp]) => sp.loc === bHit.key);
-        if (resident) {
+        // step in and be ready to talk to whoever's there — the building's resident
+        // (works for houses, where no sprite's loc equals the house key), else whoever
+        // happens to be standing here
+        const resId = VILLAGE_RESIDENT[bHit.key] || VILLAGE_RESIDENT[bHit.interior]
+          || ([...sprites.entries()].find(([, sp]) => sp.loc === bHit.key) || [])[0];
+        if (resId) {
           const who = root.querySelector('#town-who');
-          if (who && [...who.options].some(o => o.value === resident[0])) who.value = resident[0];
+          if (who && [...who.options].some(o => o.value === resId)) who.value = resId;
           showTab('talk');
         }
         return;

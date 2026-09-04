@@ -1177,6 +1177,17 @@ function bashGate(agent) {
 
 // A deep work session: the agent sits down at their desk and actually does the
 // work — a tool-equipped Claude session scoped to their workshop folder. The
+// canUseTool is only honored in STREAMING-input mode. Hand query() a plain
+// string prompt alongside a canUseTool gate and the SDK quietly drops the gate;
+// the spawned child then hits a `default` permission prompt it cannot answer in
+// a non-interactive pipe and exits 1 — which is exactly why every work session
+// died ("Claude Code process exited with code 1") while the tool-less "think"
+// call was fine. Feeding the prompt as a one-message async stream keeps the
+// parent↔child control channel open so bashGate is actually consulted.
+async function* onceUser(text) {
+  yield { type: 'user', message: { role: 'user', content: text } };
+}
+
 // session runs in the background so the rest of the town keeps living; the
 // agent is "busy" until it returns, then reports what they did.
 async function runWorkSession(agent, task, helper, purpose) {
@@ -1232,7 +1243,7 @@ end with a 2-3 sentence plain-text summary, in character, of what you actually m
   let ranOut = false; // the session ended on a limit rather than by finishing
   try {
     for await (const msg of query({
-      prompt,
+      prompt: onceUser(prompt),   // streaming input — required for canUseTool (see onceUser)
       options: {
         ...modelOpt, ...effortOpt, ...authOpt, maxTurns: DEEP_TURNS, cwd: dir,
         allowedTools: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash'],

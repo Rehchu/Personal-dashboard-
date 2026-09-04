@@ -1328,6 +1328,14 @@ export default {
     const res = await env.ASSETS.fetch(request);
     const tagged = new Response(res.body, res);
     tagged.headers.set('X-App-Shell', '1');
+    // Code (the shell + its JS modules) must revalidate every load, or a deploy
+    // hides behind a day-long max-age copy until the browser's cache is cleared.
+    // `no-cache` still lets the browser keep a copy — it just has to check the
+    // ETag first, so an unchanged file is a cheap 304. Images/fonts/CSS keep
+    // whatever caching the asset pipeline gave them.
+    if (path === '/' || /\.(html|js)$/.test(path)) {
+      tagged.headers.set('cache-control', 'no-cache');
+    }
     return tagged;
   },
 };
