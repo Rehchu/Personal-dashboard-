@@ -18,13 +18,48 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import http from 'node:http';
 import { webcrypto } from 'node:crypto';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { readFile, mkdir, readdir, writeFile, rename, rm } from 'node:fs/promises';
 import { existsSync, readFileSync, writeFileSync, renameSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve, sep } from 'node:path';
 
 const DIR = dirname(fileURLToPath(import.meta.url));
+
+// A town that outlives its terminal (a WSL pane closed, a pty gone) must not
+// die on its next console.log: a write to a closed stdout surfaces as an
+// EIO/EPIPE stream error, and an unhandled one ends the process. Swallow them.
+process.stdout.on('error', () => {});
+process.stderr.on('error', () => {});
+
+/* How the town restarts itself — after a self-update, or a boot-guard
+   rollback. Under a launcher (run-town.bat / run-town.sh set TOWN_LAUNCHER=1)
+   or on Windows, exiting 0 IS the restart: the launcher brings it back in
+   15 s. Anywhere else — `npm start` in a WSL or Linux shell, nohup, a tmux
+   pane, a cloud VM — nothing would, so the town starts its own successor
+   first: a detached copy of itself with the same node flags, arguments and
+   environment, writing to the same stdout, and then exits. The caller has
+   already closed the web server, and the successor retries the port for a
+   few seconds anyway, so the hand-over never loses the town. */
+function restartSelf(why) {
+  if (process.env.TOWN_LAUNCHER || process.platform === 'win32') {
+    console.log(`  ${why}: exiting so the launcher restarts the town`);
+    process.exit(0);
+  }
+  try {
+    const child = spawn(process.execPath, [...process.execArgv, ...process.argv.slice(1)], {
+      cwd: process.cwd(),
+      env: { ...process.env, TOWN_SUCCESSOR_OF: String(process.pid) },
+      detached: true,
+      stdio: 'inherit',
+    });
+    child.unref();
+    console.log(`  ${why}: successor started (pid ${child.pid}) — this one exits`);
+  } catch (err) {
+    console.error(`  ${why}: could not start a successor —`, err?.message || err, '— exiting; start the town again by hand');
+  }
+  process.exit(0);
+}
 
 /* ---------------- boot guard: a bad update rolls itself back ----------------
    selfUpdate (far below) leaves town.mjs.updated beside a freshly installed
@@ -50,11 +85,11 @@ const BOOT_FAILS_BEFORE_ROLLBACK = 2;
         renameSync(SELF_PATH, SELF_PATH + '.rejected');
         renameSync(SELF_PATH + '.bak', SELF_PATH);
         rmSync(UPDATE_MARK, { force: true });
-        console.error('  boot guard: previous engine restored — the launcher restarts on it now');
+        console.error('  boot guard: previous engine restored — restarting on it now');
       } catch (err) {
         console.error('  boot guard: rollback failed —', err?.message || err);
       }
-      process.exit(0);
+      restartSelf('boot guard');
     }
     try { writeFileSync(UPDATE_MARK, JSON.stringify(mark)); } catch { /* best effort */ }
     setTimeout(() => { try { rmSync(UPDATE_MARK, { force: true }); } catch { /* fine */ } }, 60 * 1000).unref();
@@ -723,10 +758,17 @@ function classifyModelError(err) {
     return { kind: 'limit', reset: limitReset(msg) };
   if (/overloaded|\b5\d\d\b|timeout|ETIMEDOUT|ECONNRESET|ENOTFOUND|fetch failed|socket|network/i.test(msg))
     return { kind: 'transient' };
+  // The SDK reads newline-delimited JSON from the `claude` CLI subprocess; when a
+  // line arrives split or truncated the parse throws "Unterminated string in JSON"
+  // / "Unexpected end of JSON" / SyntaxError mid-stream. That is a transport hiccup,
+  // not a real model failure — and if we treat it as fatal EVERY turn dies and the
+  // town does nothing (0 of everything in the digest). Retry it like any other blip.
+  if (/unterminated|unexpected (end|token|non-whitespace)|in JSON|JSON\.parse|SyntaxError|is not valid JSON|invalid json/i.test(msg))
+    return { kind: 'transient' };
   return { kind: 'other' };
 }
 
-const RUN_RETRIES = 2; // quick retries for a transient blip before giving up the turn
+const RUN_RETRIES = 3; // quick retries for a transient blip before giving up the turn
 async function runModel(prompt) {
   for (let attempt = 0; ; attempt++) {
     let text = '';
