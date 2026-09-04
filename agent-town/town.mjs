@@ -114,25 +114,24 @@ const DATA_ROOT = process.env.TOWN_DATA_DIR || DIR;
 // read it from claude-oauth-token.txt beside this file and set it. The SDK
 // subprocess inherits our env, so this is what lets the town think. Works the
 // same whether started by run-town.sh/.bat or a bare `node town.mjs`.
-if (!process.env.CLAUDE_CODE_OAUTH_TOKEN) {
-  // Find the token file whatever it was reasonably named. Match is
-  // case-insensitive and tolerates the easy typos: hyphens/underscores/spaces,
-  // an optional "claude(-code)" prefix, and a zero written for the O in "oauth"
-  // (CLAUDE_CODE_0AUTH_TOKEN.txt). Never the dashboard key or a cloudflare token.
-  const isTokenFile = n => {
-    const l = n.toLowerCase();
-    if (l === 'town-key.txt' || l.includes('cloudflare')) return false;
-    return /^(claude[-_ ]?(code[-_ ]?)?)?[o0]auth[-_ ]?token\.txt$/.test(l)
-      || l === 'token.txt' || l === 'claude-token.txt' || l === 'claude_code_token.txt';
-  };
+// Read a token out of the first .txt file beside town.mjs whose name matches, so
+// the filename never has to be exact. Never the dashboard key (town-key.txt).
+function tokenFromFolder(match) {
   try {
-    const match = readdirSync(DIR).find(isTokenFile);
-    if (match) {
-      const tok = readFileSync(join(DIR, match), 'utf8').trim();
-      if (tok) { process.env.CLAUDE_CODE_OAUTH_TOKEN = tok; console.log(`  auth: using the token in ${match}`); }
-    }
-  } catch { /* fall through to the no-token notice */ }
-  if (!process.env.CLAUDE_CODE_OAUTH_TOKEN) console.error('  auth: no CLAUDE_CODE_OAUTH_TOKEN in the env and no token file found — run `claude setup-token` and save its token beside town.mjs (e.g. claude-oauth-token.txt)');
+    const f = readdirSync(DIR).find(n => { const l = n.toLowerCase(); return l.endsWith('.txt') && l !== 'town-key.txt' && match(l); });
+    if (f) return { value: readFileSync(join(DIR, f), 'utf8').trim(), file: f };
+  } catch { /* ignore */ }
+  return { value: '', file: '' };
+}
+if (!process.env.CLAUDE_CODE_OAUTH_TOKEN) {
+  // the Claude OAuth token: tolerate case, separators, an optional claude(-code)
+  // prefix, and a zero written for the O in "oauth" (CLAUDE_CODE_0AUTH_TOKEN.txt).
+  // Never a cloudflare token file.
+  const { value, file } = tokenFromFolder(l => !l.includes('cloudflare') && (
+    /^(claude[-_ ]?(code[-_ ]?)?)?[o0]auth[-_ ]?token\.txt$/.test(l)
+    || l === 'token.txt' || l === 'claude-token.txt' || l === 'claude_code_token.txt'));
+  if (value) { process.env.CLAUDE_CODE_OAUTH_TOKEN = value; console.log(`  auth: using the token in ${file}`); }
+  else console.error('  auth: no CLAUDE_CODE_OAUTH_TOKEN in the env and no token file found — run `claude setup-token` and save its token beside town.mjs (e.g. claude-oauth-token.txt)');
 }
 const MODEL = (process.env.TOWN_MODEL || '').trim();
 const EFFORT = (process.env.TOWN_EFFORT || '').trim();
@@ -201,7 +200,9 @@ const WORKSHOP = join(DATA_ROOT, 'workshop');
 // = the DEPLOY brief is never shown and no session carries a Cloudflare credential.
 let CF_TOKEN = (process.env.CF_TOKEN || '').trim();
 if (!CF_TOKEN) {
-  try { CF_TOKEN = readFileSync(join(DIR, 'cloudflare-token.txt'), 'utf8').trim(); } catch { /* no token, no deploys */ }
+  // the villagers' playground token: a cloudflare token file that is NOT the main/deploy one
+  const { value, file } = tokenFromFolder(l => l.includes('cloudflare') && l.includes('token') && !/(main|deploy)/.test(l));
+  if (value) { CF_TOKEN = value; console.log(`  cloudflare: villagers' token from ${file}`); }
 }
 
 /* A SECOND, separate credential for the owner's real sites.
@@ -221,9 +222,11 @@ if (!CF_TOKEN) {
    ever sees it in their own environment. */
 let CF_DEPLOY_TOKEN = (process.env.MAIN_CF_DEPLOY_TOKEN || '').trim();
 if (!CF_DEPLOY_TOKEN) {
-  try { CF_DEPLOY_TOKEN = readFileSync(join(DIR, 'MainCloudflare-deploy-token.txt'), 'utf8').trim(); } catch { /* no token, no corporate deploys */ }
+  // the corporate deploy token: a cloudflare token file that names itself main/deploy
+  const { value, file } = tokenFromFolder(l => l.includes('cloudflare') && l.includes('token') && /(main|deploy)/.test(l));
+  if (value) { CF_DEPLOY_TOKEN = value; console.log(`  cloudflare: corporate deploy token from ${file}`); }
 }
-if (!CF_DEPLOY_TOKEN) console.error('  no MAIN_CF_DEPLOY_TOKEN and no MainCloudflare-deploy-token.txt beside town.mjs — deploys to the owner\'s real sites stay off until one exists');
+if (!CF_DEPLOY_TOKEN) console.error('  no MAIN_CF_DEPLOY_TOKEN and no MainCloudflare-deploy-token.txt (or similar) beside town.mjs — deploys to the owner\'s real sites stay off until one exists');
 // ids are used verbatim in Worker names, which allow only [a-z0-9-]
 // A Cloudflare Worker name must START AND END alphanumeric, so the trailing
 // hyphen a folder like "my-app " or "notes." would leave has to go — otherwise
