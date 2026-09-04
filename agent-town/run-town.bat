@@ -15,6 +15,8 @@ set DASH_URL=https://lifehq.dyer-hq.workers.dev
 set TOWN_MODEL=claude-opus-4-8
 set TOWN_EFFORT=low
 set TOWN_PORT=8787
+rem tells town.mjs this launcher restarts it (so it never forks its own successor)
+set TOWN_LAUNCHER=1
 set "TOWN_KEY="
 
 rem Subscription only: clear any stray API key so the town runs on your

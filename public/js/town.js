@@ -558,24 +558,30 @@ export function mount(root, tools) {
       const h = hashStr(`cell:${x}:${y}`);
       gx.fillStyle = tones[h % tones.length];
       gx.fillRect(x, y, 14, 14);
-      if (h % 11 === 0) { gx.fillStyle = 'rgba(60,120,45,0.35)'; gx.fillRect(x + (h >>> 4) % 12, y + (h >>> 8) % 12, 2, 2); }
+      if (h % 23 === 0) { gx.fillStyle = 'rgba(60,120,45,0.30)'; gx.fillRect(x + (h >>> 4) % 12, y + (h >>> 8) % 12, 2, 2); }  // a rare darker fleck, not a rash of them
     }
     groundTex = g;
-    // flat litter: grass tufts and small flower clusters, all over the field
-    const n = Math.max(40, Math.round(W * H / 2600));
+    // flat litter: grass tufts and the odd flower cluster. Kept SPARSE — a field
+    // of confetti reads as clutter, not meadow — and biased to plain green tufts
+    // with only an occasional flower, so the eye rests on the buildings.
+    const outer = Math.min(W, H) * 0.40;   // the calm inner village; decoration lives beyond it
+    const n = Math.max(18, Math.round(W * H / 11000));
     for (let i = 0; i < n; i++) {
       const h = hashStr(`grass:${i}`);
       const x = 6 + mix(h) % Math.max(1, W - 12), y = 6 + mix(h ^ 0x9e3779b9) % Math.max(1, H - 12);
-      if (!clear(x, y)) continue;
-      decor.push({ x, y, kind: i % 4 === 3 ? 'flowers' : 'tuft', seed: h });
+      if (!clear(x, y, 6)) continue;
+      if (Math.hypot(x - cx, y - cy) < outer * 0.7) continue;   // keep the plaza and house ring clear
+      decor.push({ x, y, kind: i % 6 === 0 ? 'flowers' : 'tuft', seed: h });
     }
-    // standing greenery: trees and shrubs, sorted into the depth pass later so a
-    // villager walks behind a tree as naturally as behind a house
-    const m = Math.max(30, Math.round(W * H / 6500));   // ~90 candidates; the clear() sieve keeps roughly a third
+    // standing greenery: trees and shrubs, thinned and pushed to a border ring
+    // around the edge of the field so the middle of town stays uncluttered and
+    // they frame it instead of crowding between the houses.
+    const m = Math.max(14, Math.round(W * H / 13000));
     for (let i = 0; i < m; i++) {
       const h = hashStr(`green:${i}`);
       const x = 20 + mix(h) % Math.max(1, W - 40), y = 40 + mix(h ^ 0x9e3779b9) % Math.max(1, H - 60);
-      if (!clear(x, y, 14)) continue;
+      if (!clear(x, y, 18)) continue;
+      if (Math.hypot(x - cx, y - cy) < outer) continue;         // trees ring the town, they don't fill it
       const tree = i % 3 !== 1;
       greenery.push({ x, y, kind: tree ? 'tree' : 'shrub', size: tree ? 0.85 + (h % 5) * 0.09 : 0.8 + (h % 4) * 0.12 });
     }
@@ -663,7 +669,35 @@ export function mount(root, tools) {
         const a = -Math.PI / 2 + ((ri + 0.5) / Math.max(1, n)) * Math.PI * 2; ri++;
         cx = townCenter.x + Math.cos(a) * rx; cy = townCenter.y + Math.sin(a) * ry;
       }
-      districts[k] = { key: k, x: cx, y: cy, label: s.map[k], clearing: makeClearing(k, cx, cy) };
+      districts[k] = { key: k, x: cx, y: cy, label: s.map[k] };
+    }
+    // Tidy the ring so buildings never stack. The villagers place their own
+    // houses, and saved spots can pile onto one corner — which is what "houses
+    // on top of each other" was. Keep the plaza fixed above the fountain and lay
+    // every other building on one evenly-spaced ellipse around it, ordered by the
+    // angle each resident chose, so a house moved to the east stays in the east —
+    // it just gets elbow room. Spacing is by equal arc LENGTH, not equal angle,
+    // or the wide sides of the ellipse bunch up again.
+    {
+      const others = Object.values(districts).filter(d => d.key !== 'plaza');
+      const ang0 = d => (Math.atan2(d.y - townCenter.y, d.x - townCenter.x) + Math.PI * 2.5) % (Math.PI * 2);
+      others.sort((a, b) => ang0(a) - ang0(b));
+      const rx = 388, ry = 212, GAP = 52 * Math.PI / 180;        // GAP at the top leaves room for the plaza/HQ
+      const a0 = -Math.PI / 2 + GAP / 2, a1 = a0 + (Math.PI * 2 - GAP);
+      const SAMP = 1200, cum = [0]; let L = 0;                    // cumulative arc-length table along the ellipse
+      for (let i = 1; i <= SAMP; i++) {
+        const t0 = a0 + (a1 - a0) * (i - 1) / SAMP, t1 = a0 + (a1 - a0) * i / SAMP;
+        L += Math.hypot(rx * (Math.cos(t1) - Math.cos(t0)), ry * (Math.sin(t1) - Math.sin(t0)));
+        cum.push(L);
+      }
+      const angAt = u => { const target = u * L; let lo = 0; while (lo < SAMP && cum[lo] < target) lo++; return a0 + (a1 - a0) * lo / SAMP; };
+      const n = others.length || 1;
+      others.forEach((d, i) => {
+        const a = angAt((i + 0.5) / n);
+        d.x = Math.max(padX, Math.min(W - padX, townCenter.x + Math.cos(a) * rx));
+        d.y = Math.max(topY, Math.min(botY, townCenter.y + Math.sin(a) * ry));
+      });
+      for (const d of Object.values(districts)) d.clearing = makeClearing(d.key, d.x, d.y);   // clearings follow to the tidy spot
     }
     // What the residents have done to the town — every field OPTIONAL (the Gas
     // Town bridge and older engines send none of them), validated once here so

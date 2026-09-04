@@ -65,13 +65,47 @@ That's it. A minimized "Dyer Town" window appears and the town comes to life.
 You never need `claude setup-token`, an API key, or a cloud account for this —
 those were only for running it on a server. Here it just rides your subscription.
 
+## Running it inside WSL instead
+
+The town runs the same way inside WSL (Ubuntu on the desktop); only the
+launcher differs. Everything below happens in the WSL shell, inside the
+`agent-town` folder.
+
+**Install or update — one paste:**
+
+```
+curl -fsSL -o town.mjs https://raw.githubusercontent.com/Rehchu/Personal-dashboard-/main/agent-town/town.mjs \
+ && curl -fsSL -o run-town.sh https://raw.githubusercontent.com/Rehchu/Personal-dashboard-/main/agent-town/run-town.sh \
+ && chmod +x run-town.sh && node --check town.mjs && echo "engine OK"
+```
+
+Then stop the old town (Ctrl+C in its pane, or `fuser -k 8787/tcp`) and start
+the launcher:
+
+```
+./run-town.sh                        # in a tmux pane, or
+nohup ./run-town.sh >> town.log 2>&1 &
+```
+
+- `town-key.txt` (your dashboard passphrase) and
+  `MainCloudflare-deploy-token.txt` (the corporate deploy token) sit beside
+  `town.mjs`, exactly as on Windows.
+- `run-town.sh` restarts the town after a crash or a self-update. If you start
+  the engine some other way (`npm start`, `node town.mjs`) it still updates
+  itself: on Linux it starts its own successor before it exits, so nothing is
+  lost — the launcher is just tidier.
+- The Windows steps above (Startup folder, `run-town.bat`) don't apply in
+  WSL. To survive a reboot, start it from a tmux session you re-attach to, or,
+  if your WSL has systemd enabled, `./setup-vm.sh` installs it as a service.
+
 ## It updates itself
 
 `town.mjs` checks the repo (`agent-town/town.mjs` on `main`) every 10 minutes.
 When a newer engine is published it validates it (`node --check`), swaps it in
-with a `town.mjs.bak` beside it, saves the world, and exits — `run-town.bat`
-restarts it 15 seconds later on the new code. You never need to be at the PC
-to ship a change.
+with a `town.mjs.bak` beside it, saves the world, and restarts on the new code:
+under `run-town.bat` or `run-town.sh` it exits and the launcher brings it back
+15 seconds later; started by hand on Linux/WSL, it launches its own successor
+first. You never need to be at the PC to ship a change.
 
 - **Update right now:** in the dashboard, message any villager `/update`.
 - **Turn it off:** set `TOWN_UPDATE_MIN=0` (or `TOWN_NO_UPDATE=1`).
