@@ -1,832 +1,927 @@
 {
-  "version": 1,
-  "songs": {
-    "When I Think About The Lord": {
-      "ccli": "2834496",
-      "writers": "James Huey",
-      "copyright": "© 1998 CFN Worship Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"When I Think About The Lord\" words and music by James Huey\n  © 1998 CFN Worship Music | CCLI Song No. 2834496"
-    },
-    "Something Happens": {
-      "ccli": "4414285",
-      "writers": "Kurt Carr",
-      "copyright": "© 2004 KCartunes Music; Lilly Mack Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Something Happens\" words and music by Kurt Carr\n  © 2004 KCartunes Music; Lilly Mack Music | CCLI Song No. 4414285"
-    },
-    "Just The Mention Of His Name": {
-      "ccli": "7188448",
-      "writers": "Andrew Holt",
-      "copyright": "© Andrew Holt Music Publishing; TBCO Publishing",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Just The Mention Of His Name\" words and music by Andrew Holt\n  © Andrew Holt Music Publishing; TBCO Publishing | CCLI Song No. 7188448"
-    },
-    "God I'm Just Grateful": {
-      "ccli": "7270317",
-      "writers": "Abubakar Baker Shariff-Farr, Chandler Moore, Joshua Emanuel Coleman, Pat Barrett, Steven Furtick",
-      "copyright": "© 2025 Capitol CMG Genesis; Housefires Sounds; Music by Elevation Worship Publishing; For Humans Publishing; Maverick City Publishing; remaining portion unaffiliated",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"God I'm Just Grateful\" words and music by Abubakar Baker Shariff-Farr, Chandler Moore, Joshua Emanuel Coleman, Pat Barrett, Steven Furtick\n  © 2025 Capitol CMG Genesis; Housefires Sounds; Music by Elevation Worship Publishing; For Humans Publishing; Maverick City Publishing; remaining portion unaffiliated | CCLI Song No. 7270317"
-    },
-    "Worthy": {
-      "ccli": "7111931",
-      "writers": "Chris Brown, Mack Brock, Steven Furtick",
-      "copyright": "© Music by Elevation Worship Publishing",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "note": "CORRECTED TITLE: was stored as 'Worthy Is Your Name' (the chorus hook). SongSelect canonical title is 'Worthy' (Elevation Worship, Hallelujah Here Below). Number was already correct.",
-      "status": "Verified",
-      "credit": "- \"Worthy\" words and music by Chris Brown, Mack Brock, Steven Furtick\n  © Music by Elevation Worship Publishing | CCLI Song No. 7111931",
-      "notes": "CORRECTED TITLE: was stored as 'Worthy Is Your Name' (the chorus hook). SongSelect canonical title is 'Worthy' (Elevation Worship, Hallelujah Here Below). Number was already correct."
-    },
-    "Wide As The Sky": {
-      "ccli": "7000697",
-      "writers": "Jonas Myrin, Kristian Stanfill, Matt Redman",
-      "copyright": "© 2013 Atlas Mountain Songs; Said And Done Music; sixsteps Music; Thankyou Music Ltd; worshiptogether.com songs",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Wide As The Sky\" words and music by Jonas Myrin, Kristian Stanfill, Matt Redman\n  © 2013 Atlas Mountain Songs; Said And Done Music; sixsteps Music; Thankyou Music Ltd; worshiptogether.com songs | CCLI Song No. 7000697"
-    },
-    "Proverbs 3 (Tablet Of Your Heart)": {
-      "ccli": "7169549",
-      "writers": "Isaac Tarver, Jaylen Moore, Todd Dulaney",
-      "copyright": "© MNRK Music Group Nashville; U Know It 2; remaining portion unaffiliated",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "note": "canonical title includes 'Proverbs 3'; was stored as 'Tablet of Your Heart'",
-      "status": "Verified",
-      "credit": "- \"Proverbs 3 (Tablet Of Your Heart)\" words and music by Isaac Tarver, Jaylen Moore, Todd Dulaney\n  © MNRK Music Group Nashville; U Know It 2; remaining portion unaffiliated | CCLI Song No. 7169549",
-      "notes": "canonical title includes 'Proverbs 3'; was stored as 'Tablet of Your Heart'"
-    },
-    "We Bless": {
-      "ccli": "7240746",
-      "writers": "Osinachi Kalu Okoro Egbu (Sinach)",
-      "copyright": "© 2024 Integrity Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"We Bless\" words and music by Osinachi Kalu Okoro Egbu (Sinach)\n  © 2024 Integrity Music | CCLI Song No. 7240746"
-    },
-    "Great Are You Lord": {
-      "ccli": "6460220",
-      "writers": "David Leonard, Jason Ingram, Leslie Jordan",
-      "copyright": "© 2012 Open Hands Music; So Essential Tunes; Integrity's Praise! Music; Little Way Creative",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Great Are You Lord\" words and music by David Leonard, Jason Ingram, Leslie Jordan\n  © 2012 Open Hands Music; So Essential Tunes; Integrity's Praise! Music; Little Way Creative | CCLI Song No. 6460220"
-    },
-    "Who Else": {
-      "ccli": "7223119",
-      "writers": "Abbie Gamboa, Josiah Funderburk, Zac Rowe",
-      "copyright": "© 2023 Gateway Music Global Publishing; Gamboa World, LLC",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Who Else\" words and music by Abbie Gamboa, Josiah Funderburk, Zac Rowe\n  © 2023 Gateway Music Global Publishing; Gamboa World, LLC | CCLI Song No. 7223119"
-    },
-    "Agnus Dei": {
-      "ccli": "626713",
-      "writers": "Michael W. Smith",
-      "copyright": "© 1990 Sony/ATV Milene Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Agnus Dei\" words and music by Michael W. Smith\n  © 1990 Sony/ATV Milene Music | CCLI Song No. 626713"
-    },
-    "In The River": {
-      "ccli": "7054537",
-      "writers": "Chris Quilala, Joshua Silverberg, Mark Alan Schoolmeesters, Ryan Williams",
-      "copyright": "© 2015 Capitol CMG Amplifier; Capitol CMG Genesis; Capitol CMG Paragon; Common Hymnal Digital; Common Hymnal Publishing; Jesus Culture Music; Red Red Pop",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"In The River\" words and music by Chris Quilala, Joshua Silverberg, Mark Alan Schoolmeesters, Ryan Williams\n  © 2015 Capitol CMG Amplifier; Capitol CMG Genesis; Capitol CMG Paragon; Common Hymnal Digital; Common Hymnal Publishing; Jesus Culture Music; Red Red Pop | CCLI Song No. 7054537"
-    },
-    "Praise": {
-      "ccli": "7213077",
-      "writers": "Brandon Lake, Chandler Moore, Chris Brown, Cody Carnes, Pat Barrett, Steven Furtick",
-      "copyright": "© 2023 Capitol CMG Genesis; Capitol CMG Paragon; Housefires Sounds; Writer's Roof Publishing; Brandon Lake Music; Music by Elevation Worship Publishing; For Humans Publishing; Maverick City Publishing",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Praise\" words and music by Brandon Lake, Chandler Moore, Chris Brown, Cody Carnes, Pat Barrett, Steven Furtick\n  © 2023 Capitol CMG Genesis; Capitol CMG Paragon; Housefires Sounds; Writer's Roof Publishing; Brandon Lake Music; Music by Elevation Worship Publishing; For Humans Publishing; Maverick City Publishing | CCLI Song No. 7213077"
-    },
-    "King Of Glory (Feat. Shana Wilson-Williams)": {
-      "ccli": "7135918",
-      "writers": "Todd Dulaney",
-      "copyright": "© 2017 MNRK Music Group Nashville; U Know It 2",
-      "aliases": [
-        "King of Glory",
-        "I Just Want To Be With You"
-      ],
-      "_heard": "Aug 24 2026 Glory Night — 'King of glory, fill this place'",
-      "source": "CCLI SongSelect, verified 2026-08-25",
-      "status": "Complete",
-      "credit": "- \"King Of Glory (Feat. Shana Wilson-Williams)\" words and music by Todd Dulaney\n  © 2017 MNRK Music Group Nashville; U Know It 2 | CCLI Song No. 7135918"
-    },
-    "Good Good Father": {
-      "ccli": "7036612",
-      "writers": "Anthony Brown, Pat Barrett",
-      "copyright": "© 2014 Capitol CMG Paragon; Common Hymnal Digital; Housefires Sounds; Rising Springs Music; Tony Brown Publishing Designee; Vamos Publishing; worshiptogether.com songs",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Good Good Father\" words and music by Anthony Brown, Pat Barrett\n  © 2014 Capitol CMG Paragon; Common Hymnal Digital; Housefires Sounds; Rising Springs Music; Tony Brown Publishing Designee; Vamos Publishing; worshiptogether.com songs | CCLI Song No. 7036612"
-    },
-    "My Worship": {
-      "ccli": "7098688",
-      "writers": "Philip Nathan Thompson (Phil Thompson), Zenzo Matoga",
-      "copyright": "© 2017 Integrity Worship Music; Philthompsonworship; Zenzo Matoga Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"My Worship\" words and music by Philip Nathan Thompson (Phil Thompson), Zenzo Matoga\n  © 2017 Integrity Worship Music; Philthompsonworship; Zenzo Matoga Music | CCLI Song No. 7098688"
-    },
-    "See A Victory": {
-      "ccli": "7129060",
-      "writers": "Ben Fielding, Chris Brown, Jason Ingram, Steven Furtick",
-      "copyright": "© 2019 Fellow Ships Music; Music by Elevation Worship Publishing; So Essential Tunes; SHOUT! Music Publishing Australia",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"See A Victory\" words and music by Ben Fielding, Chris Brown, Jason Ingram, Steven Furtick\n  © 2019 Fellow Ships Music; Music by Elevation Worship Publishing; So Essential Tunes; SHOUT! Music Publishing Australia | CCLI Song No. 7129060"
-    },
-    "Gratitude": {
-      "ccli": "7158417",
-      "writers": "Benjamin Hastings, Brandon Lake, Dante Bowe",
-      "copyright": "© 2019 Bethel Worship Publishing; Brandon Lake Music; Maverick City Publishing; Maverick City Publishing Worldwide; SHOUT! Music Publishing Australia; Bethel Music Publishing",
-      "aliases": [
-        "Come On My Soul",
-        "Hallelujah (heart singing)"
-      ],
-      "_note": "Bradly confirmed 2026-08-25 that 'Come on my soul / get up and praise the Lord' is Gratitude's BRIDGE, not a second song. Auto-captions also render 'all that I have is a hallelujah' as 'a heart singing hallelujah'. One song, three shapes in a transcript.",
-      "source": "CCLI SongSelect, verified 2026-08-25",
-      "status": "Complete",
-      "credit": "- \"Gratitude\" words and music by Benjamin Hastings, Brandon Lake, Dante Bowe\n  © 2019 Bethel Worship Publishing; Brandon Lake Music; Maverick City Publishing; Maverick City Publishing Worldwide; SHOUT! Music Publishing Australia; Bethel Music Publishing | CCLI Song No. 7158417"
-    },
-    "Evidence": {
-      "ccli": "7147432",
-      "writers": "Ed Cash, Ethan Hulse, Josh Baldwin",
-      "copyright": "© 2020 Capitol CMG Paragon; Out Of My Cages Publishing; Be Essential Songs; EGH Music Publishing; Bethel Music Publishing",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Evidence\" words and music by Ed Cash, Ethan Hulse, Josh Baldwin\n  © 2020 Capitol CMG Paragon; Out Of My Cages Publishing; Be Essential Songs; EGH Music Publishing; Bethel Music Publishing | CCLI Song No. 7147432"
-    },
-    "Holy Spirit": {
-      "ccli": "6087919",
-      "writers": "Bryan Torwalt, Katie Torwalt",
-      "copyright": "© 2011 Capitol CMG Genesis; Jesus Culture Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Holy Spirit\" words and music by Bryan Torwalt, Katie Torwalt\n  © 2011 Capitol CMG Genesis; Jesus Culture Music | CCLI Song No. 6087919"
-    },
-    "More Than Able": {
-      "ccli": "7209590",
-      "writers": "Ben Fielding, Chandler Moore, Naomi Raine, Steven Furtick",
-      "copyright": "© Ben Fielding Publishing; Music by Elevation Worship Publishing; For Humans Publishing; Maverick City Publishing; Naomi Raine Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"More Than Able\" words and music by Ben Fielding, Chandler Moore, Naomi Raine, Steven Furtick\n  © Ben Fielding Publishing; Music by Elevation Worship Publishing; For Humans Publishing; Maverick City Publishing; Naomi Raine Music | CCLI Song No. 7209590"
-    },
-    "Same God": {
-      "ccli": "7183537",
-      "writers": "Brandon Lake, Chris Brown, Pat Barrett, Steven Furtick",
-      "copyright": "© Brandon Lake Music; Maverick City Publishing Worldwide; Capitol CMG Genesis; Housefires Sounds; Music by Elevation Worship Publishing; Bethel Music Publishing",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Same God\" words and music by Brandon Lake, Chris Brown, Pat Barrett, Steven Furtick\n  © Brandon Lake Music; Maverick City Publishing Worldwide; Capitol CMG Genesis; Housefires Sounds; Music by Elevation Worship Publishing; Bethel Music Publishing | CCLI Song No. 7183537"
-    },
-    "Raise A Hallelujah": {
-      "ccli": "7119315",
-      "writers": "Jake Stevens, Jonathan David Helser, Melissa Helser, Molly Skaggs",
-      "copyright": "© 2018 Quiltmaker Music; Bethel Music Publishing",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Raise A Hallelujah\" words and music by Jake Stevens, Jonathan David Helser, Melissa Helser, Molly Skaggs\n  © 2018 Quiltmaker Music; Bethel Music Publishing | CCLI Song No. 7119315"
-    },
-    "Holy Forever": {
-      "ccli": "7201044",
-      "writers": "Brian Johnson, Chris Tomlin, Jason Ingram, Jenn Johnson, Phil Wickham",
-      "copyright": "© 2022 Brian and Jenn Publishing; Capitol CMG Paragon; S. D. G. Publishing; Be Essential Songs; My Magnolia Music; Phil Wickham Music; Simply Global Songs; Bethel Music Publishing",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Holy Forever\" words and music by Brian Johnson, Chris Tomlin, Jason Ingram, Jenn Johnson, Phil Wickham\n  © 2022 Brian and Jenn Publishing; Capitol CMG Paragon; S. D. G. Publishing; Be Essential Songs; My Magnolia Music; Phil Wickham Music; Simply Global Songs; Bethel Music Publishing | CCLI Song No. 7201044"
-    },
-    "Shout Unto God": {
-      "ccli": "4455206",
-      "writers": "Joel Houston, Marty Sampson",
-      "copyright": "© 2004 Hillsong Music Publishing Australia",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Shout Unto God\" words and music by Joel Houston, Marty Sampson\n  © 2004 Hillsong Music Publishing Australia | CCLI Song No. 4455206"
-    },
-    "Way Maker": {
-      "ccli": "7115744",
-      "writers": "Osinachi Kalu Okoro Egbu (Sinach)",
-      "copyright": "© 2016 Integrity Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Way Maker\" words and music by Osinachi Kalu Okoro Egbu (Sinach)\n  © 2016 Integrity Music | CCLI Song No. 7115744"
-    },
-    "Mary Did You Know": {
-      "ccli": "839225",
-      "writers": "Buddy Greene, Mark Lowry",
-      "copyright": "© 1991, 1993 Rufus Music; Curb Word Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Mary Did You Know\" words and music by Buddy Greene, Mark Lowry\n  © 1991, 1993 Rufus Music; Curb Word Music | CCLI Song No. 839225"
-    },
-    "Worthy Of It All": {
-      "ccli": "6280644",
-      "writers": "David Brymer, Ryan Hall",
-      "copyright": "© 2012 Common Hymnal Publishing; Innerland; Underground Treasure; Wayfinder Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Worthy Of It All\" words and music by David Brymer, Ryan Hall\n  © 2012 Common Hymnal Publishing; Innerland; Underground Treasure; Wayfinder Music | CCLI Song No. 6280644"
-    },
-    "Homecoming": {
-      "ccli": "7183255",
-      "writers": "Brian Johnson, Christian Ostrom, Cory Asbury, Gable Patrick Price",
-      "copyright": "© 2021 Bethel Worship Publishing; Brian and Jenn Publishing; Cory Asbury Publishing; Christian Ostrom Publishing; Gable Price Publishing Co; Bethel Music Publishing",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "note": "lead candidate for the 'The Homecoming' claim on tj9W3Xey_3c - confirm by ear before filing",
-      "status": "Verified",
-      "credit": "- \"Homecoming\" words and music by Brian Johnson, Christian Ostrom, Cory Asbury, Gable Patrick Price\n  © 2021 Bethel Worship Publishing; Brian and Jenn Publishing; Cory Asbury Publishing; Christian Ostrom Publishing; Gable Price Publishing Co; Bethel Music Publishing | CCLI Song No. 7183255",
-      "notes": "lead candidate for the 'The Homecoming' claim on tj9W3Xey_3c - confirm by ear before filing"
-    },
-    "You Are Good": {
-      "ccli": "3383788",
-      "writers": "Israel Houghton",
-      "copyright": "© 2001 Integrity's Praise! Music; Sound Of The New Breed",
-      "_note": "Was in _AMBIGUOUS_TITLES — more than one CCLI song answers to this title; Kari Jobe's is 5075001. Bradly ruled 2026-08-25 that Arise sings the Israel Houghton one.",
-      "source": "CCLI SongSelect, verified 2026-08-25",
-      "status": "Complete",
-      "credit": "- \"You Are Good\" words and music by Israel Houghton\n  © 2001 Integrity's Praise! Music; Sound Of The New Breed | CCLI Song No. 3383788"
-    },
-    "How Great Is Our God": {
-      "ccli": "4348399",
-      "writers": "Chris Tomlin, Ed Cash, Jesse Reeves",
-      "copyright": "© 2004 Rising Springs Music; Vamos Publishing; worshiptogether.com songs; Wondrously Made Songs",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"How Great Is Our God\" words and music by Chris Tomlin, Ed Cash, Jesse Reeves\n  © 2004 Rising Springs Music; Vamos Publishing; worshiptogether.com songs; Wondrously Made Songs | CCLI Song No. 4348399"
-    },
-    "What A Beautiful Name": {
-      "ccli": "7068424",
-      "writers": "Ben Fielding, Brooke Ligertwood",
-      "copyright": "© 2016 Hillsong Music Publishing Australia",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "note": "possible underlying song for the Spanish 'MAJESTUOSO NOMBRE' claim on zw80emxMeZk - needs segment listen",
-      "status": "Verified",
-      "credit": "- \"What A Beautiful Name\" words and music by Ben Fielding, Brooke Ligertwood\n  © 2016 Hillsong Music Publishing Australia | CCLI Song No. 7068424",
-      "notes": "possible underlying song for the Spanish 'MAJESTUOSO NOMBRE' claim on zw80emxMeZk - needs segment listen"
-    },
-    "Amazing Grace (My Chains Are Gone)": {
-      "ccli": "4768151",
-      "writers": "Chris Tomlin, John Newton, Louie Giglio",
-      "copyright": "© 2006 Rising Springs Music; Vamos Publishing; worshiptogether.com songs",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Amazing Grace (My Chains Are Gone)\" words and music by Chris Tomlin, John Newton, Louie Giglio\n  © 2006 Rising Springs Music; Vamos Publishing; worshiptogether.com songs | CCLI Song No. 4768151"
-    },
-    "The Overcomer": {
-      "ccli": "7070629",
-      "writers": "Colin Moore, Joel Ramsey",
-      "copyright": "© 2015 Citipointe Worship",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"The Overcomer\" words and music by Colin Moore, Joel Ramsey\n  © 2015 Citipointe Worship | CCLI Song No. 7070629"
-    },
-    "Take My Life": {
-      "ccli": "4162843",
-      "writers": "Chris Tomlin, Frances Ridley Havergal, Henri Abraham Cesar Malan, Louie Giglio",
-      "copyright": "© 2003 Rising Springs Music; Vamos Publishing; worshiptogether.com songs",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Take My Life\" words and music by Chris Tomlin, Frances Ridley Havergal, Henri Abraham Cesar Malan, Louie Giglio\n  © 2003 Rising Springs Music; Vamos Publishing; worshiptogether.com songs | CCLI Song No. 4162843"
-    },
-    "Fire": {
-      "ccli": "7172821",
-      "writers": "CeCe Winans, Dwan Hill, Kyle Lee",
-      "copyright": "© Fair Trade Tunes; From The Void; Big Buddy Music; Little Pooky's Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Fire\" words and music by CeCe Winans, Dwan Hill, Kyle Lee\n  © Fair Trade Tunes; From The Void; Big Buddy Music; Little Pooky's Music | CCLI Song No. 7172821"
-    },
-    "Oceans (Where Feet May Fail)": {
-      "ccli": "6428767",
-      "writers": "Joel Houston, Matt Crocker, Salomon Ligthelm",
-      "copyright": "© 2012 Hillsong Music Publishing Australia",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Oceans (Where Feet May Fail)\" words and music by Joel Houston, Matt Crocker, Salomon Ligthelm\n  © 2012 Hillsong Music Publishing Australia | CCLI Song No. 6428767"
-    },
-    "Healing Rain": {
-      "ccli": "4380137",
-      "writers": "Martin Smith, Matt Bronleewe, Michael W. Smith",
-      "copyright": "© 2004 Smittyfly Music; Curious? Music UK; Curb Word Music; remaining portion unaffiliated",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Healing Rain\" words and music by Martin Smith, Matt Bronleewe, Michael W. Smith\n  © 2004 Smittyfly Music; Curious? Music UK; Curb Word Music; remaining portion unaffiliated | CCLI Song No. 4380137"
-    },
-    "Every Praise": {
-      "ccli": "6623483",
-      "writers": "Hezekiah Walker, John David Bratton",
-      "copyright": "© 2013 Li'l Eva Music; Luv Ki Publishing; Davo Pavo Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Every Praise\" words and music by Hezekiah Walker, John David Bratton\n  © 2013 Li'l Eva Music; Luv Ki Publishing; Davo Pavo Music | CCLI Song No. 6623483"
-    },
-    "Hallelujah Salvation And Glory": {
-      "ccli": "2464385",
-      "writers": "Steve Israel",
-      "copyright": "© 1985 Israel, Steve",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Hallelujah Salvation And Glory\" words and music by Steve Israel\n  © 1985 Israel, Steve | CCLI Song No. 2464385"
-    },
-    "You're An Army": {
-      "ccli": "6243540",
-      "writers": "Rick Pino",
-      "copyright": "© 2009 Rick Pino Songs; Watershed Publishing Group",
-      "note": "NOT a Free Chapel song - Free Chapel recorded it; author is Rick Pino",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"You're An Army\" words and music by Rick Pino\n  © 2009 Rick Pino Songs; Watershed Publishing Group | CCLI Song No. 6243540",
-      "notes": "NOT a Free Chapel song - Free Chapel recorded it; author is Rick Pino"
-    },
-    "I Speak Jesus": {
-      "ccli": "7136201",
-      "writers": "Abby Benton, Carlene Prince, Dustin Smith, Jesse Reeves, Kristen Dutton, Raina Pratt",
-      "copyright": "© 2019 BEC Worship; Raina Pratt Publishing Designee; WriterWrong Music; For Me and My House Songs; Integrity's Praise! Music; Anchored In Hope Music; Give It A Lift Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"I Speak Jesus\" words and music by Abby Benton, Carlene Prince, Dustin Smith, Jesse Reeves, Kristen Dutton, Raina Pratt\n  © 2019 BEC Worship; Raina Pratt Publishing Designee; WriterWrong Music; For Me and My House Songs; Integrity's Praise! Music; Anchored In Hope Music; Give It A Lift Music | CCLI Song No. 7136201"
-    },
-    "Nothing Else": {
-      "ccli": "7123436",
-      "writers": "Cody Carnes, Hank Bentley, Jessie Early",
-      "copyright": "© 2019 Capitol CMG Paragon; Songs By That Dog Will Hunt; Writer's Roof Publishing",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Nothing Else\" words and music by Cody Carnes, Hank Bentley, Jessie Early\n  © 2019 Capitol CMG Paragon; Songs By That Dog Will Hunt; Writer's Roof Publishing | CCLI Song No. 7123436"
-    },
-    "Here Comes The Glory": {
-      "ccli": "7141661",
-      "writers": "David Binion, Israel Houghton, Leeland Mooring, William McDowell",
-      "copyright": "© Acts 20 24 Publishing; David Binion Music; District 11 Entertainment Publishing; Integrity Worship Music; Integrity's Praise! Music; The Devil Is A Liar! Publishing",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Here Comes The Glory\" words and music by David Binion, Israel Houghton, Leeland Mooring, William McDowell\n  © Acts 20 24 Publishing; David Binion Music; District 11 Entertainment Publishing; Integrity Worship Music; Integrity's Praise! Music; The Devil Is A Liar! Publishing | CCLI Song No. 7141661"
-    },
-    "You Are Good (Bethel)": {
-      "ccli": "5191806",
-      "writers": "Brian Johnson, Jeremy Riddle",
-      "copyright": "© 2010 Mercy / Vineyard Publishing; Bethel Music Publishing",
-      "note": "distinct from Israel Houghton's You Are Good #3383788",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"You Are Good (Bethel)\" words and music by Brian Johnson, Jeremy Riddle\n  © 2010 Mercy / Vineyard Publishing; Bethel Music Publishing | CCLI Song No. 5191806",
-      "notes": "distinct from Israel Houghton's You Are Good #3383788"
-    },
-    "Come Alive (Dry Bones)": {
-      "ccli": "6573588",
-      "writers": "Lauren Daigle, Michael Farren",
-      "copyright": "© 2012 CentricSongs; See You At The Pub; Curb Congregation Songs; remaining portion unaffiliated",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Come Alive (Dry Bones)\" words and music by Lauren Daigle, Michael Farren\n  © 2012 CentricSongs; See You At The Pub; Curb Congregation Songs; remaining portion unaffiliated | CCLI Song No. 6573588"
-    },
-    "Goodness Of God": {
-      "ccli": "7117726",
-      "writers": "Ben Fielding, Brian Johnson, Ed Cash, Jason Ingram, Jenn Johnson",
-      "copyright": "© 2018 Capitol CMG Paragon; Fellow Ships Music; So Essential Tunes; SHOUT! Music Publishing Australia; Bethel Music Publishing",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Goodness Of God\" words and music by Ben Fielding, Brian Johnson, Ed Cash, Jason Ingram, Jenn Johnson\n  © 2018 Capitol CMG Paragon; Fellow Ships Music; So Essential Tunes; SHOUT! Music Publishing Australia; Bethel Music Publishing | CCLI Song No. 7117726"
-    },
-    "Great Is Your Mercy": {
-      "ccli": "289693",
-      "writers": "Don Moen",
-      "copyright": "© 1990 Integrity's Hosanna! Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Great Is Your Mercy\" words and music by Don Moen\n  © 1990 Integrity's Hosanna! Music | CCLI Song No. 289693"
-    },
-    "Let It Rise": {
-      "ccli": "2240585",
-      "writers": "Holland Davis",
-      "copyright": "© 1997, 1999 Universal Music - Brentwood Benson Publishing",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Let It Rise\" words and music by Holland Davis\n  © 1997, 1999 Universal Music - Brentwood Benson Publishing | CCLI Song No. 2240585"
-    },
-    "Our God": {
-      "ccli": "5677416",
-      "writers": "Chris Tomlin, Jesse Reeves, Jonas Myrin, Matt Redman",
-      "copyright": "© 2010 Atlas Mountain Songs; Rising Springs Music; Thankyou Music Ltd; Vamos Publishing; worshiptogether.com songs",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Our God\" words and music by Chris Tomlin, Jesse Reeves, Jonas Myrin, Matt Redman\n  © 2010 Atlas Mountain Songs; Rising Springs Music; Thankyou Music Ltd; Vamos Publishing; worshiptogether.com songs | CCLI Song No. 5677416"
-    },
-    "Shake The Foundation": {
-      "ccli": "3715112",
-      "writers": "Joseph Pace II",
-      "copyright": "© 2002 Bridge Building Music, Inc.; Integrity's Praise! Music; Pace's Vision Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Shake The Foundation\" words and music by Joseph Pace II\n  © 2002 Bridge Building Music, Inc.; Integrity's Praise! Music; Pace's Vision Music | CCLI Song No. 3715112"
-    },
-    "Spirit Break Out": {
-      "ccli": "6058450",
-      "writers": "Ben Bryant, Luke Hellebronth, Myles Dhillon, Tim Hughes",
-      "copyright": "© 2010 Thankyou Music Ltd",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Spirit Break Out\" words and music by Ben Bryant, Luke Hellebronth, Myles Dhillon, Tim Hughes\n  © 2010 Thankyou Music Ltd | CCLI Song No. 6058450"
-    },
-    "More Than Anything (Rick Robinson)": {
-      "ccli": "4329473",
-      "writers": "Rick Robinson",
-      "copyright": "© 2002 Kid Prodigy Music",
-      "note": "'Jesus I love You more than anything' - recorded by Lamar Campbell and Jovonta Patton; distinct from Elevation's More Than Able",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"More Than Anything (Rick Robinson)\" words and music by Rick Robinson\n  © 2002 Kid Prodigy Music | CCLI Song No. 4329473",
-      "notes": "'Jesus I love You more than anything' - recorded by Lamar Campbell and Jovonta Patton; distinct from Elevation's More Than Able"
-    },
-    "Too Good To Not Believe": {
-      "ccli": "7174874",
-      "writers": "Brandon Lake, Chris Davenport, Cody Carnes, Josh Silverberg",
-      "copyright": "© 2021 Brandon Lake Music; Maverick City Publishing Worldwide; Capitol CMG Paragon; CDavs Music; Songs For TIM; Writer's Roof Publishing; Curb Congregation Songs; River Wild; Bethel Music Publishing",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Too Good To Not Believe\" words and music by Brandon Lake, Chris Davenport, Cody Carnes, Josh Silverberg\n  © 2021 Brandon Lake Music; Maverick City Publishing Worldwide; Capitol CMG Paragon; CDavs Music; Songs For TIM; Writer's Roof Publishing; Curb Congregation Songs; River Wild; Bethel Music Publishing | CCLI Song No. 7174874"
-    },
-    "House Of Prayer": {
-      "ccli": "6572060",
-      "writers": "Eddie James",
-      "copyright": "© 2013 Maize Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"House Of Prayer\" words and music by Eddie James\n  © 2013 Maize Music | CCLI Song No. 6572060"
-    },
-    "The Blood Will Never Lose Its Power": {
-      "ccli": "11885",
-      "writers": "Andraé Crouch",
-      "copyright": "© 1966 Manna Music, Inc.",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"The Blood Will Never Lose Its Power\" words and music by Andraé Crouch\n  © 1966 Manna Music, Inc. | CCLI Song No. 11885"
-    },
-    "Lace Up Your Boots": {
-      "ccli": "7253952",
-      "writers": "Eniola Abioye, Kaala White",
-      "copyright": "© 2025 Circuit Rider Music Team; remaining portion unaffiliated",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Lace Up Your Boots\" words and music by Eniola Abioye, Kaala White\n  © 2025 Circuit Rider Music Team; remaining portion unaffiliated | CCLI Song No. 7253952"
-    },
-    "I Am The God That Healeth Thee": {
-      "ccli": "17250",
-      "writers": "Don Moen",
-      "copyright": "© 1986 Integrity's Hosanna! Music; Ninth Avenue Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"I Am The God That Healeth Thee\" words and music by Don Moen\n  © 1986 Integrity's Hosanna! Music; Ninth Avenue Music | CCLI Song No. 17250"
-    },
-    "Trust In God": {
-      "ccli": "7206001",
-      "writers": "Brandon Lake, Chris Brown, Mitch Wong, Steven Furtick",
-      "copyright": "© 2023 Brandon Lake Music; Music by Elevation Worship Publishing; A Wong Made Write Publishing; Integrity's Praise! Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Trust In God\" words and music by Brandon Lake, Chris Brown, Mitch Wong, Steven Furtick\n  © 2023 Brandon Lake Music; Music by Elevation Worship Publishing; A Wong Made Write Publishing; Integrity's Praise! Music | CCLI Song No. 7206001"
-    },
-    "Hallelujah Chant": {
-      "ccli": "7068274",
-      "writers": "Eddie James",
-      "copyright": "© 2015 Maize Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Hallelujah Chant\" words and music by Eddie James\n  © 2015 Maize Music | CCLI Song No. 7068274"
-    },
-    "Nothing But The Blood Of Jesus (HeartCry)": {
-      "ccli": "4655848",
-      "writers": "Michael Morrow, Robert Lowry",
-      "copyright": "© Words: 2005 Morrow, Michael; Music: 2005 Morrow, Michael",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Nothing But The Blood Of Jesus (HeartCry)\" words and music by Michael Morrow, Robert Lowry\n  © Words: 2005 Morrow, Michael; Music: 2005 Morrow, Michael | CCLI Song No. 4655848"
-    },
-    "Precious Is The Blood": {
-      "ccli": "4382881",
-      "writers": "Joseph Pace II",
-      "copyright": "© 2004 Integrity's Praise! Music; Pace's Vision Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Precious Is The Blood\" words and music by Joseph Pace II\n  © 2004 Integrity's Praise! Music; Pace's Vision Music | CCLI Song No. 4382881"
-    },
-    "I Gotta Praise": {
-      "ccli": "7025318",
-      "writers": "Damita Haddon, Deitrick Haddon",
-      "copyright": "© Bridge Building Music, Inc.; Deitrick Vaughn Haddon Publishing; Tryscot Songs; Mita Made; Tyscot Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"I Gotta Praise\" words and music by Damita Haddon, Deitrick Haddon\n  © Bridge Building Music, Inc.; Deitrick Vaughn Haddon Publishing; Tryscot Songs; Mita Made; Tyscot Music | CCLI Song No. 7025318"
-    },
-    "Yeshua (Marty & Misha Goetz)": {
-      "ccli": "7087646",
-      "writers": "Marty Goetz, Misha Goetz",
-      "copyright": "© 2017 Misha Goetz Music; Singin' In The Reign Music",
-      "note": "REFERENCE ONLY - the Yeshua sung Oct 19 2025 may be a different one (desc claimed Maverick City); Bradly to confirm by ear",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Yeshua (Marty & Misha Goetz)\" words and music by Marty Goetz, Misha Goetz\n  © 2017 Misha Goetz Music; Singin' In The Reign Music | CCLI Song No. 7087646",
-      "notes": "REFERENCE ONLY - the Yeshua sung Oct 19 2025 may be a different one (desc claimed Maverick City); Bradly to confirm by ear"
-    },
-    "Lord I Lift Your Name On High": {
-      "ccli": "117947",
-      "writers": "Rick Founds",
-      "copyright": "© 1989 Universal Music - Brentwood Benson Publishing",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Lord I Lift Your Name On High\" words and music by Rick Founds\n  © 1989 Universal Music - Brentwood Benson Publishing | CCLI Song No. 117947"
-    },
-    "Days Of Elijah": {
-      "ccli": "1537904",
-      "writers": "Robin Mark",
-      "copyright": "© 1996 Song Solutions Daybreak",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Days Of Elijah\" words and music by Robin Mark\n  © 1996 Song Solutions Daybreak | CCLI Song No. 1537904"
-    },
-    "The Anthem": {
-      "ccli": "5066041",
-      "writers": "Henry Seeley, Joth Hunt, Liz Webber",
-      "copyright": "© 2007 Planetshakers Ministries Int. Inc.",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "note": "Planetshakers original; Todd Dulaney's live cover is the arrangement our team sings",
-      "status": "Verified",
-      "credit": "- \"The Anthem\" words and music by Henry Seeley, Joth Hunt, Liz Webber\n  © 2007 Planetshakers Ministries Int. Inc. | CCLI Song No. 5066041",
-      "notes": "Planetshakers original; Todd Dulaney's live cover is the arrangement our team sings"
-    },
-    "I Give Myself Away": {
-      "ccli": "5873382",
-      "writers": "Sam Hinn, William McDowell",
-      "copyright": "© 2008 Delivery Room Publishing",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "note": "NOT 5441826 (that number does not exist on SongSelect)",
-      "status": "Verified",
-      "credit": "- \"I Give Myself Away\" words and music by Sam Hinn, William McDowell\n  © 2008 Delivery Room Publishing | CCLI Song No. 5873382",
-      "notes": "NOT 5441826 (that number does not exist on SongSelect)"
-    },
-    "Sanctuary": {
-      "ccli": "24140",
-      "writers": "John W. Thompson, Randy Scruggs",
-      "copyright": "© 1982 Full Armor Publishing Company; Whole Armor Publishing Company",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Sanctuary\" words and music by John W. Thompson, Randy Scruggs\n  © 1982 Full Armor Publishing Company; Whole Armor Publishing Company | CCLI Song No. 24140"
-    },
-    "Your Name Is Power": {
-      "ccli": "7132589",
-      "writers": "Chris Llewellyn, Gareth Gilkeson",
-      "copyright": "© 2019 Capitol CMG Paragon",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Your Name Is Power\" words and music by Chris Llewellyn, Gareth Gilkeson\n  © 2019 Capitol CMG Paragon | CCLI Song No. 7132589"
-    },
-    "Your Great Name (Todd Dulaney)": {
-      "ccli": "7128476",
-      "writers": "Dontaniel Jamel Kimbrough, Todd Dulaney",
-      "copyright": "© Keyemupmusic; MNRK Music Group Nashville; U Know It 2",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "note": "distinct from Natalie Grant's Your Great Name (Nordhoff/Neale)",
-      "status": "Verified",
-      "credit": "- \"Your Great Name (Todd Dulaney)\" words and music by Dontaniel Jamel Kimbrough, Todd Dulaney\n  © Keyemupmusic; MNRK Music Group Nashville; U Know It 2 | CCLI Song No. 7128476",
-      "notes": "distinct from Natalie Grant's Your Great Name (Nordhoff/Neale)"
-    },
-    "I Give You My Heart": {
-      "ccli": "1866132",
-      "writers": "Reuben Morgan",
-      "copyright": "© 1995 Hillsong Music Publishing Australia",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"I Give You My Heart\" words and music by Reuben Morgan\n  © 1995 Hillsong Music Publishing Australia | CCLI Song No. 1866132"
-    },
-    "I Exalt Thee": {
-      "ccli": "17803",
-      "writers": "Pete Sanchez Jr.",
-      "copyright": "© 1977 Pete Sanchez Jr.",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "note": "congregation sings it as 'We Exalt Thee'",
-      "status": "Verified",
-      "credit": "- \"I Exalt Thee\" words and music by Pete Sanchez Jr.\n  © 1977 Pete Sanchez Jr. | CCLI Song No. 17803",
-      "notes": "congregation sings it as 'We Exalt Thee'"
-    },
-    "Holy Spirit (Torwalt)": {
-      "ccli": "6087919",
-      "writers": "Bryan Torwalt, Katie Torwalt",
-      "copyright": "© 2011 Capitol CMG Genesis; Jesus Culture Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Holy Spirit (Torwalt)\" words and music by Bryan Torwalt, Katie Torwalt\n  © 2011 Capitol CMG Genesis; Jesus Culture Music | CCLI Song No. 6087919"
-    },
-    "Let It Rain (Michael Farren)": {
-      "ccli": "3591817",
-      "writers": "Michael Farren",
-      "copyright": "© 2001, 2025 This Is Your Time Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "note": "'Open the floodgates of heaven' — Pocket Full of Rocks / MWS recording",
-      "status": "Verified",
-      "credit": "- \"Let It Rain (Michael Farren)\" words and music by Michael Farren\n  © 2001, 2025 This Is Your Time Music | CCLI Song No. 3591817",
-      "notes": "'Open the floodgates of heaven' — Pocket Full of Rocks / MWS recording"
-    },
-    "I Thank God": {
-      "ccli": "7169680",
-      "writers": "Aaron Moses, Chuck Butler, Dante Bowe, Enrique Holmes, Jesse Cline, Maryanne J. George",
-      "copyright": "© 2021 Bethel Worship Publishing; Heritage Worship Music Publishing; Maverick City Publishing; Aaron Moses Chiriboga Music; Be Essential Songs; Holmeboy Music Group; Jesse Cline Publishing Designee; Jord A Lil Music; MJ George Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "note": "Maverick City Music & UPPERROOM — 'hell lost another one, I am free'",
-      "status": "Verified",
-      "credit": "- \"I Thank God\" words and music by Aaron Moses, Chuck Butler, Dante Bowe, Enrique Holmes, Jesse Cline, Maryanne J. George\n  © 2021 Bethel Worship Publishing; Heritage Worship Music Publishing; Maverick City Publishing; Aaron Moses Chiriboga Music; Be Essential Songs; Holmeboy Music Group; Jesse Cline Publishing Designee; Jord A Lil Music; MJ George Music | CCLI Song No. 7169680",
-      "notes": "Maverick City Music & UPPERROOM — 'hell lost another one, I am free'"
-    },
-    "Be Praised": {
-      "ccli": "7165546",
-      "writers": "Aaron Moses, Dante Bowe, Joe L. Barnes",
-      "copyright": "© 2020 Bethel Worship Publishing; Maverick City Publishing; ForTheDreamers Publishing; Aaron Moses Chiriboga Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Be Praised\" words and music by Aaron Moses, Dante Bowe, Joe L. Barnes\n  © 2020 Bethel Worship Publishing; Maverick City Publishing; ForTheDreamers Publishing; Aaron Moses Chiriboga Music | CCLI Song No. 7165546"
-    },
-    "Nobody Like You Lord": {
-      "ccli": "7112676",
-      "writers": "Antony Rachel, Maranda Curtis",
-      "copyright": "© Butterfly Works Publishing; remaining portion unaffiliated",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Nobody Like You Lord\" words and music by Antony Rachel, Maranda Curtis\n  © Butterfly Works Publishing; remaining portion unaffiliated | CCLI Song No. 7112676"
-    },
-    "I Can Only Imagine": {
-      "ccli": "2978857",
-      "writers": "Bart Millard",
-      "copyright": "© 2001, 2002 Simpleville Music",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"I Can Only Imagine\" words and music by Bart Millard\n  © 2001, 2002 Simpleville Music | CCLI Song No. 2978857"
-    },
-    "Open The Eyes Of My Heart": {
-      "ccli": "2298355",
-      "writers": "Paul Baloche",
-      "copyright": "© 1997 Integrity's Hosanna! Music; Leadworship Songs",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"Open The Eyes Of My Heart\" words and music by Paul Baloche\n  © 1997 Integrity's Hosanna! Music; Leadworship Songs | CCLI Song No. 2298355"
-    },
-    "You Deserve The Glory": {
-      "ccli": "1240868",
-      "writers": "Eva-Lena Hellmark",
-      "copyright": "© 1992 Eva-Lena Hellmark",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "status": "Verified",
-      "credit": "- \"You Deserve The Glory\" words and music by Eva-Lena Hellmark\n  © 1992 Eva-Lena Hellmark | CCLI Song No. 1240868"
-    },
-    "Come Fill Me Up": {
-      "ccli": "7126704",
-      "writers": "Brandon Lake, Briana Babineaux, Jonathan Jay, Tony Brown",
-      "copyright": "© Bethel Worship Publishing; Brandon Lake Music; Heritage Worship Music Publishing; Maverick City Publishing; Let There Be Songs",
-      "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
-      "note": "'Come set me on a holy fire, burn bright until the whole world finds your love'",
-      "status": "Verified",
-      "credit": "- \"Come Fill Me Up\" words and music by Brandon Lake, Briana Babineaux, Jonathan Jay, Tony Brown\n  © Bethel Worship Publishing; Brandon Lake Music; Heritage Worship Music Publishing; Maverick City Publishing; Let There Be Songs | CCLI Song No. 7126704",
-      "notes": "'Come set me on a holy fire, burn bright until the whole world finds your love'"
-    },
-    "Set A Fire": {
-      "ccli": "5911299",
-      "writers": "Will Reagan",
-      "copyright": "© 2010 United Pursuit Music",
-      "verified": "SongSelect-verified Aug 17 2026 (songselect.ccli.com/songs/5911299) — admin Capitol CMG Publishing",
-      "status": "Verified",
-      "credit": "- \"Set A Fire\" words and music by Will Reagan\n  © 2010 United Pursuit Music | CCLI Song No. 5911299"
-    },
-    "Make Room": {
-      "ccli": "7122057",
-      "writers": "Evelyn Heideriqui, Josh Farro, Lucas Cortazio, Rebekah White",
-      "copyright": "© 2018 A New Song For A New Day Music; Community Music Songs; Curb Songs; Father of Lights Publishing; Mike Curb Music",
-      "verified": "SongSelect-verified Aug 17 2026 (songselect.ccli.com/songs/7122057) — the Community Music one, matched on the lyric 'shake up the ground'. NOTE: 8 different songs titled 'Make Room' exist in SongSelect; do not substitute another.",
-      "status": "Verified",
-      "credit": "- \"Make Room\" words and music by Evelyn Heideriqui, Josh Farro, Lucas Cortazio, Rebekah White\n  © 2018 A New Song For A New Day Music; Community Music Songs; Curb Songs; Father of Lights Publishing; Mike Curb Music | CCLI Song No. 7122057"
-    },
-    "How He Loves": {
-      "ccli": "5032549",
-      "writers": "John Mark McMillan",
-      "copyright": "© 2005 Integrity's Hosanna! Music",
-      "source": "CCLI SongSelect, verified 2026-08-25",
-      "status": "Complete",
-      "credit": "- \"How He Loves\" words and music by John Mark McMillan\n  © 2005 Integrity's Hosanna! Music | CCLI Song No. 5032549"
-    },
-    "Reckless Love": {
-      "ccli": "7089641",
-      "writers": "Caleb Culver, Cory Asbury, Ran Jackson",
-      "copyright": "© 2017 Cory Asbury Publishing; Richmond Park Publishing; Watershed Publishing Group; Bethel Music Publishing",
-      "source": "CCLI SongSelect, verified 2026-08-25",
-      "status": "Complete",
-      "credit": "- \"Reckless Love\" words and music by Caleb Culver, Cory Asbury, Ran Jackson\n  © 2017 Cory Asbury Publishing; Richmond Park Publishing; Watershed Publishing Group; Bethel Music Publishing | CCLI Song No. 7089641"
-    },
-    "Overflow (Tasha Cobbs Leonard)": {
-      "ccli": "7049475",
-      "writers": "Tasha Cobbs Leonard",
-      "copyright": "© Meadowgreen Music Company; Tasha Cobbs Music Group",
-      "_note": "CCLI shows NO year for this one. Recorded exactly as displayed.",
-      "source": "CCLI SongSelect, verified 2026-08-25",
-      "status": "Complete",
-      "credit": "- \"Overflow (Tasha Cobbs Leonard)\" words and music by Tasha Cobbs Leonard\n  © Meadowgreen Music Company; Tasha Cobbs Music Group | CCLI Song No. 7049475"
-    },
-    "Lord You're Mighty": {
-      "ccli": "7067683",
-      "writers": "Eric Davis, JJ Hairston",
-      "copyright": "© E Dav Music; Yellow Boy Music",
-      "administrator": "Kobalt Music Publishing America, Inc.",
-      "verified": "SongSelect, page supplied by Bradly 2026-08-31 (number+title+authors+copyright)",
-      "_note": "No year on the SongSelect copyright line — record it exactly as shown. The service notes carried '© 2009 Yellow Boy Music (Admin. by Veracity Entertainment, LLC)', which disagrees on both publisher set and administrator; SongSelect is the source of record. Its lyric is 'What a mighty God we serve' — see _UNRESOLVED, this may be the arrangement the team actually sings.",
-      "status": "Verified",
-      "admin": "Kobalt Music Publishing America, Inc.",
-      "credit": "- \"Lord You're Mighty\" words and music by Eric Davis, JJ Hairston\n  © E Dav Music; Yellow Boy Music; admin. Kobalt Music Publishing America, Inc. | CCLI Song No. 7067683"
-    },
-    "Withholding Nothing": {
-      "ccli": "7037764",
-      "writers": "William McDowell",
-      "copyright": "© Delivery Room Publishing",
-      "administrator": "Fun Attic Music, LLC",
-      "verified": "SongSelect, page supplied by Bradly 2026-08-31 (number+title+authors+copyright)",
-      "_note": "No year on the SongSelect copyright line — recorded exactly as displayed.",
-      "status": "Verified",
-      "admin": "Fun Attic Music, LLC",
-      "credit": "- \"Withholding Nothing\" words and music by William McDowell\n  © Delivery Room Publishing; admin. Fun Attic Music, LLC | CCLI Song No. 7037764"
-    }
+ "version": 2,
+ "songs": {
+  "When I Think About The Lord": {
+   "ccli": "2834496",
+   "writers": "James Huey",
+   "copyright": "© 1998 CFN Worship Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"When I Think About The Lord\" words and music by James Huey\n  © 1998 CFN Worship Music | CCLI Song No. 2834496"
   },
-  "meta": {
-    "_VERIFICATION_SWEEP": {
-      "date": "Aug 17 2026, late night - full sweep per Bradly's request",
-      "method": "each number loaded directly at songselect.ccli.com/songs/<number>; title, authors, copyright captured from the live page",
-      "result": "ALL 25 original numbers CORRECT. Zero wrong CCLI numbers. One title corrected ('Worthy Is Your Name' -> 'Worthy', Elevation). Two canonical-title upgrades (Proverbs 3 (Tablet Of Your Heart); King Of Glory (Feat. Shana Wilson-Williams)). 7 new verified songs added (32 total).",
-      "unresolved": "MAJESTUOSO NOMBRE claim on zw80emxMeZk - no exact SongSelect title; likely a Spanish adaptation matching an English melody in the set. Bradly listens to the claimed segment.",
-      "descriptions_wave": "Aug 17 2026: all CCLI numbers found in channel descriptions verified; 32 songs added (bank now ~64). Wrong numbers found in descriptions: You Are Good Bethel 5769993->5191806; Jesus I Love You More Than Anything 7147029->More Than Anything 4329473; Spirit Break Out had 3715112 (Shake The Foundation dup)->6058450. Wrong artists: You're An Army (Free Chapel->Rick Pino), King of Glory on Nov 23 2025 desc (Passion->Todd Dulaney per number 7135918)."
-    },
-    "_NOT_IN_CCLI_CATALOG": {
-      "Yahweh Will Manifest Himself": {
-        "status": "NOT in the CCLI catalog — report manually",
-        "confirmed_by": "Bradly, 2026-08-25",
-        "lyric_hook": "Yahweh, Rapha, Elohim, Shaddai, Jireh, Adonai",
-        "also_sung_as": [
-          "Yahweh",
-          "Manifest",
-          "If You Worship He Will Manifest Himself"
-        ],
-        "evidence": "SongSelect search for 'if you worship he will manifest himself' returns ZERO results.",
-        "do_not_confuse_with": "'Yahweh' CCLI 7159119 (Carl & Leann Albrecht) — that one lists El Elyon / El Shaddai / Elohim. Different song. Nearly credited it in error.",
-        "heard": "Aug 24 2026 Glory Night"
-      },
-      "Take Me There (Anna Golden)": "no SongSelect entry - list without a number",
-      "Your Name (Jovonta Patton)": "no SongSelect entry (Newton Street Entertainment) - list without a number",
-      "Manifestation (Enrique Holmes)": "no SongSelect entry per Bradly's own earlier note - list without a number",
-      "Give 'Em Hell / Just Start Shouting": "from Aug 16 service credits - not found in SongSelect; keep without numbers",
-      "Say Yes (Shekinah Glory Ministry)": "searched Aug 17 2026: no CCLI catalog entry ('will your heart and soul say yes' lyric search, 130 results, none match) - list without a number",
-      "_HOW_TO_CREDIT": "Use the no_songselect_entry form in _CREDIT_FORMAT. Do not assert license coverage."
-    },
-    "_UNRESOLVED": {
-      "What A Mighty God We Serve (traditional chorus)": "sung on GZDbeGF6wMk + TVCLSn5wbKg. SongSelect has 2 arrangements (Chorale #2245023 Dawson/Ford; #4654715 Bob Singleton) - cannot tell which arrangement the team uses. LEFT UNCREDITED until confirmed.",
-      "We Wait For You / Shekinah Glory Come Down": "sung on GZDbeGF6wMk ~29:29. No confident SongSelect match. LEFT UNCREDITED."
-    },
-    "_CREDIT_FORMAT": {
-      "adopted": "Aug 17 2026, after reading CCLI's Church Copyright + Streaming License summaries",
-      "song_line": "- \"Title\" words and music by Writers",
-      "copyright_line": "  (c) year Publishers | CCLI Song No. NUMBER",
-      "footer": "Used by Permission. CCLI Church Copyright License No. 245091 | CCLI Streaming License No. 20719042",
-      "licenses": {
-        "church_copyright": "245091",
-        "streaming": "20719042",
-        "term": "9/1/2025 - 8/31/2027",
-        "ccli_account": "1944559",
-        "source": "Certificate of Licenses & Services, supplied by Bradly Aug 17 2026"
-      },
-      "no_songselect_entry": "- \"Title\" (Artist) — performed live by our praise team; songwriter and publisher information not listed in SongSelect",
-      "RULE": "NEVER write 'performed live under our church license' for a song with no SongSelect entry. CCLI coverage only extends to songs in the Covered Catalogs; asserting coverage for a song that isn't in them is a claim we cannot support. State the facts, claim nothing.",
-      "NEVER_USE_HASH": "YouTube linkifies '#12345' and shows the first hashtags ABOVE the video title. Writing 'CCLI Song #5911299' put the CCLI numbers where #GloryNight should be — confirmed live on the Aug 17 2026 stream. Always write 'No.', never '#', for any CCLI number."
-    },
-    "_PARTIAL_NEEDS_COPYRIGHT": {
-      "_RULE": "These have a CCLI number and authors but no verified copyright line, so assemble_desc.py must NOT emit them — a credit without the (c) owner is incomplete under CCLI's format. Finish them on a signed-in SongSelect session, then move each into the main bank."
-    },
-    "_CANDIDATES_NEED_BRADLY": {
-      "You Are Faithful": {
-        "status": "UNIDENTIFIED — Bradly does not know it either (2026-08-25)",
-        "heard": "Aug 24 2026 Glory Night, sustained 'You are faithful, God' refrain ~12-14 min",
-        "next_step": "Ask the worship team. Too generic to search on the phrase alone."
-      }
-    },
-    "_CSV_MERGE": {
-      "date": "2026-09-01",
-      "source": "ARISE_SONG_BANK.csv supplied by Bradly",
-      "result": "89 CSV rows over 89 songs — 0 new titles, 0 CCLI conflicts, 0 duplicates to remove",
-      "holy_spirit": "'Holy Spirit' and 'Holy Spirit (Torwalt)' share CCLI 6087919 on purpose: one song filed twice, already known. Not a duplicate to delete.",
-      "credit_format": "credit lines read 'CCLI Song No. 7158417', never '#7158417' — YouTube renders #digits as a hashtag above the title."
-    }
+  "Something Happens": {
+   "ccli": "4414285",
+   "writers": "Kurt Carr",
+   "copyright": "© 2004 KCartunes Music; Lilly Mack Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Something Happens\" words and music by Kurt Carr\n  © 2004 KCartunes Music; Lilly Mack Music | CCLI Song No. 4414285"
+  },
+  "Just The Mention Of His Name": {
+   "ccli": "7188448",
+   "writers": "Andrew Holt",
+   "copyright": "© Andrew Holt Music Publishing; TBCO Publishing",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Just The Mention Of His Name\" words and music by Andrew Holt\n  © Andrew Holt Music Publishing; TBCO Publishing | CCLI Song No. 7188448"
+  },
+  "God I'm Just Grateful": {
+   "ccli": "7270317",
+   "writers": "Abubakar Baker Shariff-Farr, Chandler Moore, Joshua Emanuel Coleman, Pat Barrett, Steven Furtick",
+   "copyright": "© 2025 Capitol CMG Genesis; Housefires Sounds; Music by Elevation Worship Publishing; For Humans Publishing; Maverick City Publishing; remaining portion unaffiliated",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"God I'm Just Grateful\" words and music by Abubakar Baker Shariff-Farr, Chandler Moore, Joshua Emanuel Coleman, Pat Barrett, Steven Furtick\n  © 2025 Capitol CMG Genesis; Housefires Sounds; Music by Elevation Worship Publishing; For Humans Publishing; Maverick City Publishing; remaining portion unaffiliated | CCLI Song No. 7270317"
+  },
+  "Worthy": {
+   "ccli": "7111931",
+   "writers": "Chris Brown, Mack Brock, Steven Furtick",
+   "copyright": "© Music by Elevation Worship Publishing",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "note": "CORRECTED TITLE: was stored as 'Worthy Is Your Name' (the chorus hook). SongSelect canonical title is 'Worthy' (Elevation Worship, Hallelujah Here Below). Number was already correct.",
+   "status": "Verified",
+   "credit": "- \"Worthy\" words and music by Chris Brown, Mack Brock, Steven Furtick\n  © Music by Elevation Worship Publishing | CCLI Song No. 7111931",
+   "notes": "CORRECTED TITLE: was stored as 'Worthy Is Your Name' (the chorus hook). SongSelect canonical title is 'Worthy' (Elevation Worship, Hallelujah Here Below). Number was already correct."
+  },
+  "Wide As The Sky": {
+   "ccli": "7000697",
+   "writers": "Jonas Myrin, Kristian Stanfill, Matt Redman",
+   "copyright": "© 2013 Atlas Mountain Songs; Said And Done Music; sixsteps Music; Thankyou Music Ltd; worshiptogether.com songs",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Wide As The Sky\" words and music by Jonas Myrin, Kristian Stanfill, Matt Redman\n  © 2013 Atlas Mountain Songs; Said And Done Music; sixsteps Music; Thankyou Music Ltd; worshiptogether.com songs | CCLI Song No. 7000697"
+  },
+  "Proverbs 3 (Tablet Of Your Heart)": {
+   "ccli": "7169549",
+   "writers": "Isaac Tarver, Jaylen Moore, Todd Dulaney",
+   "copyright": "© MNRK Music Group Nashville; U Know It 2; remaining portion unaffiliated",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "note": "canonical title includes 'Proverbs 3'; was stored as 'Tablet of Your Heart'",
+   "status": "Verified",
+   "credit": "- \"Proverbs 3 (Tablet Of Your Heart)\" words and music by Isaac Tarver, Jaylen Moore, Todd Dulaney\n  © MNRK Music Group Nashville; U Know It 2; remaining portion unaffiliated | CCLI Song No. 7169549",
+   "notes": "canonical title includes 'Proverbs 3'; was stored as 'Tablet of Your Heart'"
+  },
+  "We Bless": {
+   "ccli": "7240746",
+   "writers": "Osinachi Kalu Okoro Egbu (Sinach)",
+   "copyright": "© 2024 Integrity Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"We Bless\" words and music by Osinachi Kalu Okoro Egbu (Sinach)\n  © 2024 Integrity Music | CCLI Song No. 7240746"
+  },
+  "Great Are You Lord": {
+   "ccli": "6460220",
+   "writers": "David Leonard, Jason Ingram, Leslie Jordan",
+   "copyright": "© 2012 Open Hands Music; So Essential Tunes; Integrity's Praise! Music; Little Way Creative",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Great Are You Lord\" words and music by David Leonard, Jason Ingram, Leslie Jordan\n  © 2012 Open Hands Music; So Essential Tunes; Integrity's Praise! Music; Little Way Creative | CCLI Song No. 6460220"
+  },
+  "Who Else": {
+   "ccli": "7223119",
+   "writers": "Abbie Gamboa, Josiah Funderburk, Zac Rowe",
+   "copyright": "© 2023 Gateway Music Global Publishing; Gamboa World, LLC",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Who Else\" words and music by Abbie Gamboa, Josiah Funderburk, Zac Rowe\n  © 2023 Gateway Music Global Publishing; Gamboa World, LLC | CCLI Song No. 7223119"
+  },
+  "Agnus Dei": {
+   "ccli": "626713",
+   "writers": "Michael W. Smith",
+   "copyright": "© 1990 Sony/ATV Milene Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Agnus Dei\" words and music by Michael W. Smith\n  © 1990 Sony/ATV Milene Music | CCLI Song No. 626713"
+  },
+  "In The River": {
+   "ccli": "7054537",
+   "writers": "Chris Quilala, Joshua Silverberg, Mark Alan Schoolmeesters, Ryan Williams",
+   "copyright": "© 2015 Capitol CMG Amplifier; Capitol CMG Genesis; Capitol CMG Paragon; Common Hymnal Digital; Common Hymnal Publishing; Jesus Culture Music; Red Red Pop",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"In The River\" words and music by Chris Quilala, Joshua Silverberg, Mark Alan Schoolmeesters, Ryan Williams\n  © 2015 Capitol CMG Amplifier; Capitol CMG Genesis; Capitol CMG Paragon; Common Hymnal Digital; Common Hymnal Publishing; Jesus Culture Music; Red Red Pop | CCLI Song No. 7054537"
+  },
+  "Praise": {
+   "ccli": "7213077",
+   "writers": "Brandon Lake, Chandler Moore, Chris Brown, Cody Carnes, Pat Barrett, Steven Furtick",
+   "copyright": "© 2023 Capitol CMG Genesis; Capitol CMG Paragon; Housefires Sounds; Writer's Roof Publishing; Brandon Lake Music; Music by Elevation Worship Publishing; For Humans Publishing; Maverick City Publishing",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Praise\" words and music by Brandon Lake, Chandler Moore, Chris Brown, Cody Carnes, Pat Barrett, Steven Furtick\n  © 2023 Capitol CMG Genesis; Capitol CMG Paragon; Housefires Sounds; Writer's Roof Publishing; Brandon Lake Music; Music by Elevation Worship Publishing; For Humans Publishing; Maverick City Publishing | CCLI Song No. 7213077"
+  },
+  "King Of Glory (Feat. Shana Wilson-Williams)": {
+   "ccli": "7135918",
+   "writers": "Todd Dulaney",
+   "copyright": "© 2017 MNRK Music Group Nashville; U Know It 2",
+   "aliases": [
+    "King of Glory",
+    "I Just Want To Be With You"
+   ],
+   "_heard": "Aug 24 2026 Glory Night — 'King of glory, fill this place'",
+   "source": "CCLI SongSelect, verified 2026-08-25",
+   "status": "Complete",
+   "credit": "- \"King Of Glory (Feat. Shana Wilson-Williams)\" words and music by Todd Dulaney\n  © 2017 MNRK Music Group Nashville; U Know It 2 | CCLI Song No. 7135918"
+  },
+  "Good Good Father": {
+   "ccli": "7036612",
+   "writers": "Anthony Brown, Pat Barrett",
+   "copyright": "© 2014 Capitol CMG Paragon; Common Hymnal Digital; Housefires Sounds; Rising Springs Music; Tony Brown Publishing Designee; Vamos Publishing; worshiptogether.com songs",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Good Good Father\" words and music by Anthony Brown, Pat Barrett\n  © 2014 Capitol CMG Paragon; Common Hymnal Digital; Housefires Sounds; Rising Springs Music; Tony Brown Publishing Designee; Vamos Publishing; worshiptogether.com songs | CCLI Song No. 7036612"
+  },
+  "My Worship": {
+   "ccli": "7098688",
+   "writers": "Philip Nathan Thompson (Phil Thompson), Zenzo Matoga",
+   "copyright": "© 2017 Integrity Worship Music; Philthompsonworship; Zenzo Matoga Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"My Worship\" words and music by Philip Nathan Thompson (Phil Thompson), Zenzo Matoga\n  © 2017 Integrity Worship Music; Philthompsonworship; Zenzo Matoga Music | CCLI Song No. 7098688"
+  },
+  "See A Victory": {
+   "ccli": "7129060",
+   "writers": "Ben Fielding, Chris Brown, Jason Ingram, Steven Furtick",
+   "copyright": "© 2019 Fellow Ships Music; Music by Elevation Worship Publishing; So Essential Tunes; SHOUT! Music Publishing Australia",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"See A Victory\" words and music by Ben Fielding, Chris Brown, Jason Ingram, Steven Furtick\n  © 2019 Fellow Ships Music; Music by Elevation Worship Publishing; So Essential Tunes; SHOUT! Music Publishing Australia | CCLI Song No. 7129060"
+  },
+  "Gratitude": {
+   "ccli": "7158417",
+   "writers": "Benjamin Hastings, Brandon Lake, Dante Bowe",
+   "copyright": "© 2019 Bethel Worship Publishing; Brandon Lake Music; Maverick City Publishing; Maverick City Publishing Worldwide; SHOUT! Music Publishing Australia; Bethel Music Publishing",
+   "aliases": [
+    "Come On My Soul",
+    "Hallelujah (heart singing)"
+   ],
+   "_note": "Bradly confirmed 2026-08-25 that 'Come on my soul / get up and praise the Lord' is Gratitude's BRIDGE, not a second song. Auto-captions also render 'all that I have is a hallelujah' as 'a heart singing hallelujah'. One song, three shapes in a transcript.",
+   "source": "CCLI SongSelect, verified 2026-08-25",
+   "status": "Complete",
+   "credit": "- \"Gratitude\" words and music by Benjamin Hastings, Brandon Lake, Dante Bowe\n  © 2019 Bethel Worship Publishing; Brandon Lake Music; Maverick City Publishing; Maverick City Publishing Worldwide; SHOUT! Music Publishing Australia; Bethel Music Publishing | CCLI Song No. 7158417"
+  },
+  "Evidence": {
+   "ccli": "7147432",
+   "writers": "Ed Cash, Ethan Hulse, Josh Baldwin",
+   "copyright": "© 2020 Capitol CMG Paragon; Out Of My Cages Publishing; Be Essential Songs; EGH Music Publishing; Bethel Music Publishing",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Evidence\" words and music by Ed Cash, Ethan Hulse, Josh Baldwin\n  © 2020 Capitol CMG Paragon; Out Of My Cages Publishing; Be Essential Songs; EGH Music Publishing; Bethel Music Publishing | CCLI Song No. 7147432"
+  },
+  "Holy Spirit": {
+   "ccli": "6087919",
+   "writers": "Bryan Torwalt, Katie Torwalt",
+   "copyright": "© 2011 Capitol CMG Genesis; Jesus Culture Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Holy Spirit\" words and music by Bryan Torwalt, Katie Torwalt\n  © 2011 Capitol CMG Genesis; Jesus Culture Music | CCLI Song No. 6087919"
+  },
+  "More Than Able": {
+   "ccli": "7209590",
+   "writers": "Ben Fielding, Chandler Moore, Naomi Raine, Steven Furtick",
+   "copyright": "© Ben Fielding Publishing; Music by Elevation Worship Publishing; For Humans Publishing; Maverick City Publishing; Naomi Raine Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"More Than Able\" words and music by Ben Fielding, Chandler Moore, Naomi Raine, Steven Furtick\n  © Ben Fielding Publishing; Music by Elevation Worship Publishing; For Humans Publishing; Maverick City Publishing; Naomi Raine Music | CCLI Song No. 7209590"
+  },
+  "Same God": {
+   "ccli": "7183537",
+   "writers": "Brandon Lake, Chris Brown, Pat Barrett, Steven Furtick",
+   "copyright": "© Brandon Lake Music; Maverick City Publishing Worldwide; Capitol CMG Genesis; Housefires Sounds; Music by Elevation Worship Publishing; Bethel Music Publishing",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Same God\" words and music by Brandon Lake, Chris Brown, Pat Barrett, Steven Furtick\n  © Brandon Lake Music; Maverick City Publishing Worldwide; Capitol CMG Genesis; Housefires Sounds; Music by Elevation Worship Publishing; Bethel Music Publishing | CCLI Song No. 7183537"
+  },
+  "Raise A Hallelujah": {
+   "ccli": "7119315",
+   "writers": "Jake Stevens, Jonathan David Helser, Melissa Helser, Molly Skaggs",
+   "copyright": "© 2018 Quiltmaker Music; Bethel Music Publishing",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Raise A Hallelujah\" words and music by Jake Stevens, Jonathan David Helser, Melissa Helser, Molly Skaggs\n  © 2018 Quiltmaker Music; Bethel Music Publishing | CCLI Song No. 7119315"
+  },
+  "Holy Forever": {
+   "ccli": "7201044",
+   "writers": "Brian Johnson, Chris Tomlin, Jason Ingram, Jenn Johnson, Phil Wickham",
+   "copyright": "© 2022 Brian and Jenn Publishing; Capitol CMG Paragon; S. D. G. Publishing; Be Essential Songs; My Magnolia Music; Phil Wickham Music; Simply Global Songs; Bethel Music Publishing",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Holy Forever\" words and music by Brian Johnson, Chris Tomlin, Jason Ingram, Jenn Johnson, Phil Wickham\n  © 2022 Brian and Jenn Publishing; Capitol CMG Paragon; S. D. G. Publishing; Be Essential Songs; My Magnolia Music; Phil Wickham Music; Simply Global Songs; Bethel Music Publishing | CCLI Song No. 7201044"
+  },
+  "Shout Unto God": {
+   "ccli": "4455206",
+   "writers": "Joel Houston, Marty Sampson",
+   "copyright": "© 2004 Hillsong Music Publishing Australia",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Shout Unto God\" words and music by Joel Houston, Marty Sampson\n  © 2004 Hillsong Music Publishing Australia | CCLI Song No. 4455206"
+  },
+  "Way Maker": {
+   "ccli": "7115744",
+   "writers": "Osinachi Kalu Okoro Egbu (Sinach)",
+   "copyright": "© 2016 Integrity Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Way Maker\" words and music by Osinachi Kalu Okoro Egbu (Sinach)\n  © 2016 Integrity Music | CCLI Song No. 7115744"
+  },
+  "Mary Did You Know": {
+   "ccli": "839225",
+   "writers": "Buddy Greene, Mark Lowry",
+   "copyright": "© 1991, 1993 Rufus Music; Curb Word Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Mary Did You Know\" words and music by Buddy Greene, Mark Lowry\n  © 1991, 1993 Rufus Music; Curb Word Music | CCLI Song No. 839225"
+  },
+  "Worthy Of It All": {
+   "ccli": "6280644",
+   "writers": "David Brymer, Ryan Hall",
+   "copyright": "© 2012 Common Hymnal Publishing; Innerland; Underground Treasure; Wayfinder Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Worthy Of It All\" words and music by David Brymer, Ryan Hall\n  © 2012 Common Hymnal Publishing; Innerland; Underground Treasure; Wayfinder Music | CCLI Song No. 6280644"
+  },
+  "Homecoming": {
+   "ccli": "7183255",
+   "writers": "Brian Johnson, Christian Ostrom, Cory Asbury, Gable Patrick Price",
+   "copyright": "© 2021 Bethel Worship Publishing; Brian and Jenn Publishing; Cory Asbury Publishing; Christian Ostrom Publishing; Gable Price Publishing Co; Bethel Music Publishing",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "note": "lead candidate for the 'The Homecoming' claim on tj9W3Xey_3c - confirm by ear before filing",
+   "status": "Verified",
+   "credit": "- \"Homecoming\" words and music by Brian Johnson, Christian Ostrom, Cory Asbury, Gable Patrick Price\n  © 2021 Bethel Worship Publishing; Brian and Jenn Publishing; Cory Asbury Publishing; Christian Ostrom Publishing; Gable Price Publishing Co; Bethel Music Publishing | CCLI Song No. 7183255",
+   "notes": "lead candidate for the 'The Homecoming' claim on tj9W3Xey_3c - confirm by ear before filing"
+  },
+  "You Are Good": {
+   "ccli": "3383788",
+   "writers": "Israel Houghton",
+   "copyright": "© 2001 Integrity's Praise! Music; Sound Of The New Breed",
+   "_note": "Was in _AMBIGUOUS_TITLES — more than one CCLI song answers to this title; Kari Jobe's is 5075001. Bradly ruled 2026-08-25 that Arise sings the Israel Houghton one.",
+   "source": "CCLI SongSelect, verified 2026-08-25",
+   "status": "Complete",
+   "credit": "- \"You Are Good\" words and music by Israel Houghton\n  © 2001 Integrity's Praise! Music; Sound Of The New Breed | CCLI Song No. 3383788"
+  },
+  "How Great Is Our God": {
+   "ccli": "4348399",
+   "writers": "Chris Tomlin, Ed Cash, Jesse Reeves",
+   "copyright": "© 2004 Rising Springs Music; Vamos Publishing; worshiptogether.com songs; Wondrously Made Songs",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"How Great Is Our God\" words and music by Chris Tomlin, Ed Cash, Jesse Reeves\n  © 2004 Rising Springs Music; Vamos Publishing; worshiptogether.com songs; Wondrously Made Songs | CCLI Song No. 4348399"
+  },
+  "What A Beautiful Name": {
+   "ccli": "7068424",
+   "writers": "Ben Fielding, Brooke Ligertwood",
+   "copyright": "© 2016 Hillsong Music Publishing Australia",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "note": "possible underlying song for the Spanish 'MAJESTUOSO NOMBRE' claim on zw80emxMeZk - needs segment listen",
+   "status": "Verified",
+   "credit": "- \"What A Beautiful Name\" words and music by Ben Fielding, Brooke Ligertwood\n  © 2016 Hillsong Music Publishing Australia | CCLI Song No. 7068424",
+   "notes": "possible underlying song for the Spanish 'MAJESTUOSO NOMBRE' claim on zw80emxMeZk - needs segment listen"
+  },
+  "Amazing Grace (My Chains Are Gone)": {
+   "ccli": "4768151",
+   "writers": "Chris Tomlin, John Newton, Louie Giglio",
+   "copyright": "© 2006 Rising Springs Music; Vamos Publishing; worshiptogether.com songs",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Amazing Grace (My Chains Are Gone)\" words and music by Chris Tomlin, John Newton, Louie Giglio\n  © 2006 Rising Springs Music; Vamos Publishing; worshiptogether.com songs | CCLI Song No. 4768151"
+  },
+  "The Overcomer": {
+   "ccli": "7070629",
+   "writers": "Colin Moore, Joel Ramsey",
+   "copyright": "© 2015 Citipointe Worship",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"The Overcomer\" words and music by Colin Moore, Joel Ramsey\n  © 2015 Citipointe Worship | CCLI Song No. 7070629"
+  },
+  "Take My Life": {
+   "ccli": "4162843",
+   "writers": "Chris Tomlin, Frances Ridley Havergal, Henri Abraham Cesar Malan, Louie Giglio",
+   "copyright": "© 2003 Rising Springs Music; Vamos Publishing; worshiptogether.com songs",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Take My Life\" words and music by Chris Tomlin, Frances Ridley Havergal, Henri Abraham Cesar Malan, Louie Giglio\n  © 2003 Rising Springs Music; Vamos Publishing; worshiptogether.com songs | CCLI Song No. 4162843"
+  },
+  "Fire": {
+   "ccli": "7172821",
+   "writers": "CeCe Winans, Dwan Hill, Kyle Lee",
+   "copyright": "© Fair Trade Tunes; From The Void; Big Buddy Music; Little Pooky's Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Fire\" words and music by CeCe Winans, Dwan Hill, Kyle Lee\n  © Fair Trade Tunes; From The Void; Big Buddy Music; Little Pooky's Music | CCLI Song No. 7172821"
+  },
+  "Oceans (Where Feet May Fail)": {
+   "ccli": "6428767",
+   "writers": "Joel Houston, Matt Crocker, Salomon Ligthelm",
+   "copyright": "© 2012 Hillsong Music Publishing Australia",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Oceans (Where Feet May Fail)\" words and music by Joel Houston, Matt Crocker, Salomon Ligthelm\n  © 2012 Hillsong Music Publishing Australia | CCLI Song No. 6428767"
+  },
+  "Healing Rain": {
+   "ccli": "4380137",
+   "writers": "Martin Smith, Matt Bronleewe, Michael W. Smith",
+   "copyright": "© 2004 Smittyfly Music; Curious? Music UK; Curb Word Music; remaining portion unaffiliated",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Healing Rain\" words and music by Martin Smith, Matt Bronleewe, Michael W. Smith\n  © 2004 Smittyfly Music; Curious? Music UK; Curb Word Music; remaining portion unaffiliated | CCLI Song No. 4380137"
+  },
+  "Every Praise": {
+   "ccli": "6623483",
+   "writers": "Hezekiah Walker, John David Bratton",
+   "copyright": "© 2013 Li'l Eva Music; Luv Ki Publishing; Davo Pavo Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Every Praise\" words and music by Hezekiah Walker, John David Bratton\n  © 2013 Li'l Eva Music; Luv Ki Publishing; Davo Pavo Music | CCLI Song No. 6623483"
+  },
+  "Hallelujah Salvation And Glory": {
+   "ccli": "2464385",
+   "writers": "Steve Israel",
+   "copyright": "© 1985 Israel, Steve",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Hallelujah Salvation And Glory\" words and music by Steve Israel\n  © 1985 Israel, Steve | CCLI Song No. 2464385"
+  },
+  "You're An Army": {
+   "ccli": "6243540",
+   "writers": "Rick Pino",
+   "copyright": "© 2009 Rick Pino Songs; Watershed Publishing Group",
+   "note": "NOT a Free Chapel song - Free Chapel recorded it; author is Rick Pino",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"You're An Army\" words and music by Rick Pino\n  © 2009 Rick Pino Songs; Watershed Publishing Group | CCLI Song No. 6243540",
+   "notes": "NOT a Free Chapel song - Free Chapel recorded it; author is Rick Pino"
+  },
+  "I Speak Jesus": {
+   "ccli": "7136201",
+   "writers": "Abby Benton, Carlene Prince, Dustin Smith, Jesse Reeves, Kristen Dutton, Raina Pratt",
+   "copyright": "© 2019 BEC Worship; Raina Pratt Publishing Designee; WriterWrong Music; For Me and My House Songs; Integrity's Praise! Music; Anchored In Hope Music; Give It A Lift Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"I Speak Jesus\" words and music by Abby Benton, Carlene Prince, Dustin Smith, Jesse Reeves, Kristen Dutton, Raina Pratt\n  © 2019 BEC Worship; Raina Pratt Publishing Designee; WriterWrong Music; For Me and My House Songs; Integrity's Praise! Music; Anchored In Hope Music; Give It A Lift Music | CCLI Song No. 7136201"
+  },
+  "Nothing Else": {
+   "ccli": "7123436",
+   "writers": "Cody Carnes, Hank Bentley, Jessie Early",
+   "copyright": "© 2019 Capitol CMG Paragon; Songs By That Dog Will Hunt; Writer's Roof Publishing",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Nothing Else\" words and music by Cody Carnes, Hank Bentley, Jessie Early\n  © 2019 Capitol CMG Paragon; Songs By That Dog Will Hunt; Writer's Roof Publishing | CCLI Song No. 7123436"
+  },
+  "Here Comes The Glory": {
+   "ccli": "7141661",
+   "writers": "David Binion, Israel Houghton, Leeland Mooring, William McDowell",
+   "copyright": "© Acts 20 24 Publishing; David Binion Music; District 11 Entertainment Publishing; Integrity Worship Music; Integrity's Praise! Music; The Devil Is A Liar! Publishing",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Here Comes The Glory\" words and music by David Binion, Israel Houghton, Leeland Mooring, William McDowell\n  © Acts 20 24 Publishing; David Binion Music; District 11 Entertainment Publishing; Integrity Worship Music; Integrity's Praise! Music; The Devil Is A Liar! Publishing | CCLI Song No. 7141661"
+  },
+  "You Are Good (Bethel)": {
+   "ccli": "5191806",
+   "writers": "Brian Johnson, Jeremy Riddle",
+   "copyright": "© 2010 Mercy / Vineyard Publishing; Bethel Music Publishing",
+   "note": "distinct from Israel Houghton's You Are Good #3383788",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"You Are Good (Bethel)\" words and music by Brian Johnson, Jeremy Riddle\n  © 2010 Mercy / Vineyard Publishing; Bethel Music Publishing | CCLI Song No. 5191806",
+   "notes": "distinct from Israel Houghton's You Are Good #3383788"
+  },
+  "Come Alive (Dry Bones)": {
+   "ccli": "6573588",
+   "writers": "Lauren Daigle, Michael Farren",
+   "copyright": "© 2012 CentricSongs; See You At The Pub; Curb Congregation Songs; remaining portion unaffiliated",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Come Alive (Dry Bones)\" words and music by Lauren Daigle, Michael Farren\n  © 2012 CentricSongs; See You At The Pub; Curb Congregation Songs; remaining portion unaffiliated | CCLI Song No. 6573588"
+  },
+  "Goodness Of God": {
+   "ccli": "7117726",
+   "writers": "Ben Fielding, Brian Johnson, Ed Cash, Jason Ingram, Jenn Johnson",
+   "copyright": "© 2018 Capitol CMG Paragon; Fellow Ships Music; So Essential Tunes; SHOUT! Music Publishing Australia; Bethel Music Publishing",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Goodness Of God\" words and music by Ben Fielding, Brian Johnson, Ed Cash, Jason Ingram, Jenn Johnson\n  © 2018 Capitol CMG Paragon; Fellow Ships Music; So Essential Tunes; SHOUT! Music Publishing Australia; Bethel Music Publishing | CCLI Song No. 7117726"
+  },
+  "Great Is Your Mercy": {
+   "ccli": "289693",
+   "writers": "Don Moen",
+   "copyright": "© 1990 Integrity's Hosanna! Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Great Is Your Mercy\" words and music by Don Moen\n  © 1990 Integrity's Hosanna! Music | CCLI Song No. 289693"
+  },
+  "Let It Rise": {
+   "ccli": "2240585",
+   "writers": "Holland Davis",
+   "copyright": "© 1997, 1999 Universal Music - Brentwood Benson Publishing",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Let It Rise\" words and music by Holland Davis\n  © 1997, 1999 Universal Music - Brentwood Benson Publishing | CCLI Song No. 2240585"
+  },
+  "Our God": {
+   "ccli": "5677416",
+   "writers": "Chris Tomlin, Jesse Reeves, Jonas Myrin, Matt Redman",
+   "copyright": "© 2010 Atlas Mountain Songs; Rising Springs Music; Thankyou Music Ltd; Vamos Publishing; worshiptogether.com songs",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Our God\" words and music by Chris Tomlin, Jesse Reeves, Jonas Myrin, Matt Redman\n  © 2010 Atlas Mountain Songs; Rising Springs Music; Thankyou Music Ltd; Vamos Publishing; worshiptogether.com songs | CCLI Song No. 5677416"
+  },
+  "Shake The Foundation": {
+   "ccli": "3715112",
+   "writers": "Joseph Pace II",
+   "copyright": "© 2002 Bridge Building Music, Inc.; Integrity's Praise! Music; Pace's Vision Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Shake The Foundation\" words and music by Joseph Pace II\n  © 2002 Bridge Building Music, Inc.; Integrity's Praise! Music; Pace's Vision Music | CCLI Song No. 3715112"
+  },
+  "Spirit Break Out": {
+   "ccli": "6058450",
+   "writers": "Ben Bryant, Luke Hellebronth, Myles Dhillon, Tim Hughes",
+   "copyright": "© 2010 Thankyou Music Ltd",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Spirit Break Out\" words and music by Ben Bryant, Luke Hellebronth, Myles Dhillon, Tim Hughes\n  © 2010 Thankyou Music Ltd | CCLI Song No. 6058450"
+  },
+  "More Than Anything (Rick Robinson)": {
+   "ccli": "4329473",
+   "writers": "Rick Robinson",
+   "copyright": "© 2002 Kid Prodigy Music",
+   "note": "'Jesus I love You more than anything' - recorded by Lamar Campbell and Jovonta Patton; distinct from Elevation's More Than Able",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"More Than Anything (Rick Robinson)\" words and music by Rick Robinson\n  © 2002 Kid Prodigy Music | CCLI Song No. 4329473",
+   "notes": "'Jesus I love You more than anything' - recorded by Lamar Campbell and Jovonta Patton; distinct from Elevation's More Than Able"
+  },
+  "Too Good To Not Believe": {
+   "ccli": "7174874",
+   "writers": "Brandon Lake, Chris Davenport, Cody Carnes, Josh Silverberg",
+   "copyright": "© 2021 Brandon Lake Music; Maverick City Publishing Worldwide; Capitol CMG Paragon; CDavs Music; Songs For TIM; Writer's Roof Publishing; Curb Congregation Songs; River Wild; Bethel Music Publishing",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Too Good To Not Believe\" words and music by Brandon Lake, Chris Davenport, Cody Carnes, Josh Silverberg\n  © 2021 Brandon Lake Music; Maverick City Publishing Worldwide; Capitol CMG Paragon; CDavs Music; Songs For TIM; Writer's Roof Publishing; Curb Congregation Songs; River Wild; Bethel Music Publishing | CCLI Song No. 7174874"
+  },
+  "House Of Prayer": {
+   "ccli": "6572060",
+   "writers": "Eddie James",
+   "copyright": "© 2013 Maize Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"House Of Prayer\" words and music by Eddie James\n  © 2013 Maize Music | CCLI Song No. 6572060"
+  },
+  "The Blood Will Never Lose Its Power": {
+   "ccli": "11885",
+   "writers": "Andraé Crouch",
+   "copyright": "© 1966 Manna Music, Inc.",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"The Blood Will Never Lose Its Power\" words and music by Andraé Crouch\n  © 1966 Manna Music, Inc. | CCLI Song No. 11885"
+  },
+  "Lace Up Your Boots": {
+   "ccli": "7253952",
+   "writers": "Eniola Abioye, Kaala White",
+   "copyright": "© 2025 Circuit Rider Music Team; remaining portion unaffiliated",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Lace Up Your Boots\" words and music by Eniola Abioye, Kaala White\n  © 2025 Circuit Rider Music Team; remaining portion unaffiliated | CCLI Song No. 7253952"
+  },
+  "I Am The God That Healeth Thee": {
+   "ccli": "17250",
+   "writers": "Don Moen",
+   "copyright": "© 1986 Integrity's Hosanna! Music; Ninth Avenue Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"I Am The God That Healeth Thee\" words and music by Don Moen\n  © 1986 Integrity's Hosanna! Music; Ninth Avenue Music | CCLI Song No. 17250"
+  },
+  "Trust In God": {
+   "ccli": "7206001",
+   "writers": "Brandon Lake, Chris Brown, Mitch Wong, Steven Furtick",
+   "copyright": "© 2023 Brandon Lake Music; Music by Elevation Worship Publishing; A Wong Made Write Publishing; Integrity's Praise! Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Trust In God\" words and music by Brandon Lake, Chris Brown, Mitch Wong, Steven Furtick\n  © 2023 Brandon Lake Music; Music by Elevation Worship Publishing; A Wong Made Write Publishing; Integrity's Praise! Music | CCLI Song No. 7206001"
+  },
+  "Hallelujah Chant": {
+   "ccli": "7068274",
+   "writers": "Eddie James",
+   "copyright": "© 2015 Maize Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Hallelujah Chant\" words and music by Eddie James\n  © 2015 Maize Music | CCLI Song No. 7068274"
+  },
+  "Nothing But The Blood Of Jesus (HeartCry)": {
+   "ccli": "4655848",
+   "writers": "Michael Morrow, Robert Lowry",
+   "copyright": "© Words: 2005 Morrow, Michael; Music: 2005 Morrow, Michael",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Nothing But The Blood Of Jesus (HeartCry)\" words and music by Michael Morrow, Robert Lowry\n  © Words: 2005 Morrow, Michael; Music: 2005 Morrow, Michael | CCLI Song No. 4655848"
+  },
+  "Precious Is The Blood": {
+   "ccli": "4382881",
+   "writers": "Joseph Pace II",
+   "copyright": "© 2004 Integrity's Praise! Music; Pace's Vision Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Precious Is The Blood\" words and music by Joseph Pace II\n  © 2004 Integrity's Praise! Music; Pace's Vision Music | CCLI Song No. 4382881"
+  },
+  "I Gotta Praise": {
+   "ccli": "7025318",
+   "writers": "Damita Haddon, Deitrick Haddon",
+   "copyright": "© Bridge Building Music, Inc.; Deitrick Vaughn Haddon Publishing; Tryscot Songs; Mita Made; Tyscot Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"I Gotta Praise\" words and music by Damita Haddon, Deitrick Haddon\n  © Bridge Building Music, Inc.; Deitrick Vaughn Haddon Publishing; Tryscot Songs; Mita Made; Tyscot Music | CCLI Song No. 7025318"
+  },
+  "Yeshua (Marty & Misha Goetz)": {
+   "ccli": "7087646",
+   "writers": "Marty Goetz, Misha Goetz",
+   "copyright": "© 2017 Misha Goetz Music; Singin' In The Reign Music",
+   "note": "REFERENCE ONLY - the Yeshua sung Oct 19 2025 may be a different one (desc claimed Maverick City); Bradly to confirm by ear",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Yeshua (Marty & Misha Goetz)\" words and music by Marty Goetz, Misha Goetz\n  © 2017 Misha Goetz Music; Singin' In The Reign Music | CCLI Song No. 7087646",
+   "notes": "REFERENCE ONLY - the Yeshua sung Oct 19 2025 may be a different one (desc claimed Maverick City); Bradly to confirm by ear"
+  },
+  "Lord I Lift Your Name On High": {
+   "ccli": "117947",
+   "writers": "Rick Founds",
+   "copyright": "© 1989 Universal Music - Brentwood Benson Publishing",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Lord I Lift Your Name On High\" words and music by Rick Founds\n  © 1989 Universal Music - Brentwood Benson Publishing | CCLI Song No. 117947"
+  },
+  "Days Of Elijah": {
+   "ccli": "1537904",
+   "writers": "Robin Mark",
+   "copyright": "© 1996 Song Solutions Daybreak",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Days Of Elijah\" words and music by Robin Mark\n  © 1996 Song Solutions Daybreak | CCLI Song No. 1537904"
+  },
+  "The Anthem": {
+   "ccli": "5066041",
+   "writers": "Henry Seeley, Joth Hunt, Liz Webber",
+   "copyright": "© 2007 Planetshakers Ministries Int. Inc.",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "note": "Planetshakers original; Todd Dulaney's live cover is the arrangement our team sings",
+   "status": "Verified",
+   "credit": "- \"The Anthem\" words and music by Henry Seeley, Joth Hunt, Liz Webber\n  © 2007 Planetshakers Ministries Int. Inc. | CCLI Song No. 5066041",
+   "notes": "Planetshakers original; Todd Dulaney's live cover is the arrangement our team sings"
+  },
+  "I Give Myself Away": {
+   "ccli": "5873382",
+   "writers": "Sam Hinn, William McDowell",
+   "copyright": "© 2008 Delivery Room Publishing",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "note": "NOT 5441826 (that number does not exist on SongSelect)",
+   "status": "Verified",
+   "credit": "- \"I Give Myself Away\" words and music by Sam Hinn, William McDowell\n  © 2008 Delivery Room Publishing | CCLI Song No. 5873382",
+   "notes": "NOT 5441826 (that number does not exist on SongSelect)"
+  },
+  "Sanctuary": {
+   "ccli": "24140",
+   "writers": "John W. Thompson, Randy Scruggs",
+   "copyright": "© 1982 Full Armor Publishing Company; Whole Armor Publishing Company",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Sanctuary\" words and music by John W. Thompson, Randy Scruggs\n  © 1982 Full Armor Publishing Company; Whole Armor Publishing Company | CCLI Song No. 24140"
+  },
+  "Your Name Is Power": {
+   "ccli": "7132589",
+   "writers": "Chris Llewellyn, Gareth Gilkeson",
+   "copyright": "© 2019 Capitol CMG Paragon",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Your Name Is Power\" words and music by Chris Llewellyn, Gareth Gilkeson\n  © 2019 Capitol CMG Paragon | CCLI Song No. 7132589"
+  },
+  "Your Great Name (Todd Dulaney)": {
+   "ccli": "7128476",
+   "writers": "Dontaniel Jamel Kimbrough, Todd Dulaney",
+   "copyright": "© Keyemupmusic; MNRK Music Group Nashville; U Know It 2",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "note": "distinct from Natalie Grant's Your Great Name (Nordhoff/Neale)",
+   "status": "Verified",
+   "credit": "- \"Your Great Name (Todd Dulaney)\" words and music by Dontaniel Jamel Kimbrough, Todd Dulaney\n  © Keyemupmusic; MNRK Music Group Nashville; U Know It 2 | CCLI Song No. 7128476",
+   "notes": "distinct from Natalie Grant's Your Great Name (Nordhoff/Neale)"
+  },
+  "I Give You My Heart": {
+   "ccli": "1866132",
+   "writers": "Reuben Morgan",
+   "copyright": "© 1995 Hillsong Music Publishing Australia",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"I Give You My Heart\" words and music by Reuben Morgan\n  © 1995 Hillsong Music Publishing Australia | CCLI Song No. 1866132"
+  },
+  "I Exalt Thee": {
+   "ccli": "17803",
+   "writers": "Pete Sanchez Jr.",
+   "copyright": "© 1977 Pete Sanchez Jr.",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "note": "congregation sings it as 'We Exalt Thee'",
+   "status": "Verified",
+   "credit": "- \"I Exalt Thee\" words and music by Pete Sanchez Jr.\n  © 1977 Pete Sanchez Jr. | CCLI Song No. 17803",
+   "notes": "congregation sings it as 'We Exalt Thee'"
+  },
+  "Holy Spirit (Torwalt)": {
+   "ccli": "6087919",
+   "writers": "Bryan Torwalt, Katie Torwalt",
+   "copyright": "© 2011 Capitol CMG Genesis; Jesus Culture Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Holy Spirit (Torwalt)\" words and music by Bryan Torwalt, Katie Torwalt\n  © 2011 Capitol CMG Genesis; Jesus Culture Music | CCLI Song No. 6087919"
+  },
+  "Let It Rain (Michael Farren)": {
+   "ccli": "3591817",
+   "writers": "Michael Farren",
+   "copyright": "© 2001, 2025 This Is Your Time Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "note": "'Open the floodgates of heaven' — Pocket Full of Rocks / MWS recording",
+   "status": "Verified",
+   "credit": "- \"Let It Rain (Michael Farren)\" words and music by Michael Farren\n  © 2001, 2025 This Is Your Time Music | CCLI Song No. 3591817",
+   "notes": "'Open the floodgates of heaven' — Pocket Full of Rocks / MWS recording"
+  },
+  "I Thank God": {
+   "ccli": "7169680",
+   "writers": "Aaron Moses, Chuck Butler, Dante Bowe, Enrique Holmes, Jesse Cline, Maryanne J. George",
+   "copyright": "© 2021 Bethel Worship Publishing; Heritage Worship Music Publishing; Maverick City Publishing; Aaron Moses Chiriboga Music; Be Essential Songs; Holmeboy Music Group; Jesse Cline Publishing Designee; Jord A Lil Music; MJ George Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "note": "Maverick City Music & UPPERROOM — 'hell lost another one, I am free'",
+   "status": "Verified",
+   "credit": "- \"I Thank God\" words and music by Aaron Moses, Chuck Butler, Dante Bowe, Enrique Holmes, Jesse Cline, Maryanne J. George\n  © 2021 Bethel Worship Publishing; Heritage Worship Music Publishing; Maverick City Publishing; Aaron Moses Chiriboga Music; Be Essential Songs; Holmeboy Music Group; Jesse Cline Publishing Designee; Jord A Lil Music; MJ George Music | CCLI Song No. 7169680",
+   "notes": "Maverick City Music & UPPERROOM — 'hell lost another one, I am free'"
+  },
+  "Be Praised": {
+   "ccli": "7165546",
+   "writers": "Aaron Moses, Dante Bowe, Joe L. Barnes",
+   "copyright": "© 2020 Bethel Worship Publishing; Maverick City Publishing; ForTheDreamers Publishing; Aaron Moses Chiriboga Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Be Praised\" words and music by Aaron Moses, Dante Bowe, Joe L. Barnes\n  © 2020 Bethel Worship Publishing; Maverick City Publishing; ForTheDreamers Publishing; Aaron Moses Chiriboga Music | CCLI Song No. 7165546"
+  },
+  "Nobody Like You Lord": {
+   "ccli": "7112676",
+   "writers": "Antony Rachel, Maranda Curtis",
+   "copyright": "© Butterfly Works Publishing; remaining portion unaffiliated",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Nobody Like You Lord\" words and music by Antony Rachel, Maranda Curtis\n  © Butterfly Works Publishing; remaining portion unaffiliated | CCLI Song No. 7112676"
+  },
+  "I Can Only Imagine": {
+   "ccli": "2978857",
+   "writers": "Bart Millard",
+   "copyright": "© 2001, 2002 Simpleville Music",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"I Can Only Imagine\" words and music by Bart Millard\n  © 2001, 2002 Simpleville Music | CCLI Song No. 2978857"
+  },
+  "Open The Eyes Of My Heart": {
+   "ccli": "2298355",
+   "writers": "Paul Baloche",
+   "copyright": "© 1997 Integrity's Hosanna! Music; Leadworship Songs",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"Open The Eyes Of My Heart\" words and music by Paul Baloche\n  © 1997 Integrity's Hosanna! Music; Leadworship Songs | CCLI Song No. 2298355"
+  },
+  "You Deserve The Glory": {
+   "ccli": "1240868",
+   "writers": "Eva-Lena Hellmark",
+   "copyright": "© 1992 Eva-Lena Hellmark",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "status": "Verified",
+   "credit": "- \"You Deserve The Glory\" words and music by Eva-Lena Hellmark\n  © 1992 Eva-Lena Hellmark | CCLI Song No. 1240868"
+  },
+  "Come Fill Me Up": {
+   "ccli": "7126704",
+   "writers": "Brandon Lake, Briana Babineaux, Jonathan Jay, Tony Brown",
+   "copyright": "© Bethel Worship Publishing; Brandon Lake Music; Heritage Worship Music Publishing; Maverick City Publishing; Let There Be Songs",
+   "verified": "SongSelect-verified Aug 17 2026 (number+title+authors+copyright)",
+   "note": "'Come set me on a holy fire, burn bright until the whole world finds your love'",
+   "status": "Verified",
+   "credit": "- \"Come Fill Me Up\" words and music by Brandon Lake, Briana Babineaux, Jonathan Jay, Tony Brown\n  © Bethel Worship Publishing; Brandon Lake Music; Heritage Worship Music Publishing; Maverick City Publishing; Let There Be Songs | CCLI Song No. 7126704",
+   "notes": "'Come set me on a holy fire, burn bright until the whole world finds your love'"
+  },
+  "Set A Fire": {
+   "ccli": "5911299",
+   "writers": "Will Reagan",
+   "copyright": "© 2010 United Pursuit Music",
+   "verified": "SongSelect-verified Aug 17 2026 (songselect.ccli.com/songs/5911299) — admin Capitol CMG Publishing",
+   "status": "Verified",
+   "credit": "- \"Set A Fire\" words and music by Will Reagan\n  © 2010 United Pursuit Music | CCLI Song No. 5911299"
+  },
+  "Make Room": {
+   "ccli": "7122057",
+   "writers": "Evelyn Heideriqui, Josh Farro, Lucas Cortazio, Rebekah White",
+   "copyright": "© 2018 A New Song For A New Day Music; Community Music Songs; Curb Songs; Father of Lights Publishing; Mike Curb Music",
+   "verified": "SongSelect-verified Aug 17 2026 (songselect.ccli.com/songs/7122057) — the Community Music one, matched on the lyric 'shake up the ground'. NOTE: 8 different songs titled 'Make Room' exist in SongSelect; do not substitute another.",
+   "status": "Verified",
+   "credit": "- \"Make Room\" words and music by Evelyn Heideriqui, Josh Farro, Lucas Cortazio, Rebekah White\n  © 2018 A New Song For A New Day Music; Community Music Songs; Curb Songs; Father of Lights Publishing; Mike Curb Music | CCLI Song No. 7122057"
+  },
+  "How He Loves": {
+   "ccli": "5032549",
+   "writers": "John Mark McMillan",
+   "copyright": "© 2005 Integrity's Hosanna! Music",
+   "source": "CCLI SongSelect, verified 2026-08-25",
+   "status": "Complete",
+   "credit": "- \"How He Loves\" words and music by John Mark McMillan\n  © 2005 Integrity's Hosanna! Music | CCLI Song No. 5032549"
+  },
+  "Reckless Love": {
+   "ccli": "7089641",
+   "writers": "Caleb Culver, Cory Asbury, Ran Jackson",
+   "copyright": "© 2017 Cory Asbury Publishing; Richmond Park Publishing; Watershed Publishing Group; Bethel Music Publishing",
+   "source": "CCLI SongSelect, verified 2026-08-25",
+   "status": "Complete",
+   "credit": "- \"Reckless Love\" words and music by Caleb Culver, Cory Asbury, Ran Jackson\n  © 2017 Cory Asbury Publishing; Richmond Park Publishing; Watershed Publishing Group; Bethel Music Publishing | CCLI Song No. 7089641"
+  },
+  "Overflow (Tasha Cobbs Leonard)": {
+   "ccli": "7049475",
+   "writers": "Tasha Cobbs Leonard",
+   "copyright": "© Meadowgreen Music Company; Tasha Cobbs Music Group",
+   "_note": "CCLI shows NO year for this one. Recorded exactly as displayed.",
+   "source": "CCLI SongSelect, verified 2026-08-25",
+   "status": "Complete",
+   "credit": "- \"Overflow (Tasha Cobbs Leonard)\" words and music by Tasha Cobbs Leonard\n  © Meadowgreen Music Company; Tasha Cobbs Music Group | CCLI Song No. 7049475"
+  },
+  "Lord You're Mighty": {
+   "ccli": "7067683",
+   "writers": "Eric Davis, JJ Hairston",
+   "copyright": "© E Dav Music; Yellow Boy Music",
+   "administrator": "Kobalt Music Publishing America, Inc.",
+   "verified": "SongSelect, page supplied by Bradly 2026-08-31 (number+title+authors+copyright)",
+   "_note": "No year on the SongSelect copyright line — record it exactly as shown. The service notes carried '© 2009 Yellow Boy Music (Admin. by Veracity Entertainment, LLC)', which disagrees on both publisher set and administrator; SongSelect is the source of record. Its lyric is 'What a mighty God we serve' — see _UNRESOLVED, this may be the arrangement the team actually sings.",
+   "status": "Verified",
+   "admin": "Kobalt Music Publishing America, Inc.",
+   "credit": "- \"Lord You're Mighty\" words and music by Eric Davis, JJ Hairston\n  © E Dav Music; Yellow Boy Music; admin. Kobalt Music Publishing America, Inc. | CCLI Song No. 7067683"
+  },
+  "Withholding Nothing": {
+   "ccli": "7037764",
+   "writers": "William McDowell",
+   "copyright": "© Delivery Room Publishing",
+   "administrator": "Fun Attic Music, LLC",
+   "verified": "SongSelect, page supplied by Bradly 2026-08-31 (number+title+authors+copyright)",
+   "_note": "No year on the SongSelect copyright line — recorded exactly as displayed.",
+   "status": "Verified",
+   "admin": "Fun Attic Music, LLC",
+   "credit": "- \"Withholding Nothing\" words and music by William McDowell\n  © Delivery Room Publishing; admin. Fun Attic Music, LLC | CCLI Song No. 7037764"
+  },
+  "My Jesus": {
+   "ccli": "7174531",
+   "writers": "Anne Wilson, Jeff Pardo, Matthew West",
+   "copyright": "© 2021 Capitol CMG Paragon; Jacobs Story Music; Meaux Mercy; Combustion Five; Inman Park Music",
+   "verified": "Supplied by Bradly Sep 4 2026, verified at the church against lyrics on file",
+   "status": "Verified",
+   "credit": "- \"My Jesus\" words and music by Anne Wilson, Jeff Pardo, Matthew West\n  © 2021 Capitol CMG Paragon; Jacobs Story Music; Meaux Mercy; Combustion Five; Inman Park Music | CCLI Song No. 7174531"
+  },
+  "The Name Of Jesus Is Lifted High": {
+   "ccli": "7049825",
+   "writers": "Eddie James",
+   "copyright": "© 2008 Maize Music",
+   "verified": "Supplied by Bradly Sep 4 2026, verified at the church against lyrics on file",
+   "status": "Verified",
+   "credit": "- \"The Name Of Jesus Is Lifted High\" words and music by Eddie James\n  © 2008 Maize Music | CCLI Song No. 7049825"
+  },
+  "O Mighty Ones": {
+   "ccli": "7170546",
+   "writers": "Randy Martinez",
+   "copyright": "© Furnace Media Publishing",
+   "verified": "Supplied by Bradly Sep 4 2026, verified at the church against lyrics on file",
+   "_note": "No year on the copyright line — same documented case as Lord You're Mighty. Includes the 'Worship is my warfare' section.",
+   "status": "Verified",
+   "credit": "- \"O Mighty Ones\" words and music by Randy Martinez\n  © Furnace Media Publishing | CCLI Song No. 7170546"
+  },
+  "Awesome In This Place": {
+   "ccli": "847554",
+   "writers": "Dave Billington",
+   "copyright": "© 1992 Integrity's Hosanna! Music",
+   "verified": "Supplied by Bradly Sep 4 2026, verified at the church against lyrics on file",
+   "status": "Verified",
+   "credit": "- \"Awesome In This Place\" words and music by Dave Billington\n  © 1992 Integrity's Hosanna! Music | CCLI Song No. 847554"
+  },
+  "Freedom": {
+   "ccli": "2969543",
+   "writers": "Matthew Bushard",
+   "copyright": "© 2000 City Bible Music; Universal Music - Brentwood Benson Publishing",
+   "verified": "Supplied by Bradly Sep 4 2026, verified at the church against lyrics on file",
+   "_note": "The Eddie James live arrangement. Title is shared by many songs — this is the one Arise sings; do not match on title alone.",
+   "status": "Verified",
+   "credit": "- \"Freedom\" words and music by Matthew Bushard\n  © 2000 City Bible Music; Universal Music - Brentwood Benson Publishing | CCLI Song No. 2969543"
+  },
+  "You're Beautiful": {
+   "ccli": "7271827",
+   "writers": "Eddie James",
+   "copyright": "© 2025 Maize Music",
+   "verified": "Supplied by Bradly Sep 4 2026, verified at the church against lyrics on file",
+   "status": "Verified",
+   "credit": "- \"You're Beautiful\" words and music by Eddie James\n  © 2025 Maize Music | CCLI Song No. 7271827"
+  },
+  "Here As In Heaven": {
+   "ccli": "7051506",
+   "writers": "Chris Brown, Mack Brock, Matthew Ntlele, Steven Furtick, Wade Joye",
+   "copyright": "© 2015 Music by Elevation Worship Publishing",
+   "verified": "Supplied by Bradly Sep 4 2026, verified at the church against lyrics on file",
+   "status": "Verified",
+   "credit": "- \"Here As In Heaven\" words and music by Chris Brown, Mack Brock, Matthew Ntlele, Steven Furtick, Wade Joye\n  © 2015 Music by Elevation Worship Publishing | CCLI Song No. 7051506"
+  },
+  "Healer": {
+   "ccli": "4873981",
+   "writers": "Mike Guglielmucci",
+   "copyright": "© 2007 Planetshakers Ministries Int. Inc.",
+   "verified": "Supplied by Bradly Sep 4 2026, verified at the church against lyrics on file",
+   "status": "Verified",
+   "credit": "- \"Healer\" words and music by Mike Guglielmucci\n  © 2007 Planetshakers Ministries Int. Inc. | CCLI Song No. 4873981"
   }
+ },
+ "meta": {
+  "_VERIFICATION_SWEEP": {
+   "date": "Aug 17 2026, late night - full sweep per Bradly's request",
+   "method": "each number loaded directly at songselect.ccli.com/songs/<number>; title, authors, copyright captured from the live page",
+   "result": "ALL 25 original numbers CORRECT. Zero wrong CCLI numbers. One title corrected ('Worthy Is Your Name' -> 'Worthy', Elevation). Two canonical-title upgrades (Proverbs 3 (Tablet Of Your Heart); King Of Glory (Feat. Shana Wilson-Williams)). 7 new verified songs added (32 total).",
+   "unresolved": "MAJESTUOSO NOMBRE claim on zw80emxMeZk - no exact SongSelect title; likely a Spanish adaptation matching an English melody in the set. Bradly listens to the claimed segment.",
+   "descriptions_wave": "Aug 17 2026: all CCLI numbers found in channel descriptions verified; 32 songs added (bank now ~64). Wrong numbers found in descriptions: You Are Good Bethel 5769993->5191806; Jesus I Love You More Than Anything 7147029->More Than Anything 4329473; Spirit Break Out had 3715112 (Shake The Foundation dup)->6058450. Wrong artists: You're An Army (Free Chapel->Rick Pino), King of Glory on Nov 23 2025 desc (Passion->Todd Dulaney per number 7135918)."
+  },
+  "_NOT_IN_CCLI_CATALOG": {
+   "Yahweh Will Manifest Himself": {
+    "status": "NOT in the CCLI catalog — report manually",
+    "confirmed_by": "Bradly, 2026-08-25",
+    "lyric_hook": "Yahweh, Rapha, Elohim, Shaddai, Jireh, Adonai",
+    "also_sung_as": [
+     "Yahweh",
+     "Manifest",
+     "If You Worship He Will Manifest Himself"
+    ],
+    "evidence": "SongSelect search for 'if you worship he will manifest himself' returns ZERO results.",
+    "do_not_confuse_with": "'Yahweh' CCLI 7159119 (Carl & Leann Albrecht) — that one lists El Elyon / El Shaddai / Elohim. Different song. Nearly credited it in error.",
+    "heard": "Aug 24 2026 Glory Night"
+   },
+   "Take Me There (Anna Golden)": "no SongSelect entry - list without a number",
+   "Your Name (Jovonta Patton)": "no SongSelect entry (Newton Street Entertainment) - list without a number",
+   "Manifestation (Enrique Holmes)": "no SongSelect entry per Bradly's own earlier note - list without a number",
+   "Give 'Em Hell / Just Start Shouting": "from Aug 16 service credits - not found in SongSelect; keep without numbers",
+   "Say Yes (Shekinah Glory Ministry)": "searched Aug 17 2026: no CCLI catalog entry ('will your heart and soul say yes' lyric search, 130 results, none match) - list without a number",
+   "_HOW_TO_CREDIT": "Use the no_songselect_entry form in _CREDIT_FORMAT. Do not assert license coverage."
+  },
+  "_UNRESOLVED": {
+   "What A Mighty God We Serve (traditional chorus)": "sung on GZDbeGF6wMk + TVCLSn5wbKg. SongSelect has 2 arrangements (Chorale #2245023 Dawson/Ford; #4654715 Bob Singleton) - cannot tell which arrangement the team uses. LEFT UNCREDITED until confirmed.",
+   "We Wait For You / Shekinah Glory Come Down": "sung on GZDbeGF6wMk ~29:29. No confident SongSelect match. LEFT UNCREDITED."
+  },
+  "_CREDIT_FORMAT": {
+   "adopted": "Aug 17 2026, after reading CCLI's Church Copyright + Streaming License summaries",
+   "song_line": "- \"Title\" words and music by Writers",
+   "copyright_line": "  (c) year Publishers | CCLI Song No. NUMBER",
+   "footer": "Used by Permission. CCLI Church Copyright License No. 245091 | CCLI Streaming License No. 20719042",
+   "licenses": {
+    "church_copyright": "245091",
+    "streaming": "20719042",
+    "term": "9/1/2025 - 8/31/2027",
+    "ccli_account": "1944559",
+    "source": "Certificate of Licenses & Services, supplied by Bradly Aug 17 2026"
+   },
+   "no_songselect_entry": "- \"Title\" (Artist) — performed live by our praise team; songwriter and publisher information not listed in SongSelect",
+   "RULE": "NEVER write 'performed live under our church license' for a song with no SongSelect entry. CCLI coverage only extends to songs in the Covered Catalogs; asserting coverage for a song that isn't in them is a claim we cannot support. State the facts, claim nothing.",
+   "NEVER_USE_HASH": "YouTube linkifies '#12345' and shows the first hashtags ABOVE the video title. Writing 'CCLI Song #5911299' put the CCLI numbers where #GloryNight should be — confirmed live on the Aug 17 2026 stream. Always write 'No.', never '#', for any CCLI number."
+  },
+  "_PARTIAL_NEEDS_COPYRIGHT": {
+   "_RULE": "These have a CCLI number and authors but no verified copyright line, so assemble_desc.py must NOT emit them — a credit without the (c) owner is incomplete under CCLI's format. Finish them on a signed-in SongSelect session, then move each into the main bank.",
+   "Holy Ground (Passion)": {
+    "ccli": "7078152",
+    "writers": "Brett Younker, Jimi Cravity, Melodie Malone, Mia Fieldes",
+    "copyright_incomplete": "© A Popular Muse; sixsteps Music; Be Essential Songs; [TRUNCATED - list ended in 'etc.']",
+    "blocker": "Publisher list was truncated with 'etc.' — a credit without the full (c) owner is incomplete under CCLI's format and must not be emitted.",
+    "source": "Supplied by Bradly Sep 4 2026, verified at the church against lyrics on file",
+    "_note": "Passion version, NOT the Geron Davis song of the same name."
+   },
+   "Mighty Name Of Jesus": {
+    "ccli": "7244496",
+    "writers": "Hope Darst, Jacob Sooter, Lauren Sloat",
+    "copyright_incomplete": "© 2024 TBCO Publishing; Razor and Tie; So Essential Tunes; [TRUNCATED - list ended in 'etc.']",
+    "blocker": "Publisher list was truncated with 'etc.' — a credit without the full (c) owner is incomplete under CCLI's format and must not be emitted.",
+    "source": "Supplied by Bradly Sep 4 2026, verified at the church against lyrics on file"
+   },
+   "Mighty One": {
+    "ccli": "7179239",
+    "writers": "Dante Bowe, Mitch Wong, Todd Dulaney",
+    "copyright_incomplete": "© Bethel Worship Publishing; Maverick City Publishing; [TRUNCATED - list ended in 'etc.']",
+    "blocker": "Publisher list was truncated with 'etc.' — a credit without the full (c) owner is incomplete under CCLI's format and must not be emitted.",
+    "source": "Supplied by Bradly Sep 4 2026, verified at the church against lyrics on file"
+   }
+  },
+  "_CANDIDATES_NEED_BRADLY": {
+   "You Are Faithful": {
+    "status": "UNIDENTIFIED — Bradly does not know it either (2026-08-25)",
+    "heard": "Aug 24 2026 Glory Night, sustained 'You are faithful, God' refrain ~12-14 min",
+    "next_step": "Ask the worship team. Too generic to search on the phrase alone."
+   }
+  },
+  "_CSV_MERGE": {
+   "date": "2026-09-01",
+   "source": "ARISE_SONG_BANK.csv supplied by Bradly",
+   "result": "89 CSV rows over 89 songs — 0 new titles, 0 CCLI conflicts, 0 duplicates to remove",
+   "holy_spirit": "'Holy Spirit' and 'Holy Spirit (Torwalt)' share CCLI 6087919 on purpose: one song filed twice, already known. Not a duplicate to delete.",
+   "credit_format": "credit lines read 'CCLI Song No. 7158417', never '#7158417' — YouTube renders #digits as a hashtag above the title."
+  },
+  "_CONFERENCE_SEP2026": {
+   "event": "Power To Heal — Apostle Joan Hunter, Sep 4-6 2026",
+   "list_received": "Sep 4 2026 from Bradly (compiled at the church against lyrics on file)",
+   "corroboration": "6 of the 17 numbers matched entries this bank had already SongSelect-verified independently, with identical writers: 6243540, 6573588, 7201044, 7223119, 4455206, 17250. Where the copyright lines differed, the bank's were strict supersets of the list's — abbreviation, not contradiction. That is meaningful corroboration for the rest of the list.",
+   "resolved": "'Who else is worthy' = Who Else, CCLI 7223119 (Gateway/Gamboa), NOT 'Worthy' 7111931.",
+   "still_open": "Psalm 23 was in the setlist but absent from the list entirely."
+  }
+ }
 }
