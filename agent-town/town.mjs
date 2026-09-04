@@ -591,7 +591,12 @@ function loadState() {
       for (const a of agents) {
         const saved = byId.get(a.id);
         if (!saved) continue;
-        for (const k of ['name', 'loc', 'coins', 'energy', 'tally', 'worklog', 'diary', 'memory', 'nextDeepAt', 'nextDecorAt', 'lastSocialTick', 'assistedAt', 'homeTurnDay', 'homeTurnCount']) {
+        // NOT 'name': the cast's name is canonical to the CAST above, so a rename
+        // there (apex → Max) always wins. Otherwise the old name saved in
+        // town-state.json would stick forever — which is why Max kept showing as
+        // "Apex" after he was renamed. His position, coins, memory and the rest
+        // are his to keep; his name is the code's to set.
+        for (const k of ['loc', 'coins', 'energy', 'tally', 'worklog', 'diary', 'memory', 'nextDeepAt', 'nextDecorAt', 'lastSocialTick', 'assistedAt', 'homeTurnDay', 'homeTurnCount']) {
           if (saved[k] !== undefined) a[k] = saved[k];
         }
       }
