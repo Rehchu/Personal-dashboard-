@@ -1377,6 +1377,13 @@ export function mount(root, tools) {
     if (village.region === 'center' && Number.isFinite(me.x)) walkers.push(me);
     walkers.sort((a, b) => a.y - b.y);
     for (const sp of walkers) drawWalker(sp, now, t);
+    // a work animation over each building whose resident is on the job — Max's
+    // barbell, Spork's steam, Ctrl's sparks, Draco's page, Meta's edit cube,
+    // Arise's chapel glow (drawActivity no-ops for keys without one)
+    for (const d of Object.values(districts)) {
+      if (d.region !== village.region || !activeKeys.has(d.key)) continue;
+      drawActivity(d.key, d.x, d.box.y + d.box.h * 0.6, now, t, true);
+    }
     for (const p of puffs) {
       const age = (now - p.born) / (p.kind === 'smoke' ? 2400 : 550);
       if (age > 1) continue;
@@ -1402,12 +1409,23 @@ export function mount(root, tools) {
     drawRegionToggle(W, H);
   }
   function drawVillageRoom(img) {
-    const W = canvas.width, H = canvas.height;
+    const W = canvas.width, H = canvas.height, t = performance.now();
     ctx.imageSmoothingEnabled = true;
     ctx.fillStyle = '#0e1e12'; ctx.fillRect(0, 0, W, H);
     const s = Math.max(W / img.width, H / img.height);   // cover-fit the 16:9 room plate
     const dw = img.width * s, dh = img.height * s;
     ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
+    // whoever lives or works here, standing in the room — click one to talk
+    village.roomOccupants = [];
+    const occ = [...sprites.entries()].filter(([, sp]) => sp.loc === inside.key);
+    occ.forEach(([id, sp], i) => {
+      const rx = W * (0.36 + 0.28 * ((i + 0.5) / Math.max(1, occ.length)));
+      const ry = H * 0.80;
+      drawWalker({ ...sp, x: rx, y: ry, moving: false, axis: 'down', dir: 1 }, t, t);
+      label(sp.name || '', rx, ry + 26);
+      village.roomOccupants.push({ id, x: rx - 24, y: ry - 46, w: 48, h: 64 });
+    });
+    if (occ.length) label('tap a villager to talk', W / 2, H - 14, 10);
     label(String(inside.name || '').slice(0, 26), W / 2, 30, 13);
     const chip = leaveChip();
     ctx.fillStyle = 'rgba(20,25,18,0.85)'; ctx.strokeStyle = 'rgba(247,217,138,0.9)'; ctx.lineWidth = 1.5;
@@ -1613,14 +1631,16 @@ export function mount(root, tools) {
 
   // one villager, drawn where they stand — called from the depth-sorted pass
   function drawWalker(sp, now, t) {
-    // a real walk: step rhythm in the bounce, a waddle in the shoulders,
-    // slow breathing when standing still
-    const step = Math.sin(t / 85);
-    const bob = sp.moving ? Math.abs(Math.cos(t / 85)) * 2.8 : Math.sin(t / 650 + sp.hue) * 0.8;
-    const tilt = sp.moving ? step * 0.085 : Math.sin(t / 900 + sp.hue) * 0.015;
+    // a real walk cycle: a footfall bounce twice per stride, a tiny step-squash,
+    // and a shadow that pulses with each step — no shoulder waddle. Standing
+    // still, only slow breathing.
+    const phase = t / 120;
+    const foot = Math.abs(Math.sin(phase));               // 0..1, peaks on each footfall
+    const bob = sp.moving ? foot * 3.4 : Math.sin(t / 650 + sp.hue) * 0.8;
+    const squashY = sp.moving ? 1 - (1 - foot) * 0.06 : 1; // compress a hair between steps
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
     ctx.beginPath();
-    ctx.ellipse(sp.x, sp.y + 12, sp.moving ? 9 + Math.abs(step) * 2 : 10, 3.5, 0, 0, Math.PI * 2);
+    ctx.ellipse(sp.x, sp.y + 12, sp.moving ? 8 + foot * 3 : 10, 3.5, 0, 0, Math.PI * 2);
     ctx.fill();
     // four-way walk: the front sheet coming toward you, the back sheet
     // going away, the side sheet (flipped for left) otherwise; idle faces
@@ -1635,8 +1655,7 @@ export function mount(root, tools) {
     if (img) {
       ctx.save();
       ctx.translate(sp.x, sp.y + 12);        // pivot at the feet
-      ctx.rotate(tilt);
-      if (flip) ctx.scale(-1, 1);            // side sprites face right natively
+      ctx.scale(flip ? -1 : 1, squashY);     // face travel direction + a light step-squash (no waddle)
       // hires share one sprite — a per-person hue shift keeps them distinct
       // hue-rotate is silently ignored where 2D-canvas filters are missing
       // (older Safari); those browsers fall back to identical untinted hires
@@ -2022,7 +2041,14 @@ export function mount(root, tools) {
     if (villageOn()) {
       if (inside) {
         const chip = leaveChip();
-        if (x >= chip.x && x <= chip.x + chip.w && y >= chip.y && y <= chip.y + chip.h) { inside = null; roomKey = null; }
+        if (x >= chip.x && x <= chip.x + chip.w && y >= chip.y && y <= chip.y + chip.h) { inside = null; roomKey = null; return; }
+        // tapping the villager in the room opens the chat with them
+        const occ = (village.roomOccupants || []).find(o => x >= o.x && x <= o.x + o.w && y >= o.y && y <= o.y + o.h);
+        if (occ) {
+          const who = root.querySelector('#town-who');
+          if (who && [...who.options].some(o => o.value === occ.id)) who.value = occ.id;
+          showTab('talk'); root.querySelector('#town-say')?.focus();
+        }
         return;
       }
       const tr = village.toggleRect;   // the Center / Outskirts button
@@ -2057,6 +2083,13 @@ export function mount(root, tools) {
       }
       if (bHit) {
         inside = { type: 'district', key: bHit.key, name: bHit.label, interior: bHit.interior, owner: 'Dyer Town', loc: bHit.key };
+        // step in and be ready to talk to whoever's there
+        const resident = [...sprites.entries()].find(([, sp]) => sp.loc === bHit.key);
+        if (resident) {
+          const who = root.querySelector('#town-who');
+          if (who && [...who.options].some(o => o.value === resident[0])) who.value = resident[0];
+          showTab('talk');
+        }
         return;
       }
       // empty ground → walk the owner there
