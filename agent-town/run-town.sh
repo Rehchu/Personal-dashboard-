@@ -18,9 +18,15 @@ export TOWN_PORT="${TOWN_PORT:-8787}"
 # Tells town.mjs a launcher will restart it, so it never forks a successor of
 # its own after a self-update (that is only for towns started by hand).
 export TOWN_LAUNCHER=1
-# Subscription only: hide any stray API key so the town runs on `claude login`
-# and can never bill per token.
-unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
+# Auth: use whatever this shell already has — a `claude login` session OR an
+# ANTHROPIC_API_KEY, whichever is present. (An earlier version always cleared
+# the key to force subscription-only; that broke shells that authenticate with
+# a key, with "Claude Code process exited with code 1" on every call.) To force
+# subscription-only and hide any key, set TOWN_SUBSCRIPTION_ONLY=1 — but only if
+# `claude login` is set up in THIS shell, or every model call will fail.
+if [ -n "${TOWN_SUBSCRIPTION_ONLY:-}" ]; then
+  unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
+fi
 
 if [ -z "${TOWN_KEY:-}" ] && [ -f town-key.txt ]; then
   TOWN_KEY="$(head -n1 town-key.txt | tr -d '\r\n')"
