@@ -107,9 +107,13 @@ const DATA_ROOT = process.env.TOWN_DATA_DIR || DIR;
 // makes every call die with "Claude Code process exited with code 1" on a plan
 // that doesn't include that exact model. Low effort by default: frugal thinking.
 const MODEL = (process.env.TOWN_MODEL || '').trim();
-const EFFORT = process.env.TOWN_EFFORT || 'low';
-// pass `model` to the SDK only when one is chosen; otherwise let the CLI decide
+const EFFORT = (process.env.TOWN_EFFORT || '').trim();
+// Pass `model` and `effort` to the SDK ONLY when explicitly set; otherwise send
+// neither, so the call matches a plain `claude -p "..."` — the shape we know
+// works on the user's plan. Forcing them was the bug: a model the plan lacks, or
+// an `effort` a model doesn't accept, makes the CLI exit 1 on every call.
 const modelOpt = MODEL ? { model: MODEL } : {};
+const effortOpt = EFFORT ? { effort: EFFORT } : {};
 /* Every numeric knob comes through here, and a bad value is LOUD, never silent.
 
    These are hand-typed into a .bat on a PC that then runs unattended for weeks,
@@ -783,7 +787,7 @@ async function runModel(prompt) {
   for (let attempt = 0; ; attempt++) {
     let text = '';
     try {
-      for await (const msg of query({ prompt, options: { ...modelOpt, effort: EFFORT, maxTurns: 1, allowedTools: [] } })) {
+      for await (const msg of query({ prompt, options: { ...modelOpt, ...effortOpt, maxTurns: 1, allowedTools: [] } })) {
         if (msg?.type === 'result' && typeof msg.result === 'string') text = msg.result;
         else if (msg?.type === 'assistant' && Array.isArray(msg.message?.content)) {
           for (const b of msg.message.content) if (b?.type === 'text' && b.text) text += b.text;
@@ -1189,7 +1193,7 @@ end with a 2-3 sentence plain-text summary, in character, of what you actually m
     for await (const msg of query({
       prompt,
       options: {
-        ...modelOpt, effort: EFFORT, maxTurns: DEEP_TURNS, cwd: dir,
+        ...modelOpt, ...effortOpt, maxTurns: DEEP_TURNS, cwd: dir,
         allowedTools: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash'],
         // 'default' (not bypass) so the gate below is actually consulted
         permissionMode: 'default',
