@@ -20,7 +20,7 @@ import http from 'node:http';
 import { webcrypto } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
 import { readFile, mkdir, readdir, writeFile, rename, rm } from 'node:fs/promises';
-import { existsSync, readFileSync, writeFileSync, renameSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, renameSync, rmSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve, sep } from 'node:path';
 
@@ -115,16 +115,24 @@ const DATA_ROOT = process.env.TOWN_DATA_DIR || DIR;
 // subprocess inherits our env, so this is what lets the town think. Works the
 // same whether started by run-town.sh/.bat or a bare `node town.mjs`.
 if (!process.env.CLAUDE_CODE_OAUTH_TOKEN) {
-  // Accept any of the sensible names the token file might have been saved as.
-  const TOKEN_FILES = ['claude-oauth-token.txt', 'claude-token.txt', 'oauth-token.txt',
-    'claude_code_oauth_token.txt', 'claude-code-oauth-token.txt', 'token.txt'];
-  for (const f of TOKEN_FILES) {
-    try {
-      const tok = readFileSync(join(DIR, f), 'utf8').trim();
-      if (tok) { process.env.CLAUDE_CODE_OAUTH_TOKEN = tok; console.log(`  auth: using the token in ${f}`); break; }
-    } catch { /* try the next name */ }
-  }
-  if (!process.env.CLAUDE_CODE_OAUTH_TOKEN) console.error('  auth: no CLAUDE_CODE_OAUTH_TOKEN in the env and no token file found — run `claude setup-token` and save its token to claude-oauth-token.txt beside town.mjs');
+  // Find the token file whatever it was reasonably named. Match is
+  // case-insensitive and tolerates the easy typos: hyphens/underscores/spaces,
+  // an optional "claude(-code)" prefix, and a zero written for the O in "oauth"
+  // (CLAUDE_CODE_0AUTH_TOKEN.txt). Never the dashboard key or a cloudflare token.
+  const isTokenFile = n => {
+    const l = n.toLowerCase();
+    if (l === 'town-key.txt' || l.includes('cloudflare')) return false;
+    return /^(claude[-_ ]?(code[-_ ]?)?)?[o0]auth[-_ ]?token\.txt$/.test(l)
+      || l === 'token.txt' || l === 'claude-token.txt' || l === 'claude_code_token.txt';
+  };
+  try {
+    const match = readdirSync(DIR).find(isTokenFile);
+    if (match) {
+      const tok = readFileSync(join(DIR, match), 'utf8').trim();
+      if (tok) { process.env.CLAUDE_CODE_OAUTH_TOKEN = tok; console.log(`  auth: using the token in ${match}`); }
+    }
+  } catch { /* fall through to the no-token notice */ }
+  if (!process.env.CLAUDE_CODE_OAUTH_TOKEN) console.error('  auth: no CLAUDE_CODE_OAUTH_TOKEN in the env and no token file found — run `claude setup-token` and save its token beside town.mjs (e.g. claude-oauth-token.txt)');
 }
 const MODEL = (process.env.TOWN_MODEL || '').trim();
 const EFFORT = (process.env.TOWN_EFFORT || '').trim();
