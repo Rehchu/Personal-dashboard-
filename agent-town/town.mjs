@@ -100,11 +100,16 @@ const BOOT_FAILS_BEFORE_ROLLBACK = 2;
 // point it at a mounted volume, so the town survives on an ephemeral cloud
 // machine whose code dir is rebuilt on every deploy while the volume is not.
 const DATA_ROOT = process.env.TOWN_DATA_DIR || DIR;
-// Opus 4.8 at low effort, per corporate: capable minds, frugal thinking. Both
-// overridable by env (TOWN_MODEL / TOWN_EFFORT — e.g. claude-haiku-4-5-20251001
-// for the cheapest possible town).
-const MODEL = process.env.TOWN_MODEL || 'claude-opus-4-8';
+// The model. TOWN_MODEL picks one (e.g. claude-haiku-4-5-20251001 for the
+// cheapest town, or a claude-opus-* for the most capable). Left UNSET, the town
+// uses whatever model the `claude` CLI is set to by default — which is the
+// robust choice: forcing a specific id (the old default was 'claude-opus-4-8')
+// makes every call die with "Claude Code process exited with code 1" on a plan
+// that doesn't include that exact model. Low effort by default: frugal thinking.
+const MODEL = (process.env.TOWN_MODEL || '').trim();
 const EFFORT = process.env.TOWN_EFFORT || 'low';
+// pass `model` to the SDK only when one is chosen; otherwise let the CLI decide
+const modelOpt = MODEL ? { model: MODEL } : {};
 /* Every numeric knob comes through here, and a bad value is LOUD, never silent.
 
    These are hand-typed into a .bat on a PC that then runs unattended for weeks,
@@ -778,7 +783,7 @@ async function runModel(prompt) {
   for (let attempt = 0; ; attempt++) {
     let text = '';
     try {
-      for await (const msg of query({ prompt, options: { model: MODEL, effort: EFFORT, maxTurns: 1, allowedTools: [] } })) {
+      for await (const msg of query({ prompt, options: { ...modelOpt, effort: EFFORT, maxTurns: 1, allowedTools: [] } })) {
         if (msg?.type === 'result' && typeof msg.result === 'string') text = msg.result;
         else if (msg?.type === 'assistant' && Array.isArray(msg.message?.content)) {
           for (const b of msg.message.content) if (b?.type === 'text' && b.text) text += b.text;
@@ -1184,7 +1189,7 @@ end with a 2-3 sentence plain-text summary, in character, of what you actually m
     for await (const msg of query({
       prompt,
       options: {
-        model: MODEL, effort: EFFORT, maxTurns: DEEP_TURNS, cwd: dir,
+        ...modelOpt, effort: EFFORT, maxTurns: DEEP_TURNS, cwd: dir,
         allowedTools: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash'],
         // 'default' (not bypass) so the gate below is actually consulted
         permissionMode: 'default',
@@ -2955,7 +2960,7 @@ server.listen(PORT, '127.0.0.1', async () => {
   // of the first one — which is exactly when you are standing there watching it.
   await pushState(true);
   console.log(`\n  Dyer Town is live → http://localhost:${PORT}`);
-  console.log(`  Model: ${MODEL} · ${TICK_MS}ms between agents (×${NIGHT_SLOW} from ${NIGHT_FROM}:00 to ${NIGHT_TO}:00)`);
+  console.log(`  Model: ${MODEL || 'the claude CLI default'} · ${TICK_MS}ms between agents (×${NIGHT_SLOW} from ${NIGHT_FROM}:00 to ${NIGHT_TO}:00)`);
   console.log(`  Morning digest: every ${DIGEST_TICKS} ticks`);
   console.log(`  Workshops: ${WORKSHOP} (drop your projects into an agent's folder)`);
   console.log(world.running

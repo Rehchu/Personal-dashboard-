@@ -12,7 +12,9 @@ rem spaces, %, &, ^ characters), which is what causes "Bridge: dashboard 401".
 
 cd /d "%~dp0"
 set DASH_URL=https://lifehq.dyer-hq.workers.dev
-set TOWN_MODEL=claude-opus-4-8
+rem Leave TOWN_MODEL empty to use the claude CLI's own default model (always on
+rem your plan). Set a specific id to force one, e.g. claude-haiku-4-5-20251001.
+set "TOWN_MODEL="
 set TOWN_EFFORT=low
 set TOWN_PORT=8787
 rem tells town.mjs this launcher restarts it (so it never forks its own successor)
