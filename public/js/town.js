@@ -716,6 +716,14 @@ export function mount(root, tools) {
           box: { x: bx / 100 * W, y: by / 100 * H, w: bw / 100 * W, h: bh / 100 * H },
         };
       }
+      // Obstacles for path-finding: the building BODY (upper part of each box),
+      // so villagers route around it. The lower frontage stays walkable so they
+      // can still reach their own door and stand there.
+      village.obstacles = { center: [], outskirts: [] };
+      for (const d of Object.values(districts)) {
+        if (!d.box || !village.obstacles[d.region]) continue;
+        village.obstacles[d.region].push({ x: d.box.x + 4, y: d.box.y, w: Math.max(2, d.box.w - 8), h: d.box.h * 0.72 });
+      }
     } else {
     // The villagers design the town: `layout[key] = {x,y}` (0–100 field coords)
     // is where they chose to put a building. We honor it; anything not yet placed
@@ -884,6 +892,88 @@ export function mount(root, tools) {
     mapReady = true;
   }
 
+  // ---- path-finding so villagers walk around buildings, not through them ----
+  function segClear(a, b, obs) {
+    const steps = Math.max(2, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 8));
+    for (let i = 0; i <= steps; i++) {
+      const px = a.x + (b.x - a.x) * i / steps, py = a.y + (b.y - a.y) * i / steps;
+      for (const o of obs) if (px >= o.x && px <= o.x + o.w && py >= o.y && py <= o.y + o.h) return false;
+    }
+    return true;
+  }
+  function simplifyLOS(pts, obs) {
+    if (pts.length <= 2) return pts;
+    const out = [pts[0]]; let i = 0;
+    while (i < pts.length - 1) {
+      let j = pts.length - 1;
+      while (j > i + 1 && !segClear(pts[i], pts[j], obs)) j--;
+      out.push(pts[j]); i = j;
+    }
+    return out;
+  }
+  // BFS on a coarse grid; returns waypoints from start to (ex,ey), or null.
+  function villageRoute(sx, sy, ex, ey, region) {
+    const obs = (village.obstacles && village.obstacles[region]) || [];
+    if (!obs.length) return null;
+    if (segClear({ x: sx, y: sy }, { x: ex, y: ey }, obs)) return null;   // straight line is fine
+    const CELL = 18, W = canvas.width, H = canvas.height;
+    const cols = Math.ceil(W / CELL), rows = Math.ceil(H / CELL);
+    const blocked = (c, r) => {
+      const px = c * CELL + CELL / 2, py = r * CELL + CELL / 2;
+      for (const o of obs) if (px >= o.x && px <= o.x + o.w && py >= o.y && py <= o.y + o.h) return true;
+      return false;
+    };
+    const cell = (px, py) => [Math.max(0, Math.min(cols - 1, Math.floor(px / CELL))), Math.max(0, Math.min(rows - 1, Math.floor(py / CELL)))];
+    const free = (c, r) => {
+      if (!blocked(c, r)) return [c, r];
+      for (let rad = 1; rad < 10; rad++) for (let dc = -rad; dc <= rad; dc++) for (let dr = -rad; dr <= rad; dr++) {
+        const nc = c + dc, nr = r + dr;
+        if (nc >= 0 && nr >= 0 && nc < cols && nr < rows && !blocked(nc, nr)) return [nc, nr];
+      }
+      return [c, r];
+    };
+    let [sc, sr] = free(...cell(sx, sy)), [ec, er] = free(...cell(ex, ey));
+    if (sc === ec && sr === er) return null;
+    const key = (c, r) => r * cols + c;
+    const came = new Map([[key(sc, sr), null]]);
+    const q = [[sc, sr]]; const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+    let found = false;
+    while (q.length) {
+      const [c, r] = q.shift();
+      if (c === ec && r === er) { found = true; break; }
+      for (const [dc, dr] of dirs) {
+        const nc = c + dc, nr = r + dr;
+        if (nc < 0 || nr < 0 || nc >= cols || nr >= rows || blocked(nc, nr)) continue;
+        if (dc && dr && (blocked(c + dc, r) || blocked(c, r + dr))) continue;   // no corner cutting
+        const k = key(nc, nr); if (came.has(k)) continue;
+        came.set(k, [c, r]); q.push([nc, nr]);
+      }
+    }
+    if (!found) return null;
+    const cells = []; let cur = [ec, er];
+    while (cur) { cells.push(cur); cur = came.get(key(cur[0], cur[1])); }
+    cells.reverse();
+    const pts = cells.map(([c, r]) => ({ x: c * CELL + CELL / 2, y: r * CELL + CELL / 2 }));
+    pts[0] = { x: sx, y: sy }; pts[pts.length - 1] = { x: ex, y: ey };
+    return simplifyLOS(pts, obs);
+  }
+  // the next point a sprite should step toward (a waypoint if a route is needed)
+  function stepTarget(sp) {
+    if (!villageOn()) return { x: sp.tx, y: sp.ty };
+    const region = (districts[sp.loc] && districts[sp.loc].region) || 'center';
+    const k = `${Math.round(sp.tx)},${Math.round(sp.ty)},${region}`;
+    if (sp.routeKey !== k) {
+      sp.routeKey = k;
+      const r = villageRoute(sp.x, sp.y, sp.tx, sp.ty, region);
+      sp.route = r ? r.slice(1) : null;   // drop the start point
+    }
+    if (sp.route && sp.route.length) {
+      if (Math.hypot(sp.route[0].x - sp.x, sp.route[0].y - sp.y) < 7) sp.route.shift();
+      if (sp.route.length) return sp.route[0];
+    }
+    return { x: sp.tx, y: sp.ty };
+  }
+
   let lastT = 0;
   function frame(t) {
     raf = requestAnimationFrame(frame);
@@ -893,15 +983,18 @@ export function mount(root, tools) {
     const now = performance.now();
 
     for (const sp of sprites.values()) {
-      const dx = sp.tx - sp.x, dy = sp.ty - sp.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist > 2) {
-        const speed = 55;                                  // px/s — a stroll
-        sp.x += (dx / dist) * speed * dt;
-        sp.y += (dy / dist) * speed * dt;
+      const finalDist = Math.hypot(sp.tx - sp.x, sp.ty - sp.y);
+      if (finalDist > 2) {
+        const st = stepTarget(sp);                         // a waypoint if it must go around a building
+        const dx = st.x - sp.x, dy = st.y - sp.y, sd = Math.hypot(dx, dy);
+        if (sd > 0.5) {
+          const speed = 55;                                // px/s — a stroll
+          sp.x += (dx / sd) * speed * dt;
+          sp.y += (dy / sd) * speed * dt;
+          if (Math.abs(dx) > 2) sp.dir = dx < 0 ? -1 : 1;  // face where you walk
+          sp.axis = Math.abs(dy) > Math.abs(dx) * 1.2 ? (dy > 0 ? 'down' : 'up') : 'side';
+        }
         sp.moving = true;
-        if (Math.abs(dx) > 2) sp.dir = dx < 0 ? -1 : 1;    // face where you walk
-        sp.axis = Math.abs(dy) > Math.abs(dx) * 1.2 ? (dy > 0 ? 'down' : 'up') : 'side';
       } else if (sp.moving || !sp.wanderAt) {
         sp.moving = false;
         sp.wanderAt = now + 1200 + Math.random() * 3500;   // linger, then wander
@@ -919,14 +1012,17 @@ export function mount(root, tools) {
     // the owner strolls like everyone else, minus the wandering — walk where
     // clicked, then stand; the spot is saved once the walk ends
     if (Number.isFinite(me.x)) {
-      const dx = me.tx - me.x, dy = me.ty - me.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist > 2) {
-        const speed = 55;
-        me.x += (dx / dist) * speed * dt;
-        me.y += (dy / dist) * speed * dt;
+      const finalDist = Math.hypot(me.tx - me.x, me.ty - me.y);
+      if (finalDist > 2) {
+        const st = stepTarget(me);
+        const dx = st.x - me.x, dy = st.y - me.y, sd = Math.hypot(dx, dy);
+        if (sd > 0.5) {
+          const speed = 55;
+          me.x += (dx / sd) * speed * dt;
+          me.y += (dy / sd) * speed * dt;
+          if (Math.abs(dx) > 2) me.dir = dx < 0 ? -1 : 1;
+        }
         me.moving = true;
-        if (Math.abs(dx) > 2) me.dir = dx < 0 ? -1 : 1;
         if (now - (me.lastDust || 0) > 170) {
           me.lastDust = now;
           puffs.push({ kind: 'dust', x: me.x - (me.dir || 1) * 7 + (Math.random() * 6 - 3), y: me.y + 10, born: now });
