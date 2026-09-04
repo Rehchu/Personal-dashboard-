@@ -12,7 +12,10 @@
 cd "$(dirname "$0")" || exit 1
 
 export DASH_URL="${DASH_URL:-https://lifehq.dyer-hq.workers.dev}"
-export TOWN_MODEL="${TOWN_MODEL:-claude-opus-4-8}"
+# Leave TOWN_MODEL unset to use the claude CLI's own default model (robust — it
+# always exists on your plan). Export a specific id to force one, e.g.
+# TOWN_MODEL=claude-haiku-4-5-20251001 (cheapest) or a claude-opus-* (most capable).
+export TOWN_MODEL="${TOWN_MODEL:-}"
 export TOWN_EFFORT="${TOWN_EFFORT:-low}"
 export TOWN_PORT="${TOWN_PORT:-8787}"
 # Tells town.mjs a launcher will restart it, so it never forks a successor of
