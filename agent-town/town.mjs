@@ -115,10 +115,16 @@ const DATA_ROOT = process.env.TOWN_DATA_DIR || DIR;
 // subprocess inherits our env, so this is what lets the town think. Works the
 // same whether started by run-town.sh/.bat or a bare `node town.mjs`.
 if (!process.env.CLAUDE_CODE_OAUTH_TOKEN) {
-  try {
-    const tok = readFileSync(join(DIR, 'claude-oauth-token.txt'), 'utf8').trim();
-    if (tok) { process.env.CLAUDE_CODE_OAUTH_TOKEN = tok; console.log('  auth: using the token in claude-oauth-token.txt'); }
-  } catch { /* no token file — rely on CLAUDE_CODE_OAUTH_TOKEN in the env, or an API key */ }
+  // Accept any of the sensible names the token file might have been saved as.
+  const TOKEN_FILES = ['claude-oauth-token.txt', 'claude-token.txt', 'oauth-token.txt',
+    'claude_code_oauth_token.txt', 'claude-code-oauth-token.txt', 'token.txt'];
+  for (const f of TOKEN_FILES) {
+    try {
+      const tok = readFileSync(join(DIR, f), 'utf8').trim();
+      if (tok) { process.env.CLAUDE_CODE_OAUTH_TOKEN = tok; console.log(`  auth: using the token in ${f}`); break; }
+    } catch { /* try the next name */ }
+  }
+  if (!process.env.CLAUDE_CODE_OAUTH_TOKEN) console.error('  auth: no CLAUDE_CODE_OAUTH_TOKEN in the env and no token file found — run `claude setup-token` and save its token to claude-oauth-token.txt beside town.mjs');
 }
 const MODEL = (process.env.TOWN_MODEL || '').trim();
 const EFFORT = (process.env.TOWN_EFFORT || '').trim();
