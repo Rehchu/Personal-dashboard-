@@ -133,8 +133,19 @@ const VILLAGE_WATER = {
 // gaps VILLAGE_WATER leaves) and keep the crossings walkable.
 const VILLAGE_BRIDGES = {
   center: [
-    { x: 49, y: 24, w: 12, h: 12 },   // rope bridge — the upper crossing
-    { x: 55, y: 63, w: 13, h: 12 },   // plank bridge — the lower crossing
+    // deliberately OVER-cover the river rects they cross (VILLAGE_WATER.center),
+    // on every side, so the crossing never depends on a single cell of paint
+    { x: 48, y: 22, w: 16, h: 15 },   // rope bridge — the upper crossing
+    { x: 52, y: 61, w: 17, h: 15 },   // plank bridge — the lower crossing
+  ],
+  outskirts: [],
+};
+// Painted buildings with no click-box in VILLAGE_SPOTS/SCENERY — their warm/gray
+// roofs would classify as walkable road, so hard-block their bodies too.
+const VILLAGE_BLOCKS = {
+  center: [
+    { x: 62, y: 8,  w: 11,   h: 29 },   // the satellite / "tech" building
+    { x: 72, y: 40, w: 12.5, h: 21 },   // the glass office building
   ],
   outskirts: [],
 };
@@ -971,7 +982,10 @@ export function mount(root, tools) {
         const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
         const sat = (mx - mn) / (mx + 1), M = Math.max(8, 0.12 * mx);
         if (sat < 0.22) return 0;                  // neutral (cobble/dirt/shadow) → road
-        if (b >= g && b - r >= M) return 2;        // water
+        // water: blue must dominate BOTH other channels AND be genuinely
+        // saturated — otherwise cool slate/blue-gray/shadowed ROAD paint (where
+        // blue merely ties green) reads as water and walls the path shut.
+        if (b - r >= M && b - g >= M && sat >= 0.35) return 2;
         if (g >= b && g - r >= M) return 1;        // grass / foliage
         return 0;                                  // warm (dirt/tan/brick) → road
       };
@@ -993,6 +1007,7 @@ export function mount(root, tools) {
       for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) cost[r * cols + c] = val;
     };
     for (const o of ((village.obstacles && village.obstacles[region]) || [])) rasterize(o.x, o.y, o.w, o.h, Infinity);
+    for (const o of (VILLAGE_BLOCKS[region] || [])) rasterize(o.x / 100 * W, o.y / 100 * H, o.w / 100 * W, o.h / 100 * H, Infinity);
     for (const br of (VILLAGE_BRIDGES[region] || [])) rasterize(br.x / 100 * W, br.y / 100 * H, br.w / 100 * W, br.h / 100 * H, COST_ROAD);
     // 3) keep-off: nudge any walkable cell touching a blocked one (+2) so walkers
     //    center on the road and skirt shorelines and walls instead of hugging them.
@@ -1002,7 +1017,8 @@ export function mount(root, tools) {
       let edge = false;
       for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const nc = c + dc, nr = r + dr;
-        if (nc < 0 || nr < 0 || nc >= cols || nr >= rows || !isFinite(cost[nr * cols + nc])) { edge = true; break; }
+        if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;   // the map border is open, not a wall
+        if (!isFinite(cost[nr * cols + nc])) { edge = true; break; }
       }
       if (edge) bumps.push(i);
     }
@@ -1022,7 +1038,7 @@ export function mount(root, tools) {
   // true when the straight a→b stays on cheap ground (road/frontage) — never grass,
   // never blocked. This is what keeps the LOS pass from cutting a corner over grass.
   function segCheap(ax, ay, bx, by, grid) {
-    const steps = Math.max(2, Math.ceil(Math.hypot(bx - ax, by - ay) / (grid.cell * 0.5)));
+    const steps = Math.max(2, Math.ceil(Math.hypot(bx - ax, by - ay) / (grid.cell * 0.34)));
     for (let i = 0; i <= steps; i++) {
       const px = ax + (bx - ax) * i / steps, py = ay + (by - ay) * i / steps;
       const c = Math.max(0, Math.min(grid.cols - 1, Math.floor(px / grid.cell)));
@@ -1095,9 +1111,9 @@ export function mount(root, tools) {
     const DIRS = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, SQ2], [1, -1, SQ2], [-1, 1, SQ2], [-1, -1, SQ2]];
     let found = false, guard = 0;
     while (heap.length) {
-      if (++guard > N * 4) break;
       const cur = pop(); if (closed[cur]) continue; if (cur === goal) { found = true; break; }
       closed[cur] = 1;
+      if (++guard > N) break;   // at most N distinct cells expand; a safety net, never hit in practice
       const cc = cur % cols, cr = (cur / cols) | 0;
       for (const [dc, dr, w] of DIRS) {
         const nc = cc + dc, nr = cr + dr;
