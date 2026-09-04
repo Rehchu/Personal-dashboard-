@@ -69,6 +69,42 @@ const LOCAL_ART = {
   char_apex_back: '/townart/apex_back.png',   // walking away
 };
 
+// ---- the painted districted village (HiggsField) ----
+// Each town location key maps to a building on one of the two painted maps:
+// [region, x, y, w, h] as percentages of that 1920x1072 map, and the interior
+// room image to show when you step inside. Verified against the source
+// village-data.ts so every villager lands on the right building. When these
+// images load, the tile paints the village instead of the procedural map; if
+// they fail, everything falls back to the old renderer untouched.
+const VILLAGE_SPOTS = {
+  // businesses (where a villager works on shift)
+  plaza:      ['center',    6.5,  1.5, 15.5, 30,   'headquarters', 'Dyer HQ'],
+  library:    ['center',    29,   7.5, 15,   22,   'library',      'The Library'],
+  chapel:     ['center',    26,   32.5, 9,   25,   'church',       'The Chapel'],
+  kitchen:    ['center',    40.5, 30,  11,   17.5, 'restaurant',   'The Test Kitchen'],
+  gym:        ['center',    41,   48.5, 11.5, 15.5,'gym',          'The Gym'],
+  studio:     ['center',    77.5, 13.5, 13.5, 24,  'studio',       'The Media Studio'],
+  repairshop: ['outskirts', 4.3,  4,   19.2, 34.5, 'repair-shop',  'The Repair Shop'],
+  // homes (where a villager goes off the clock)
+  house_meta:  ['center',   4,    67.5, 9,   21.5, 'meta-home',   "Meta's House"],
+  house_watch: ['center',   18,   69.5, 8.5, 19.5, 'vigil-home',  "Vigil's House"],
+  house_spork: ['center',   30.5, 69.5, 8,   19.5, 'spork-home',  "Spork's House"],
+  house_draco: ['center',   39.5, 66.5, 9,   24.5, 'draco-home',  "Draco's House"],
+  house_apex:  ['center',   51.5, 69.5, 7.5, 19.5, 'max-home',    "Max's House"],
+  house_arise: ['center',   63,   70.5, 8,   18.5, 'arise-home',  "Arise's House"],
+  house_ctrl:  ['outskirts',4.3,  4,   19.2, 34.5, 'repair-shop', "Ctrl's place"],  // lives above the shop
+};
+// buildings that are only scenery — clickable to peek inside, but no villager lives/works there
+const VILLAGE_SCENERY = {
+  keeper:      ['center',    75.5, 63.5, 20,  23.5, 'keeper-house', 'The Big House'],
+  watchtower:  ['outskirts', 31,   1.5,  10.5, 38,  'watchtower',   'The Watchtower'],
+  market:      ['outskirts', 46,   8.5,  24.5, 33,  'market',       'Market Plaza'],
+  greenhouse:  ['outskirts', 4.5,  50,   22,  31,   'greenhouse',   'Greenhouse'],
+  bakery:      ['outskirts', 34,   51.5, 14,  31,   'bakery',       'Bakery'],
+  observatory: ['outskirts', 54,   51.5, 11.5, 30,  'observatory',  'Observatory'],
+  boathouse:   ['outskirts', 68.5, 68.5, 23,  23,   'boathouse',    'Boathouse'],
+};
+
 async function loadTownArt(kind) {
   const local = LOCAL_ART[kind];
   if (local) {
@@ -475,6 +511,35 @@ export function mount(root, tools) {
     img.decode().then(() => { if (img.naturalWidth) office[name] = img; }).catch(() => {});
   }
 
+  // The painted village: two map plates (day + night) per district, and one
+  // room image per interior. Loaded lazily; village.ready flips on once the
+  // center day map is in. Everything that reads it is guarded, so a load
+  // failure just leaves the procedural map in place.
+  const village = { maps: {}, interiors: {}, ready: false, region: 'center', toggleRect: null };
+  (function loadVillage() {
+    const plates = [['center', 'village-map'], ['center-night', 'village-map-night'],
+      ['outskirts', 'village-map-outskirts'], ['outskirts-night', 'village-map-outskirts-night']];
+    for (const [key, file] of plates) {
+      const img = new Image();
+      img.src = `/townart/village/${file}.webp`;
+      img.decode().then(() => { if (img.naturalWidth) { village.maps[key] = img; if (key === 'center') village.ready = true; } }).catch(() => {});
+    }
+    const names = new Set(Object.values({ ...VILLAGE_SPOTS, ...VILLAGE_SCENERY }).map(v => v[5]));
+    for (const name of names) {
+      const img = new Image();
+      img.src = `/townart/village/interiors/${name}.webp`;
+      img.decode().then(() => { if (img.naturalWidth) village.interiors[name] = img; }).catch(() => {});
+    }
+  })();
+  const villageOn = () => village.ready && !!village.maps.center;
+  const isNight = () => { const h = new Date().getHours(); return h < 6 || h >= 19; };
+  // every spot the current region shows: businesses/homes here + scenery here
+  const spotsInRegion = region => {
+    const out = {};
+    for (const [k, v] of Object.entries({ ...VILLAGE_SPOTS, ...VILLAGE_SCENERY })) if (v[0] === region) out[k] = v;
+    return out;
+  };
+
   let districts = {};      // loc key -> {x,y,label,key,clearing} — x/y is where its building stands
   let townCenter = { x: 470, y: 318 };  // the fountain/plaza the town rings — set by syncWorld
   let placedStructs = [];  // structures with computed x/y
@@ -633,10 +698,25 @@ export function mount(root, tools) {
     // A village square, not a spreadsheet: the plaza (HQ) stands at the town
     // centre by the fountain, and every other district rings it, evenly spaced
     // on an ellipse. The canvas is a fixed landscape so the ring always reads.
-    const W = 940, H = 620;
+    const W = villageOn() ? 960 : 940, H = villageOn() ? 536 : 620;
     if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
-    townCenter = { x: W / 2, y: H / 2 + 10 };
+    townCenter = { x: W / 2, y: villageOn() ? H / 2 : H / 2 + 10 };
     districts = {};
+    if (villageOn()) {
+      // Painted village: each district sits on its building in the HiggsField map.
+      // x/y is the door point (where the villager stands); box is the click target.
+      const spots = { ...VILLAGE_SPOTS, ...VILLAGE_SCENERY };
+      for (const [k, v] of Object.entries(spots)) {
+        const [region, bx, by, bw, bh, interior, lbl] = v;
+        const isSpot = k in VILLAGE_SPOTS;
+        districts[k] = {
+          key: k, region, interior, scenery: !isSpot,
+          x: (bx + bw / 2) / 100 * W, y: (by + bh * 0.80) / 100 * H,
+          label: isSpot ? (s.map[k] || lbl) : lbl,
+          box: { x: bx / 100 * W, y: by / 100 * H, w: bw / 100 * W, h: bh / 100 * H },
+        };
+      }
+    } else {
     // The villagers design the town: `layout[key] = {x,y}` (0–100 field coords)
     // is where they chose to put a building. We honor it; anything not yet placed
     // falls back to a tidy ring around the plaza.
@@ -699,6 +779,7 @@ export function mount(root, tools) {
       });
       for (const d of Object.values(districts)) d.clearing = makeClearing(d.key, d.x, d.y);   // clearings follow to the tidy spot
     }
+    }  // end procedural layout (village mode set its own districts above)
     // What the residents have done to the town — every field OPTIONAL (the Gas
     // Town bridge and older engines send none of them), validated once here so
     // the per-frame drawers never see a bad kind or an off-map offset.
@@ -726,7 +807,7 @@ export function mount(root, tools) {
       }
       d.addons = Object.values(bySide);
     }
-    makeDecor();
+    if (!villageOn()) makeDecor();
 
     // the owner spawns by the plaza fountain — first visit, or a saved spot
     // that no longer fits the map
@@ -1169,8 +1250,79 @@ export function mount(root, tools) {
     ctx.restore();
   }
 
+  // ---- the painted village ----
+  function drawRegionToggle(W, H) {
+    const txt = village.region === 'center' ? 'Outskirts →' : '← Village';
+    ctx.font = 'bold 13px system-ui';
+    const w = ctx.measureText(txt).width + 24, h = 28, x = W - w - 12, y = 12;
+    ctx.fillStyle = 'rgba(20,25,18,0.82)'; ctx.strokeStyle = 'rgba(247,217,138,0.9)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(x, y, w, h, 9); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#f7d98a'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(txt, x + w / 2, y + h / 2 + 1); ctx.textBaseline = 'alphabetic';
+    village.toggleRect = { x, y, w, h };
+  }
+  function drawVillage(now, t, W, H) {
+    const key = village.region + (isNight() ? '-night' : '');
+    const map = village.maps[key] || village.maps[village.region] || village.maps.center;
+    ctx.imageSmoothingEnabled = true;   // a painting reads better smoothed than nearest-neighbour
+    if (map) ctx.drawImage(map, 0, 0, W, H);
+    else { ctx.fillStyle = '#14291b'; ctx.fillRect(0, 0, W, H); }
+    const activeKeys = new Set();
+    for (const sp of sprites.values()) if (sp.busy && sp.loc) activeKeys.add(sp.loc);
+    // a warm ring under any building whose resident is working right now
+    for (const d of Object.values(districts)) {
+      if (d.region !== village.region || !activeKeys.has(d.key)) continue;
+      ctx.fillStyle = `rgba(255,220,120,${0.24 + Math.sin(now / 600) * 0.06})`;
+      ctx.beginPath(); ctx.ellipse(d.x, d.y + 6, 30, 11, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    // only the villagers who are in this district right now; the owner shows on the center
+    const hereNow = sp => (districts[sp.loc] && districts[sp.loc].region || 'center') === village.region;
+    const walkers = [...sprites.values()].filter(hereNow);
+    if (village.region === 'center' && Number.isFinite(me.x)) walkers.push(me);
+    walkers.sort((a, b) => a.y - b.y);
+    for (const sp of walkers) drawWalker(sp, now, t);
+    for (const p of puffs) {
+      const age = (now - p.born) / (p.kind === 'smoke' ? 2400 : 550);
+      if (age > 1) continue;
+      ctx.fillStyle = p.kind === 'smoke' ? `rgba(240,240,235,${0.5 * (1 - age)})` : `rgba(190,155,105,${0.5 * (1 - age)})`;
+      ctx.beginPath(); ctx.arc(p.x, p.y - age * 22, 2 + age * 3, 0, Math.PI * 2); ctx.fill();
+    }
+    for (const sp of walkers) {
+      label(sp.name || '', sp.x, sp.y + 28);
+      if (sp.heartUntil && now < sp.heartUntil) {
+        ctx.font = '12px system-ui'; ctx.textAlign = 'center';
+        ctx.fillText('\u{1F49B}', sp.x + 13, sp.y - 34 - (1 - (sp.heartUntil - now) / 3200) * 10);
+      }
+      if (sp.bubble && now < sp.bubbleUntil) {
+        ctx.font = '11px system-ui';
+        const tw = Math.min(220, ctx.measureText(sp.bubble).width + 16);
+        const bx = Math.max(4, Math.min(W - tw - 4, sp.x - tw / 2));
+        ctx.fillStyle = 'rgba(253,253,244,0.95)'; ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+        ctx.beginPath(); ctx.roundRect(bx, sp.y - 44, tw, 22, 8); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#33281a'; ctx.textAlign = 'left';
+        ctx.fillText(sp.bubble, bx + 8, sp.y - 29, tw - 16);
+      }
+    }
+    drawRegionToggle(W, H);
+  }
+  function drawVillageRoom(img) {
+    const W = canvas.width, H = canvas.height;
+    ctx.imageSmoothingEnabled = true;
+    ctx.fillStyle = '#0e1e12'; ctx.fillRect(0, 0, W, H);
+    const s = Math.max(W / img.width, H / img.height);   // cover-fit the 16:9 room plate
+    const dw = img.width * s, dh = img.height * s;
+    ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
+    label(String(inside.name || '').slice(0, 26), W / 2, 30, 13);
+    const chip = leaveChip();
+    ctx.fillStyle = 'rgba(20,25,18,0.85)'; ctx.strokeStyle = 'rgba(247,217,138,0.9)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(chip.x, chip.y, chip.w, chip.h, 8); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#f7d98a'; ctx.font = 'bold 12px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('← Back', chip.x + chip.w / 2, chip.y + chip.h / 2 + 1); ctx.textBaseline = 'alphabetic';
+  }
+
   function draw(now, t) {
     const { width: W, height: H } = canvas;
+    if (villageOn()) return drawVillage(now, t, W, H);
     const cx = townCenter.x, cy = townCenter.y;
     // which buildings have their resident on the job right now → livelier animation
     const activeKeys = new Set();
@@ -1644,6 +1796,11 @@ export function mount(root, tools) {
   }
 
   function drawRoom(now, t) {
+    if (villageOn() && inside) {
+      const asset = inside.interior || (districts[inside.key] && districts[inside.key].interior);
+      const img = asset && village.interiors[asset];
+      if (img) return drawVillageRoom(img);
+    }
     if (inside && inside.key === HQ_KEY) return drawOffice(now, t);
     const { width: W, height: H } = canvas;
     ctx.imageSmoothingEnabled = false;   // same crisp pixels indoors
@@ -1765,6 +1922,43 @@ export function mount(root, tools) {
     if (!rect.width || !rect.height) return;
     const x = (e.clientX - rect.left) * (canvas.width / rect.width);
     const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+    // painted village: its own click handling (region toggle, villager, building box)
+    if (villageOn()) {
+      if (inside) {
+        const chip = leaveChip();
+        if (x >= chip.x && x <= chip.x + chip.w && y >= chip.y && y <= chip.y + chip.h) { inside = null; roomKey = null; }
+        return;
+      }
+      const tr = village.toggleRect;   // the Center / Outskirts button
+      if (tr && x >= tr.x && x <= tr.x + tr.w && y >= tr.y && y <= tr.y + tr.h) {
+        village.region = village.region === 'center' ? 'outskirts' : 'center';
+        return;
+      }
+      // a villager standing here → open the chat with them
+      let vId = null, vSp = null, vD = 30;
+      for (const [id, sp] of sprites) {
+        if (((districts[sp.loc] && districts[sp.loc].region) || 'center') !== village.region) continue;
+        if (Math.abs(sp.x - x) > 21 || y < sp.y - 40 || y > sp.y + 16) continue;
+        const dd = Math.hypot(sp.x - x, (sp.y - 14) - y);
+        if (dd < vD) { vD = dd; vId = id; vSp = sp; }
+      }
+      if (vSp) {
+        me.tx = vSp.x + (me.x < vSp.x ? -22 : 22); me.ty = vSp.y + 4;
+        const who = root.querySelector('#town-who');
+        if ([...who.options].some(o => o.value === vId)) who.value = vId;
+        showTab('talk'); root.querySelector('#town-say').focus();
+        return;
+      }
+      // a building in this region → step inside its painted room
+      for (const d of Object.values(districts)) {
+        if (d.region !== village.region || !d.box) continue;
+        if (x >= d.box.x && x <= d.box.x + d.box.w && y >= d.box.y && y <= d.box.y + d.box.h) {
+          inside = { type: 'district', key: d.key, name: d.label, interior: d.interior, owner: 'Dyer Town', loc: d.key };
+          return;
+        }
+      }
+      return;
+    }
     // indoors, the only clickables are the ways out: the chip and the door
     if (inside) {
       // a room tab along the top switches which room is painted
