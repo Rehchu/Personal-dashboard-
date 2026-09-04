@@ -120,6 +120,18 @@ async function summarizeBook(env, book, tok) {
     // 404 (branch or directory absent) — try the next branch.
   }
   if (!branch) {
+    // A private repo with no valid token 404s on its contents EXACTLY like a
+    // missing directory — so probe the repo itself to tell "not started yet"
+    // apart from "can't authenticate". Otherwise an expired/absent token reads
+    // as "Draco wrote nothing", which is a lie: the chapters are there, we just
+    // can't see them.
+    const repoRes = await gh(env, `/repos/${book.owner}/${book.repo}`, tok);
+    if (!repoRes.ok) {
+      return { ok: false, needsToken: true,
+        note: tok
+          ? 'The saved GitHub token can’t read this private repo — it may be expired or missing Contents access. Paste a fresh one to read the manuscript.'
+          : 'No GitHub token is set, so this private repo can’t be read yet. Paste a token with read access to see the chapters Draco has committed.' };
+    }
     return { ok: true, ...base, configured: true, branch: book.branches[0],
       branchUrl: `https://github.com/${book.owner}/${book.repo}/tree/${book.branches[0]}`,
       chapters: [], docs: [], totals: { chapters: 0, words: 0, loreWords: 0 },
@@ -228,8 +240,15 @@ export async function handleBook(url, request, env) {
       summaries.push(body);
     } else {
       const good = cached?.body || await getPersisted(env, book.key);
-      if (good) summaries.push({ ...good, stale: true, note: fresh.note });
-      else summaries.push({ key: book.key, title: book.title, voice: book.voice, chapters: [], docs: [], totals: { chapters: 0, words: 0, loreWords: 0 }, note: fresh.note || 'Temporarily unavailable.' });
+      // Only fall back to a remembered body if it actually HAD chapters — a
+      // remembered empty would just re-hide a token problem behind "0 chapters".
+      if (good && good.totals && good.totals.chapters > 0) {
+        summaries.push({ ...good, stale: true, note: fresh.note });
+      } else {
+        summaries.push({ key: book.key, title: book.title, voice: book.voice, repo: `${book.owner}/${book.repo}`,
+          chapters: [], docs: [], totals: { chapters: 0, words: 0, loreWords: 0 },
+          note: fresh.note || 'Temporarily unavailable.', needsToken: !!fresh.needsToken });
+      }
     }
   }
 
