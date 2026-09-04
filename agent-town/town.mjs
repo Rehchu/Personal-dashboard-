@@ -1177,6 +1177,17 @@ function bashGate(agent) {
 
 // A deep work session: the agent sits down at their desk and actually does the
 // work — a tool-equipped Claude session scoped to their workshop folder. The
+// canUseTool is only honored in STREAMING-input mode. Hand query() a plain
+// string prompt alongside a canUseTool gate and the SDK quietly drops the gate;
+// the spawned child then hits a `default` permission prompt it cannot answer in
+// a non-interactive pipe and exits 1 — which is exactly why every work session
+// died ("Claude Code process exited with code 1") while the tool-less "think"
+// call was fine. Feeding the prompt as a one-message async stream keeps the
+// parent↔child control channel open so bashGate is actually consulted.
+async function* onceUser(text) {
+  yield { type: 'user', message: { role: 'user', content: text } };
+}
+
 // session runs in the background so the rest of the town keeps living; the
 // agent is "busy" until it returns, then reports what they did.
 async function runWorkSession(agent, task, helper, purpose) {
@@ -1232,7 +1243,7 @@ end with a 2-3 sentence plain-text summary, in character, of what you actually m
   let ranOut = false; // the session ended on a limit rather than by finishing
   try {
     for await (const msg of query({
-      prompt,
+      prompt: onceUser(prompt),   // streaming input — required for canUseTool (see onceUser)
       options: {
         ...modelOpt, ...effortOpt, ...authOpt, maxTurns: DEEP_TURNS, cwd: dir,
         allowedTools: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash'],
@@ -1241,7 +1252,19 @@ end with a 2-3 sentence plain-text summary, in character, of what you actually m
         canUseTool: bashGate(agent),
         // the town's own passphrase never enters a work session; the scoped
         // Cloudflare token only does when the owner has set one up
-        env: { ...sessionEnv, ...(CF_TOKEN ? { CLOUDFLARE_API_TOKEN: CF_TOKEN } : {}) },
+        env: {
+          ...sessionEnv,
+          // A headless git has NO author identity, so the villager's `git commit`
+          // dies with "Please tell me who you are" and nothing they build ever
+          // lands — which is exactly why Draco reported he "can't commit to
+          // anything". Give each villager their own author line (env vars beat
+          // needing `git config` in every clone); the owner sees who wrote what.
+          GIT_AUTHOR_NAME: `${agent.name} (Dyer Town)`,
+          GIT_AUTHOR_EMAIL: `${agent.id}@dyertown.local`,
+          GIT_COMMITTER_NAME: `${agent.name} (Dyer Town)`,
+          GIT_COMMITTER_EMAIL: `${agent.id}@dyertown.local`,
+          ...(CF_TOKEN ? { CLOUDFLARE_API_TOKEN: CF_TOKEN } : {}),
+        },
       },
     })) {
       if (msg?.type === 'result' && typeof msg.result === 'string' && msg.result.trim()) text = msg.result;
@@ -2441,15 +2464,69 @@ Decide: {"decision":"approve"|"deny","note":"<one line, in your voice>"}`);
   }
 }
 
+// What is ACTUALLY in a villager's repos, read straight off disk, so a chat with
+// them is grounded in their real work — the character names, the chapter list,
+// the plan — instead of invention. This is the fix for a villager who "changes
+// character names and won't stick to what's already there": in a chat the model
+// has no tools, so without this it answers from persona alone and hallucinates.
+// Capped hard in every direction so a big repo can never crowd out the prompt.
+const CANON_DOCS = ['README.md', 'PLAN.md', 'OUTLINE.md', 'OUTLINE-BOOK-ONE.md',
+  'LORE.md', 'CHARACTERS.md', 'BIBLE.md', 'STYLE.md', 'SUMMARY.md'];
+const CANON_CHAPTER_DIRS = ['book-1', 'book-2', 'book-3', 'chapters'];
+function firstHeading(text) {
+  const line = String(text).split('\n').find(l => /^#{1,3}\s+\S/.test(l));
+  return line ? line.replace(/^#{1,3}\s+/, '').trim().slice(0, 70) : '';
+}
+async function canonBrief(agent) {
+  const h = world.holdings[agent.id];
+  if (!h || !h.repos || !h.repos.length) return '';
+  const blocks = [];
+  for (const repo of h.repos.slice(0, 4)) {
+    const base = join(WORKSHOP, agent.id, repo);
+    if (!existsSync(base)) continue;
+    const facts = [];
+    for (const f of CANON_DOCS) {
+      try {
+        const p = join(base, f);
+        if (!existsSync(p)) continue;
+        const txt = readFileSync(p, 'utf8').replace(/\s+/g, ' ').trim().slice(0, 480);
+        if (txt) facts.push(`  ${f}: ${txt}`);
+      } catch { /* skip unreadable */ }
+    }
+    for (const dir of CANON_CHAPTER_DIRS) {
+      try {
+        const dp = join(base, dir);
+        if (!existsSync(dp)) continue;
+        const files = readdirSync(dp).filter(n => /\.md$/i.test(n)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+        if (!files.length) continue;
+        const titles = files.slice(0, 30).map(n => {
+          try { const t = firstHeading(readFileSync(join(dp, n), 'utf8')); return t ? `${n} — “${t}”` : n; }
+          catch { return n; }
+        });
+        facts.push(`  ${dir}/ (${files.length} chapters): ${titles.join(' · ')}`);
+      } catch { /* skip */ }
+    }
+    if (facts.length) blocks.push(`${repo}/:\n${facts.join('\n')}`);
+  }
+  if (!blocks.length) return '';
+  let brief = blocks.join('\n');
+  if (brief.length > 2600) brief = brief.slice(0, 2600) + ' …';
+  return `\nYOUR CANON — the real, current contents of your own repositories, read straight off disk. This is the SOURCE OF TRUTH about your own work. Never invent, rename, or contradict a character, place, title, or plot point that appears here. If the owner asks about something not shown, say you will open the file and check rather than guessing:\n${brief}\n`;
+}
+
 async function chatWith(id, message) {
   const agent = agentById(id);
   if (!agent) return "There's no one here by that name.";
+  const canon = await canonBrief(agent).catch(() => '');
+  const work = (agent.worklog && agent.worklog.length)
+    ? `\nYour worklog — concrete things you have actually done lately:\n${agent.worklog.slice(-6).map(w => `t${w.tick}: ${w.text}`).join('\n')}`
+    : '';
   const reply = await runModel(`You are ${agent.name}, the town ${agent.role}. ${agent.personality}.
 Your goal: ${agent.goal}. You are at ${MAP[agent.loc].label}.
-Recent memory:\n${agent.memory.slice(-8).join('\n') || '(new in town)'}
+Recent memory:\n${agent.memory.slice(-8).join('\n') || '(new in town)'}${work}${canon}
 
 The OWNER — your boss, corporate — speaks to you: “${message}”
-Reply in character, one or two sentences. If they're asking you to do something, say plainly what you'll do first — you are on the clock right after this to actually do it.`);
+Reply in character, one or two sentences. Ground every specific — names, titles, plot, plans — in YOUR CANON above; never contradict or rename anything already there, and if you are not sure of something, say you will open your files and check rather than making it up. If they ask what your plans are, give the real next step from your canon and worklog, not a vague or invented one. If they're asking you to do something, say plainly what you'll do first — you are on the clock right after this to actually do it.`);
   const line = reply || '…';
   social(agent); // a visit from the owner is company too
   // the visitor's words go into memory too — a promise made in chat must

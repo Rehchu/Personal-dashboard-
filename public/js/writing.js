@@ -366,6 +366,36 @@ export function mount(root, tools) {
       </section>`;
   }
 
+  // Save a GitHub token for the private book repos, then re-read the manuscript.
+  // The token is POSTed straight to the worker (stored in D1) and never echoed.
+  async function bindTokenBox(boxEl) {
+    const input = boxEl.querySelector('.wr-token-input');
+    const btn = boxEl.querySelector('.wr-token-save');
+    const msg = boxEl.querySelector('.wr-token-msg');
+    if (!input || !btn) return;
+    const show = (text, ok) => { if (msg) { msg.textContent = text; msg.hidden = false; msg.style.color = ok ? 'var(--good,#5bd68a)' : 'var(--bad,#e06a6a)'; } };
+    const submit = async () => {
+      const token = input.value.trim();
+      if (token.length < 20) { show('That does not look like a token.', false); return; }
+      btn.disabled = true; show('Connecting…', true);
+      try {
+        const res = await fetch('/api/book/token', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ token }),
+        });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok || d.error) { show(d.error || 'GitHub rejected that token.', false); btn.disabled = false; return; }
+        input.value = '';
+        show('Connected — reading the manuscript…', true);
+        renderSaga(true);
+      } catch {
+        show('Could not reach the dashboard.', false); btn.disabled = false;
+      }
+    };
+    btn.addEventListener('click', submit);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+  }
+
   async function renderSaga(force) {
     const box = root.querySelector('#wr-saga');
     if (!box || (sagaLoaded && !force)) return;
@@ -376,9 +406,23 @@ export function mount(root, tools) {
       if (d.error) { box.innerHTML = `<p class="muted">${esc(d.error)}</p>`; return; }
 
       const list = Array.isArray(d.books) && d.books.length ? d.books : [d];
-      box.innerHTML = `${list.map(bookSection).join('')}<div id="wr-saga-read" hidden></div>`;
+      // If any book can't be read for lack of a token, offer to connect one
+      // right here — the chapters are in a private repo the worker can't see yet.
+      const needTok = list.some(b => b && b.needsToken);
+      const tokenBox = needTok ? `
+        <div class="wr-book-token" style="margin:6px 0 22px;padding:12px;border:1px solid var(--line,#3a3a3a);border-radius:10px">
+          <p class="muted" style="margin:0 0 8px">These books live in private GitHub repos the dashboard can’t read yet. Paste a GitHub token with read access — a fine-grained token with <b>Contents: read</b> on the repos, or a classic token with the <code>repo</code> scope — to connect it.</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <input type="password" class="wr-token-input" placeholder="github_pat_… or ghp_…" autocomplete="off" spellcheck="false" style="flex:1;min-width:220px">
+            <button class="btn small wr-token-save">Connect GitHub</button>
+          </div>
+          <p class="muted wr-token-msg" style="margin:8px 0 0" hidden></p>
+        </div>` : '';
+      box.innerHTML = `${tokenBox}${list.map(bookSection).join('')}<div id="wr-saga-read" hidden></div>`;
       box.querySelectorAll('[data-read]').forEach(b =>
         b.addEventListener('click', () => openSaga(b.dataset.read, b.dataset.book)));
+      const tokBox = box.querySelector('.wr-book-token');
+      if (tokBox) bindTokenBox(tokBox);
       sagaLoaded = true;
     } catch {
       if (alive) box.innerHTML = '<p class="muted">Could not reach the manuscript bridge.</p>';

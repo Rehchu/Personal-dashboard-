@@ -2,7 +2,7 @@
 // /api/* is never cached (sync must always hit the network). Cross-origin
 // requests (fonts, CDN, GitHub) pass through untouched.
 
-const CACHE = 'dyerhq-v9';
+const CACHE = 'dyerhq-v10';
 const CORE = [
   '/', '/index.html', '/manifest.webmanifest',
   '/css/base.css', '/css/themes.css', '/css/fx.css', '/css/xbox.css', '/css/polish.css',
@@ -59,8 +59,12 @@ self.addEventListener('fetch', e => {
   // missing until the page was reloaded a second time. Styles, fonts and
   // images stay stale-while-revalidate — they are cheap to be a beat behind.
   if (url.pathname === '/' || /\.(html|js)$/.test(url.pathname)) {
+    // `cache: 'reload'` bypasses the browser HTTP cache for the shell + its
+    // modules, so a network-first fetch can't be quietly answered from a stale
+    // max-age copy — the whole reason a deploy sometimes didn't show up until a
+    // second reload (or never, until the site data was cleared).
     e.respondWith(
-      fetch(e.request)
+      fetch(e.request, { cache: 'reload' })
         .then(res => {
           if (res.ok && res.headers.get('X-App-Shell')) {
             const clone = res.clone();

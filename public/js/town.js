@@ -104,6 +104,51 @@ const VILLAGE_SCENERY = {
   observatory: ['outskirts', 54,   51.5, 11.5, 30,  'observatory',  'Observatory'],
   boathouse:   ['outskirts', 68.5, 68.5, 23,  23,   'boathouse',    'Boathouse'],
 };
+// who to show INSIDE each building when you walk in — so the resident is always
+// there to talk to, whatever the sim has them doing on the map at that moment.
+// Keys are district keys (VILLAGE_SPOTS); values are agent ids.
+const VILLAGE_RESIDENT = {
+  library: 'draco', chapel: 'arise', kitchen: 'spork', gym: 'apex',
+  studio: 'meta', repairshop: 'ctrl',
+  house_meta: 'meta', house_watch: 'watch', house_spork: 'spork',
+  house_draco: 'draco', house_apex: 'apex', house_arise: 'arise', house_ctrl: 'ctrl',
+};
+// Open water on the painted maps — villagers and the player route AROUND it, never
+// across (%-space x,y,w,h, same as the building boxes). The centre river keeps gaps
+// at its two bridges so people can still cross; the outskirts lake is the east shore.
+const VILLAGE_WATER = {
+  center: [
+    { x: 51, y: 0,  w: 8, h: 24 },   // river — top run, above the rope bridge (gap ~24–34%)
+    { x: 53, y: 34, w: 9, h: 30 },   // river — middle, between the two bridges (gap ~64–74%)
+    { x: 57, y: 74, w: 8, h: 11 },   // river — short bottom run, below the plank bridge
+  ],
+  outskirts: [
+    { x: 82, y: 0,  w: 18, h: 40 },  // lake — north shore
+    { x: 90, y: 40, w: 10, h: 60 },  // lake — south shore (kept clear of the boathouse door)
+  ],
+};
+// The two central bridges are painted road laid over the river — the pixel
+// classifier would read the water under/around them as blocked, cutting the
+// banks apart, so these rects force those cells back to ROAD (they sit in the
+// gaps VILLAGE_WATER leaves) and keep the crossings walkable.
+const VILLAGE_BRIDGES = {
+  center: [
+    // deliberately OVER-cover the river rects they cross (VILLAGE_WATER.center),
+    // on every side, so the crossing never depends on a single cell of paint
+    { x: 48, y: 22, w: 16, h: 15 },   // rope bridge — the upper crossing
+    { x: 52, y: 61, w: 17, h: 15 },   // plank bridge — the lower crossing
+  ],
+  outskirts: [],
+};
+// Painted buildings with no click-box in VILLAGE_SPOTS/SCENERY — their warm/gray
+// roofs would classify as walkable road, so hard-block their bodies too.
+const VILLAGE_BLOCKS = {
+  center: [
+    { x: 62, y: 8,  w: 11,   h: 29 },   // the satellite / "tech" building
+    { x: 72, y: 40, w: 12.5, h: 21 },   // the glass office building
+  ],
+  outskirts: [],
+};
 
 async function loadTownArt(kind) {
   const local = LOCAL_ART[kind];
@@ -515,7 +560,7 @@ export function mount(root, tools) {
   // room image per interior. Loaded lazily; village.ready flips on once the
   // center day map is in. Everything that reads it is guarded, so a load
   // failure just leaves the procedural map in place.
-  const village = { maps: {}, interiors: {}, ready: false, region: 'center', toggleRect: null };
+  const village = { maps: {}, interiors: {}, ready: false, region: 'center', toggleRect: null, nav: {}, gridStamp: 0 };
   (function loadVillage() {
     const plates = [['center', 'village-map'], ['center-night', 'village-map-night'],
       ['outskirts', 'village-map-outskirts'], ['outskirts-night', 'village-map-outskirts-night']];
@@ -681,12 +726,21 @@ export function mount(root, tools) {
   // homeOnly (a fresh arrival) always lands in the short-amble ring.
   function roamTarget(d, homeOnly = false) {
     const roll = homeOnly ? 0 : Math.random();
+    let px, py;
     if (d && roll < 0.85) {
       const rad = roll < 0.65 ? 26 + Math.random() * 62 : 90 + Math.random() * 150;
       const a = Math.random() * Math.PI * 2;
-      return onField(d.x + Math.cos(a) * rad, d.y + 18 + Math.sin(a) * rad * 0.7);
+      px = d.x + Math.cos(a) * rad; py = d.y + 18 + Math.sin(a) * rad * 0.7;
+    } else {
+      px = Math.random() * canvas.width; py = Math.random() * canvas.height;
     }
-    return onField(Math.random() * canvas.width, Math.random() * canvas.height);
+    // in the painted village, pull the wander target onto the nearest road so
+    // villagers amble along the paths instead of cutting across the grass
+    if (villageOn()) {
+      const region = (d && d.region) || village.region;
+      return snapWalkable(Math.max(6, Math.min(canvas.width - 6, px)), Math.max(6, Math.min(canvas.height - 6, py)), region);
+    }
+    return onField(px, py);
   }
 
   function syncWorld(s) {
@@ -723,6 +777,13 @@ export function mount(root, tools) {
       for (const d of Object.values(districts)) {
         if (!d.box || !village.obstacles[d.region]) continue;
         village.obstacles[d.region].push({ x: d.box.x + 4, y: d.box.y, w: Math.max(2, d.box.w - 8), h: d.box.h * 0.72 });
+      }
+      // the river (centre) and the lake (outskirts) are obstacles too, so nobody
+      // strolls across the water — they route to a bridge or around the shore
+      for (const region of ['center', 'outskirts']) {
+        for (const wq of (VILLAGE_WATER[region] || [])) {
+          village.obstacles[region].push({ x: wq.x / 100 * W, y: wq.y / 100 * H, w: wq.w / 100 * W, h: wq.h / 100 * H });
+        }
       }
     } else {
     // The villagers design the town: `layout[key] = {x,y}` (0–100 field coords)
@@ -892,76 +953,198 @@ export function mount(root, tools) {
     mapReady = true;
   }
 
-  // ---- path-finding so villagers walk around buildings, not through them ----
-  function segClear(a, b, obs) {
-    const steps = Math.max(2, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 8));
+  // ---- path-finding: villagers follow the painted roads, not straight lines ----
+  // A weighted cost grid read from the map plate: roads are cheap, grass costly,
+  // water and building bodies blocked. A* over it hugs the roads; a cheap-only
+  // line-of-sight pass then straightens the road runs WITHOUT ever shortcutting
+  // across grass — the one place a naive simplifier would quietly undo all this.
+  const NAV_CELL = 8;
+  const COST_ROAD = 1, COST_GRASS = 10;   // enter-cost per cell; blocked = Infinity
+  function buildCostGrid(region, map) {
+    const W = canvas.width, H = canvas.height;
+    const cols = Math.ceil(W / NAV_CELL), rows = Math.ceil(H / NAV_CELL);
+    const cost = new Float32Array(cols * rows).fill(COST_ROAD);
+    // 1) classify from the painted pixels (day plate; geometry is night-identical
+    //    and the classifier is brightness-invariant anyway). Same-origin, but a
+    //    getImageData can still throw — then fall back to obstacle-only routing.
+    let data = null;
+    if (map) {
+      try {
+        const off = document.createElement('canvas'); off.width = W; off.height = H;
+        const octx = off.getContext('2d', { willReadFrequently: true });
+        octx.drawImage(map, 0, 0, W, H);
+        data = octx.getImageData(0, 0, W, H).data;
+      } catch { data = null; }
+    }
+    if (data) {
+      const classify = (px, py) => {
+        const i = (py * W + px) * 4, r = data[i], g = data[i + 1], b = data[i + 2];
+        const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+        const sat = (mx - mn) / (mx + 1), M = Math.max(8, 0.12 * mx);
+        if (sat < 0.22) return 0;                  // neutral (cobble/dirt/shadow) → road
+        // water: blue must dominate BOTH other channels AND be genuinely
+        // saturated — otherwise cool slate/blue-gray/shadowed ROAD paint (where
+        // blue merely ties green) reads as water and walls the path shut.
+        if (b - r >= M && b - g >= M && sat >= 0.35) return 2;
+        if (g >= b && g - r >= M) return 1;        // grass / foliage
+        return 0;                                  // warm (dirt/tan/brick) → road
+      };
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+        const cx = c * NAV_CELL, cy = r * NAV_CELL;
+        let road = 0, grass = 0, water = 0;
+        for (const [ox, oy] of [[0.5, 0.5], [0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]]) {
+          const px = Math.min(W - 1, (cx + NAV_CELL * ox) | 0), py = Math.min(H - 1, (cy + NAV_CELL * oy) | 0);
+          const k = classify(px, py); if (k === 2) water++; else if (k === 1) grass++; else road++;
+        }
+        cost[r * cols + c] = water >= 2 ? Infinity : (grass > road ? COST_GRASS : COST_ROAD);
+      }
+    }
+    // 2) authored rects win over paint: hard-block the building bodies + water
+    //    rects (already collected in village.obstacles), then re-open the bridges.
+    const rasterize = (x, y, w, h, val) => {
+      const c0 = Math.max(0, Math.floor(x / NAV_CELL)), c1 = Math.min(cols - 1, Math.floor((x + w) / NAV_CELL));
+      const r0 = Math.max(0, Math.floor(y / NAV_CELL)), r1 = Math.min(rows - 1, Math.floor((y + h) / NAV_CELL));
+      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) cost[r * cols + c] = val;
+    };
+    for (const o of ((village.obstacles && village.obstacles[region]) || [])) rasterize(o.x, o.y, o.w, o.h, Infinity);
+    for (const o of (VILLAGE_BLOCKS[region] || [])) rasterize(o.x / 100 * W, o.y / 100 * H, o.w / 100 * W, o.h / 100 * H, Infinity);
+    for (const br of (VILLAGE_BRIDGES[region] || [])) rasterize(br.x / 100 * W, br.y / 100 * H, br.w / 100 * W, br.h / 100 * H, COST_ROAD);
+    // 3) keep-off: nudge any walkable cell touching a blocked one (+2) so walkers
+    //    center on the road and skirt shorelines and walls instead of hugging them.
+    const bumps = [];
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const i = r * cols + c; if (!isFinite(cost[i])) continue;
+      let edge = false;
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nc = c + dc, nr = r + dr;
+        if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;   // the map border is open, not a wall
+        if (!isFinite(cost[nr * cols + nc])) { edge = true; break; }
+      }
+      if (edge) bumps.push(i);
+    }
+    for (const i of bumps) cost[i] += 2;
+    return { cols, rows, cell: NAV_CELL, cost, w: W, h: H, img: map || null, stamp: ++village.gridStamp };
+  }
+  // cached per region; rebuilt when the canvas resizes or the map plate arrives.
+  // Only THIS region's own day plate is sampled — never a fallback to another
+  // region's art (that would read the wrong roads); until it loads we route on
+  // the authored obstacle rects alone.
+  function navGrid(region) {
+    const map = village.maps[region] || null;
+    const c = village.nav[region];
+    if (c && c.w === canvas.width && c.h === canvas.height && c.img === map) return c;
+    return (village.nav[region] = buildCostGrid(region, map));
+  }
+  // true when the straight a→b stays on cheap ground (road/frontage) — never grass,
+  // never blocked. This is what keeps the LOS pass from cutting a corner over grass.
+  function segCheap(ax, ay, bx, by, grid) {
+    const steps = Math.max(2, Math.ceil(Math.hypot(bx - ax, by - ay) / (grid.cell * 0.34)));
     for (let i = 0; i <= steps; i++) {
-      const px = a.x + (b.x - a.x) * i / steps, py = a.y + (b.y - a.y) * i / steps;
-      for (const o of obs) if (px >= o.x && px <= o.x + o.w && py >= o.y && py <= o.y + o.h) return false;
+      const px = ax + (bx - ax) * i / steps, py = ay + (by - ay) * i / steps;
+      const c = Math.max(0, Math.min(grid.cols - 1, Math.floor(px / grid.cell)));
+      const r = Math.max(0, Math.min(grid.rows - 1, Math.floor(py / grid.cell)));
+      const v = grid.cost[r * grid.cols + c];
+      if (!(v <= 7)) return false;   // Infinity (blocked) or grass-ish cost
     }
     return true;
   }
-  function simplifyLOS(pts, obs) {
+  function simplifyCheap(pts, grid) {
     if (pts.length <= 2) return pts;
     const out = [pts[0]]; let i = 0;
     while (i < pts.length - 1) {
       let j = pts.length - 1;
-      while (j > i + 1 && !segClear(pts[i], pts[j], obs)) j--;
+      while (j > i + 1 && !segCheap(pts[i].x, pts[i].y, pts[j].x, pts[j].y, grid)) j--;
       out.push(pts[j]); i = j;
     }
     return out;
   }
-  // BFS on a coarse grid; returns waypoints from start to (ex,ey), or null.
-  function villageRoute(sx, sy, ex, ey, region) {
-    const obs = (village.obstacles && village.obstacles[region]) || [];
-    if (!obs.length) return null;
-    if (segClear({ x: sx, y: sy }, { x: ex, y: ey }, obs)) return null;   // straight line is fine
-    const CELL = 18, W = canvas.width, H = canvas.height;
-    const cols = Math.ceil(W / CELL), rows = Math.ceil(H / CELL);
-    const blocked = (c, r) => {
-      const px = c * CELL + CELL / 2, py = r * CELL + CELL / 2;
-      for (const o of obs) if (px >= o.x && px <= o.x + o.w && py >= o.y && py <= o.y + o.h) return true;
-      return false;
-    };
-    const cell = (px, py) => [Math.max(0, Math.min(cols - 1, Math.floor(px / CELL))), Math.max(0, Math.min(rows - 1, Math.floor(py / CELL)))];
-    const free = (c, r) => {
-      if (!blocked(c, r)) return [c, r];
-      for (let rad = 1; rad < 10; rad++) for (let dc = -rad; dc <= rad; dc++) for (let dr = -rad; dr <= rad; dr++) {
-        const nc = c + dc, nr = r + dr;
-        if (nc >= 0 && nr >= 0 && nc < cols && nr < rows && !blocked(nc, nr)) return [nc, nr];
+  // snap a wander/stand point onto the nearest road cell so idle strolling and
+  // door stand-points sit on the paths, not out in the grass
+  function snapWalkable(x, y, region) {
+    const grid = navGrid(region); if (!grid) return { x, y };
+    const { cols, rows, cell, cost } = grid;
+    const c0 = Math.max(0, Math.min(cols - 1, Math.floor(x / cell)));
+    const r0 = Math.max(0, Math.min(rows - 1, Math.floor(y / cell)));
+    const at = (c, r) => cost[r * cols + c];
+    if (at(c0, r0) <= 3) return { x, y };            // already on a road cell
+    let fallback = null;
+    for (let rad = 1; rad < 16; rad++) {
+      for (let dc = -rad; dc <= rad; dc++) for (let dr = -rad; dr <= rad; dr++) {
+        const nc = c0 + dc, nr = r0 + dr;
+        if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
+        const v = at(nc, nr); if (!isFinite(v)) continue;
+        const p = { x: nc * cell + cell / 2, y: nr * cell + cell / 2 };
+        if (v <= 3) return p;                        // nearest road — take it
+        if (!fallback) fallback = p;                 // else nearest walkable (grass)
       }
-      return [c, r];
+      if (fallback && rad >= 6) break;
+    }
+    return fallback || { x, y };
+  }
+  // A* over the weighted grid → waypoints from (sx,sy) to (ex,ey), or null when a
+  // straight walk is already fine / no route exists (caller then walks straight).
+  function villageRoute(sx, sy, ex, ey, region) {
+    const grid = navGrid(region); if (!grid) return null;
+    const { cols, rows, cell, cost } = grid;
+    const walk = i => isFinite(cost[i]);
+    const cellAt = (px, py) => Math.max(0, Math.min(rows - 1, Math.floor(py / cell))) * cols
+      + Math.max(0, Math.min(cols - 1, Math.floor(px / cell)));
+    const snap = node => {
+      if (walk(node)) return node;
+      const c0 = node % cols, r0 = (node / cols) | 0;
+      for (let rad = 1; rad < 18; rad++) for (let dc = -rad; dc <= rad; dc++) for (let dr = -rad; dr <= rad; dr++) {
+        const nc = c0 + dc, nr = r0 + dr;
+        if (nc >= 0 && nr >= 0 && nc < cols && nr < rows && walk(nr * cols + nc)) return nr * cols + nc;
+      }
+      return -1;
     };
-    let [sc, sr] = free(...cell(sx, sy)), [ec, er] = free(...cell(ex, ey));
-    if (sc === ec && sr === er) return null;
-    const key = (c, r) => r * cols + c;
-    const came = new Map([[key(sc, sr), null]]);
-    const q = [[sc, sr]]; const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
-    let found = false;
-    while (q.length) {
-      const [c, r] = q.shift();
-      if (c === ec && r === er) { found = true; break; }
-      for (const [dc, dr] of dirs) {
-        const nc = c + dc, nr = r + dr;
-        if (nc < 0 || nr < 0 || nc >= cols || nr >= rows || blocked(nc, nr)) continue;
-        if (dc && dr && (blocked(c + dc, r) || blocked(c, r + dr))) continue;   // no corner cutting
-        const k = key(nc, nr); if (came.has(k)) continue;
-        came.set(k, [c, r]); q.push([nc, nr]);
+    const start = snap(cellAt(sx, sy)), goal = snap(cellAt(ex, ey));
+    if (start < 0 || goal < 0 || start === goal) return null;
+    if (segCheap(sx, sy, ex, ey, grid)) return null;         // straight line already hugs the road
+    const N = cols * rows, gc = goal % cols, gr = (goal / cols) | 0, SQ2 = Math.SQRT2;
+    const g = new Float32Array(N).fill(Infinity), came = new Int32Array(N).fill(-1);
+    const fscore = new Float32Array(N), closed = new Uint8Array(N), heap = [];
+    const push = node => { let i = heap.length; heap.push(node); while (i > 0) { const p = (i - 1) >> 1; if (fscore[heap[p]] <= fscore[heap[i]]) break; const t = heap[p]; heap[p] = heap[i]; heap[i] = t; i = p; } };
+    const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = 2 * i + 2; let s = i; if (l < heap.length && fscore[heap[l]] < fscore[heap[s]]) s = l; if (r < heap.length && fscore[heap[r]] < fscore[heap[s]]) s = r; if (s === i) break; const t = heap[s]; heap[s] = heap[i]; heap[i] = t; i = s; } } return top; };
+    const heur = (c, r) => { const dx = Math.abs(c - gc), dy = Math.abs(r - gr); return (dx > dy ? dx : dy) + (SQ2 - 1) * (dx < dy ? dx : dy); };
+    g[start] = 0; fscore[start] = heur(start % cols, (start / cols) | 0); push(start);
+    const DIRS = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, SQ2], [1, -1, SQ2], [-1, 1, SQ2], [-1, -1, SQ2]];
+    let found = false, guard = 0;
+    while (heap.length) {
+      const cur = pop(); if (closed[cur]) continue; if (cur === goal) { found = true; break; }
+      closed[cur] = 1;
+      if (++guard > N) break;   // at most N distinct cells expand; a safety net, never hit in practice
+      const cc = cur % cols, cr = (cur / cols) | 0;
+      for (const [dc, dr, w] of DIRS) {
+        const nc = cc + dc, nr = cr + dr;
+        if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
+        const ni = nr * cols + nc;
+        if (!walk(ni) || closed[ni]) continue;
+        if (dc && dr && (!walk(cr * cols + nc) || !walk(nr * cols + cc))) continue;   // no corner cutting
+        const ng = g[cur] + cost[ni] * w;
+        if (ng < g[ni]) { g[ni] = ng; came[ni] = cur; fscore[ni] = ng + heur(nc, nr); push(ni); }
       }
     }
     if (!found) return null;
-    const cells = []; let cur = [ec, er];
-    while (cur) { cells.push(cur); cur = came.get(key(cur[0], cur[1])); }
+    const cells = []; for (let n = goal; n !== -1; n = came[n]) cells.push(n);
     cells.reverse();
-    const pts = cells.map(([c, r]) => ({ x: c * CELL + CELL / 2, y: r * CELL + CELL / 2 }));
-    pts[0] = { x: sx, y: sy }; pts[pts.length - 1] = { x: ex, y: ey };
-    return simplifyLOS(pts, obs);
+    const pts = cells.map(n => ({ x: (n % cols) * cell + cell / 2, y: ((n / cols) | 0) * cell + cell / 2 }));
+    // Only replace the grid-snapped endpoints with the raw start/goal when those
+    // raw points are themselves walkable — otherwise the final waypoint would sit
+    // on the blocked cell (e.g. a click on the water) and the sprite would step
+    // onto it. When blocked, keep the snapped cell centre as the last waypoint.
+    if (walk(cellAt(sx, sy))) pts[0] = { x: sx, y: sy };
+    if (walk(cellAt(ex, ey))) pts[pts.length - 1] = { x: ex, y: ey };
+    return simplifyCheap(pts, grid);
   }
   // the next point a sprite should step toward (a waypoint if a route is needed)
   function stepTarget(sp) {
     if (!villageOn()) return { x: sp.tx, y: sp.ty };
-    const region = (districts[sp.loc] && districts[sp.loc].region) || 'center';
-    const k = `${Math.round(sp.tx)},${Math.round(sp.ty)},${region}`;
+    // the player walks in whichever district is on screen; a villager in the one
+    // their current location belongs to
+    const region = sp.isMe ? village.region : ((districts[sp.loc] && districts[sp.loc].region) || 'center');
+    const grid = navGrid(region);
+    const k = `${Math.round(sp.tx)},${Math.round(sp.ty)},${region},${grid ? grid.stamp : 0}`;
     if (sp.routeKey !== k) {
       sp.routeKey = k;
       const r = villageRoute(sp.x, sp.y, sp.tx, sp.ty, region);
@@ -1415,15 +1598,27 @@ export function mount(root, tools) {
     const s = Math.max(W / img.width, H / img.height);   // cover-fit the 16:9 room plate
     const dw = img.width * s, dh = img.height * s;
     ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
-    // whoever lives or works here, standing in the room — click one to talk
+    // Who's in the room: the building's own resident (so you can ALWAYS find them
+    // to talk to when you walk in), plus anyone else the sim has standing here.
     village.roomOccupants = [];
-    const occ = [...sprites.entries()].filter(([, sp]) => sp.loc === inside.key);
+    const here = new Map();
+    const resId = VILLAGE_RESIDENT[inside.key] || VILLAGE_RESIDENT[inside.interior];
+    if (resId && sprites.has(resId)) here.set(resId, sprites.get(resId));
+    for (const [id, sp] of sprites) if (sp.loc === inside.key) here.set(id, sp);
+    const occ = [...here.entries()];
+    // The room plate is "zoomed in" (one room fills the canvas) while a map sprite
+    // is only ~46px — so people looked tiny indoors. Scale them up to room scale.
+    const SCALE = 3.0;
     occ.forEach(([id, sp], i) => {
-      const rx = W * (0.36 + 0.28 * ((i + 0.5) / Math.max(1, occ.length)));
-      const ry = H * 0.80;
-      drawWalker({ ...sp, x: rx, y: ry, moving: false, axis: 'down', dir: 1 }, t, t);
-      label(sp.name || '', rx, ry + 26);
-      village.roomOccupants.push({ id, x: rx - 24, y: ry - 46, w: 48, h: 64 });
+      const rx = W * (0.5 + (i - (occ.length - 1) / 2) * 0.17);
+      const ry = H * 0.82;
+      ctx.save();
+      ctx.translate(rx, ry);
+      ctx.scale(SCALE, SCALE);
+      drawWalker({ ...sp, x: 0, y: 0, moving: false, axis: 'down', dir: 1 }, t, t);
+      ctx.restore();
+      label(sp.name || '', rx, ry + 12 * SCALE + 16, 12);
+      village.roomOccupants.push({ id, x: rx - 24 * SCALE, y: ry - 36 * SCALE, w: 48 * SCALE, h: 50 * SCALE });
     });
     if (occ.length) label('tap a villager to talk', W / 2, H - 14, 10);
     label(String(inside.name || '').slice(0, 26), W / 2, 30, 13);
@@ -2083,17 +2278,30 @@ export function mount(root, tools) {
       }
       if (bHit) {
         inside = { type: 'district', key: bHit.key, name: bHit.label, interior: bHit.interior, owner: 'Dyer Town', loc: bHit.key };
-        // step in and be ready to talk to whoever's there
-        const resident = [...sprites.entries()].find(([, sp]) => sp.loc === bHit.key);
-        if (resident) {
+        // step in and be ready to talk to whoever's there — the building's resident
+        // (works for houses, where no sprite's loc equals the house key), else whoever
+        // happens to be standing here
+        const resId = VILLAGE_RESIDENT[bHit.key] || VILLAGE_RESIDENT[bHit.interior]
+          || ([...sprites.entries()].find(([, sp]) => sp.loc === bHit.key) || [])[0];
+        if (resId) {
           const who = root.querySelector('#town-who');
-          if (who && [...who.options].some(o => o.value === resident[0])) who.value = resident[0];
+          if (who && [...who.options].some(o => o.value === resId)) who.value = resId;
           showTab('talk');
         }
         return;
       }
-      // empty ground → walk the owner there
-      pendingEnter = null; me.tx = x; me.ty = y;
+      // empty ground → walk the owner there. If they clicked a BLOCKED cell
+      // (water or a building body) pull the destination to the nearest walkable
+      // road cell, so the avatar never targets — and so never steps onto — water
+      // or a wall; a click on grass is honoured as-is (the route still hugs roads).
+      let mtx = x, mty = y;
+      const ngrid = navGrid(village.region);
+      if (ngrid) {
+        const gi = Math.max(0, Math.min(ngrid.rows - 1, Math.floor(y / ngrid.cell))) * ngrid.cols
+          + Math.max(0, Math.min(ngrid.cols - 1, Math.floor(x / ngrid.cell)));
+        if (!isFinite(ngrid.cost[gi])) { const p = snapWalkable(x, y, village.region); mtx = p.x; mty = p.y; }
+      }
+      pendingEnter = null; me.tx = mtx; me.ty = mty;
       return;
     }
     // indoors, the only clickables are the ways out: the chip and the door
