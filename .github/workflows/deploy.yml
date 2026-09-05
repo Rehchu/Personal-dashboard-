@@ -7,6 +7,13 @@ name: Deploy to Cloudflare
 # real failure rather than "no token".
 #   CLOUDFLARE_API_TOKEN  — API token with "Edit Cloudflare Workers" permissions
 #   CLOUDFLARE_ACCOUNT_ID — from the Cloudflare dashboard right sidebar
+#
+# Two jobs on purpose. GitHub validates every `uses:` action against the
+# repository's Actions permissions when a job is CREATED — even steps that a
+# later `if:` would skip — and a rejected job dies before a runner is assigned,
+# with no steps and no logs. So the no-token path must reference no actions at
+# all: `check` is pure shell, and `deploy` is gated at the job level, which
+# means it is never created (and never policy-checked) unless a token exists.
 
 on:
   push:
@@ -14,13 +21,11 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy:
+  check:
     runs-on: ubuntu-latest
+    outputs:
+      have_token: ${{ steps.gate.outputs.have_token }}
     steps:
-      # A step can't be gated on a secret directly, and building a job-level
-      # env from one proved unreliable — so test it in the shell and publish a
-      # step output that every later step gates on. Both branches exit 0, so
-      # the "no token" case is always green.
       - name: Check for Cloudflare token
         id: gate
         env:
@@ -34,20 +39,18 @@ jobs:
             echo "CLOUDFLARE_API_TOKEN not set — nothing to do here. Workers Builds (Git integration) deploys main."
           fi
 
+  deploy:
+    needs: check
+    if: needs.check.outputs.have_token == 'true'
+    runs-on: ubuntu-latest
+    steps:
       - uses: actions/checkout@v4
-        if: steps.gate.outputs.have_token == 'true'
-
       - uses: actions/setup-node@v4
-        if: steps.gate.outputs.have_token == 'true'
         with:
           node-version: 20
-
       - run: npm install
-        if: steps.gate.outputs.have_token == 'true'
-
       - name: Deploy
-        if: steps.gate.outputs.have_token == 'true'
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
