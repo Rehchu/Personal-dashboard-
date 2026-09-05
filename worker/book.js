@@ -234,20 +234,56 @@ function walkTar(buf, want = () => true) {
 
 const textOf = f => (f.text ??= new TextDecoder().decode(f.bytes));
 
+// Where a branch stands right now, from git's own ref advertisement — the
+// same small answer a `git fetch` starts with, served by github.com with no
+// API budget and no archive. '' means the branch does not exist; null means
+// the answer could not be had.
+const discard = res => res.body?.cancel().catch(() => {});
+async function fetchRefs(book) {
+  try {
+    const res = await fetch(`https://github.com/${book.owner}/${book.repo}.git/info/refs?service=git-upload-pack`, { headers: { 'user-agent': UA } });
+    if (!res.ok) { await discard(res); return null; }
+    return await res.text();
+  } catch { return null; }
+}
+function shaOfRef(refsText, branch) {
+  if (refsText == null) return null;
+  const ref = branch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = new RegExp(`([0-9a-f]{40}) refs/heads/${ref}(?:\\n|$)`).exec(refsText);
+  return m ? m[1] : '';
+}
+
 // The conditional request for one branch's archive. Returns { status: 304 }
-// when `etag` still matches (nothing downloaded), null when codeload can't
-// serve it (no such branch, throttled, unreachable), or the open response for
-// the caller to unpack — or to cancel, if this request has no room for it.
-// Accept-Encoding is pinned because codeload's ETag varies with it and the
-// archive is never content-encoded anyway; the same ETag then comes back on
-// every revalidation.
+// when `etag` still matches (nothing downloaded), { status } when codeload
+// won't serve it (no such branch, throttled), null when unreachable, or the
+// open response for the caller to unpack — or to cancel, if this request has
+// no room for it. Accept-Encoding is pinned because codeload's ETag varies
+// with it and the archive is never content-encoded anyway; the same ETag then
+// comes back on every revalidation.
 async function openTarball(book, branch, etag) {
   const url = `https://codeload.github.com/${book.owner}/${book.repo}/tar.gz/refs/heads/${branch}`;
   const headers = { 'user-agent': UA, 'accept-encoding': 'identity', ...(etag ? { 'if-none-match': etag } : {}) };
   const res = await fetch(url, { headers });
-  if (res.status === 304) { await res.body?.cancel().catch(() => {}); return { status: 304 }; }
-  if (!res.ok) { await res.body?.cancel().catch(() => {}); return null; }
+  if (res.status === 304) { await discard(res); return { status: 304 }; }
+  if (!res.ok) { await discard(res); return { status: res.status }; }
   return { status: 200, etag: res.headers.get('etag') || '', res };
+}
+
+// A directory listing from github.com's own tree page, which answers as JSON
+// when asked to — no API budget, and pinned to a commit it is exact. Returns
+// the .md paths in that directory, or null (with the status) if the page
+// would not answer or did not have the shape we know.
+async function treeListing(book, ref, dir) {
+  try {
+    const res = await fetch(`https://github.com/${book.owner}/${book.repo}/tree/${ref}${dir ? `/${dir}` : ''}`, {
+      headers: { accept: 'application/json', 'user-agent': UA },
+    });
+    if (!res.ok) { await discard(res); return { status: res.status, paths: null }; }
+    const j = await res.json().catch(() => null);
+    const items = j?.payload?.codeViewTreeRoute?.tree?.items ?? j?.payload?.tree?.items;
+    if (!Array.isArray(items)) return { status: 200, paths: null };
+    return { status: 200, paths: items.filter(i => i && i.contentType === 'file' && /\.md$/i.test(String(i.name))).map(i => String(i.path)) };
+  } catch { return { status: 0, paths: null }; }
 }
 
 async function unpackTarball(res, want) {
@@ -262,11 +298,13 @@ async function unpackTarball(res, want) {
 // demand instead.
 const textCache = new Map(); // `${book.key}:${path}` -> { text, branch }
 
-// One file from the raw CDN — no API budget, no archive. Null if unavailable.
-async function rawText(book, branch, path) {
+// One file from the raw CDN — no API budget, no archive. `ref` may be a
+// branch (the CDN can lag a push by minutes) or a commit id (exact, always).
+// Null if unavailable.
+async function rawText(book, ref, path) {
   try {
-    const res = await fetch(`https://raw.githubusercontent.com/${book.owner}/${book.repo}/${branch}/${encodeURI(path)}`, { headers: { 'user-agent': UA } });
-    if (!res.ok) { await res.body?.cancel().catch(() => {}); return null; }
+    const res = await fetch(`https://raw.githubusercontent.com/${book.owner}/${book.repo}/${ref}/${encodeURI(path)}`, { headers: { 'user-agent': UA } });
+    if (!res.ok) { await discard(res); return null; }
     return await res.text();
   } catch { return null; }
 }
@@ -354,28 +392,34 @@ function revalidatedBody(prev, checkedAt) {
     ...(clean.chapters?.length ? {} : { note: 'Not started yet — no chapters on the working branch.' }) };
 }
 
-// Fill in estimated entries from the raw CDN, within the byte budget. A file
-// whose raw copy does not yet match the listing's fingerprint (the CDN can lag
-// a push by a few minutes) keeps its estimate for a later pass.
+// Fill in estimated entries from the raw CDN, within the byte budget. Reads
+// are pinned to the summary's commit when it is known, so they are exactly
+// that revision; a branch read whose bytes do not match the listing's size and
+// fingerprint (the CDN can lag a push by minutes) keeps its estimate for a
+// later pass.
+const PLAN_BYTES_UNKNOWN = 20 * 1024;   // budget planning for a file whose size is not known yet
 async function fillFromRaw(book, body) {
   const branch = body.branch;
+  const ref = body.commit || branch;
   const picked = [];
   let planned = 0;
   for (const e of [...body.chapters, ...body.docs]) {
     if (e.exact) continue;
-    if (picked.length && planned + e.bytes > READ_BYTES) break;
-    picked.push(e); planned += e.bytes;
+    const size = e.bytes || PLAN_BYTES_UNKNOWN;
+    if (picked.length && planned + size > READ_BYTES) break;
+    picked.push(e); planned += size;
   }
   if (!picked.length) return body;
-  const texts = await Promise.all(picked.map(e => rawText(book, branch, e.path)));
+  const texts = await Promise.all(picked.map(e => rawText(book, ref, e.path)));
   const filled = new Map();
   picked.forEach((e, i) => {
     const text = texts[i];
     if (text == null) return;
     const bytes = new TextEncoder().encode(text);
-    if (bytes.length !== e.bytes || (e.hash && fingerprint(bytes) !== e.hash)) return;   // not this revision yet
+    const hash = fingerprint(bytes);
+    if (!body.commit && e.bytes && (bytes.length !== e.bytes || (e.hash && hash !== e.hash))) return;   // not this revision yet
     textCache.set(`${book.key}:${e.path}`, { text, branch });
-    filled.set(e.path, entryFromText(book, branch, e.path, e.file, text, e.bytes, e.hash || fingerprint(bytes)));
+    filled.set(e.path, entryFromText(book, branch, e.path, e.file, text, bytes.length, hash));
   });
   const swap = e => filled.get(e.path) || e;
   return withCounts(body, body.chapters.map(swap), body.docs.map(swap));
@@ -395,38 +439,87 @@ async function summarizeBook(env, book, tok, prev, { allowFull = true } = {}) {
   const checkedAt = new Date().toISOString();
   const trusted = prev && prev.cfg === cfg ? prev : null;   // built the same way: its entries and ETag mean something
   const est = estimator(trusted);
+  const attempts = new Set();                                // what each source answered, for the failure line
+  const refsText = await fetchRefs(book);                    // one small request covers every branch
+  if (refsText == null) attempts.add('git refs unreachable');
 
-  // 1. Tarball — the whole book in one budget-free request, or a 304 in none.
   for (const br of book.branches) {
     const sameBranch = trusted && trusted.branch === br;
-    let tar = null;
-    try { tar = await openTarball(book, br, sameBranch && trusted.etag ? trusted.etag : ''); } catch { tar = null; }
-    if (!tar) continue;                                     // branch absent or codeload down — try the next
 
     // Unchanged branch: keep everything, fill in any counts still owed.
-    const unchanged = async () => {
-      let body = revalidatedBody(trusted, checkedAt);
-      if (body.lastCommit == null && commitTried.get(book.key) !== body.etag) {
-        commitTried.set(book.key, body.etag);
+    const unchanged = async (extra = {}) => {
+      let body = { ...revalidatedBody(trusted, checkedAt), ...extra };
+      const rev = body.commit || body.etag;
+      if (body.lastCommit == null && commitTried.get(book.key) !== rev) {
+        commitTried.set(book.key, rev);
         body.lastCommit = await lastCommitOf(env, book, br, tok);
       }
-      if (!body.converging) return { ok: true, revalidated: true, changed: body.lastCommit !== trusted.lastCommit, body };
+      const changed = Object.keys(extra).length > 0 || body.lastCommit !== trusted.lastCommit;
+      if (!body.converging) return { ok: true, revalidated: true, changed, body };
       body = await fillFromRaw(book, body);
       return { ok: true, revalidated: true, changed: true, body };
     };
-    if (tar.status === 304) return unchanged();
 
-    if (!allowFull) { await tar.res.body?.cancel().catch(() => {}); return { ok: true, deferred: true }; }
-    const { files, commit } = await unpackTarball(tar.res, isManuscript);
-    // Same commit under a different ETag (the header can vary with the
-    // request's negotiation): nothing changed, so count nothing.
-    if (sameBranch && commit && trusted.commit === commit) {
-      const r = await unchanged();
-      r.body = { ...r.body, etag: tar.etag };
-      r.changed = true;
-      return r;
+    // 0. Where the branch stands, from git itself. A summary built from this
+    //    very commit needs nothing else fetched.
+    const sha = shaOfRef(refsText, br);
+    if (sha === '') continue;                                // no such branch — try the next
+    if (sha && sameBranch && trusted.commit === sha) return unchanged();
+
+    // 1. Tarball — the whole book in one budget-free request, or a 304 in none.
+    let tar = null;
+    try { tar = await openTarball(book, br, sameBranch && trusted.etag && !sha ? trusted.etag : ''); } catch { tar = null; }
+    if (tar && tar.status === 404 && sha === null) continue; // codeload says no such branch, and git could not be asked
+    if (tar && tar.status === 304) return unchanged();
+    if (tar && tar.status === 200) {
+      if (!allowFull) { await discard(tar.res); return { ok: true, deferred: true }; }
+      const { files, commit } = await unpackTarball(tar.res, isManuscript);
+      // Same commit under a different ETag (the header can vary with the
+      // request's negotiation): nothing changed, so count nothing.
+      if (sameBranch && commit && trusted.commit === commit) return unchanged({ etag: tar.etag });
+      return fullPass(files, commit || sha || null, tar.etag, br);
     }
+    attempts.add(`codeload ${tar ? tar.status : 'unreachable'}`);
 
+    // 2. The tree page as JSON, pinned to the commit, with the files read from
+    //    the raw CDN pinned the same way — no archive, no API budget.
+    if (sha) {
+      const [chapterTree, rootTree] = await Promise.all([treeListing(book, sha, book.chapterDir), treeListing(book, sha, '')]);
+      const paths = chapterTree.paths;
+      if (paths && (paths.length || !trusted?.chapters?.length)) {
+        const known = new Map();
+        for (const e of [...(trusted?.chapters || []), ...(trusted?.docs || [])]) known.set(e.path, e);
+        // Nothing is known about a file from the tree page but its name, so
+        // every entry starts inexact — the old count as its estimate where
+        // there is one — and fillFromRaw makes them exact, budget by budget.
+        const seed = (path) => {
+          const file = chapterRe.test(path) ? path.slice(book.chapterDir.length + 1) : path;
+          const old = known.get(path);
+          return old
+            ? { ...old, book: book.key, file, exact: false, hash: undefined, url: blobUrl(book, br, path) }
+            : { book: book.key, path, file, title: titleOf('', file), words: 0, exact: false, bytes: 0, url: blobUrl(book, br, path) };
+        };
+        const chapters = paths.filter(p => chapterRe.test(p))
+          .sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).map(seed);
+        const rootPaths = new Set(rootTree.paths || []);
+        const docs = book.docs.filter(name => rootPaths.has(name)).map(seed);
+        let body = withCounts({ ...base, configured: true, branch: br,
+          branchUrl: `https://github.com/${book.owner}/${book.repo}/tree/${br}`,
+          etag: null, commit: sha, cfg, checkedAt, source: 'tree',
+          ...(chapters.length ? {} : { note: 'Not started yet — no chapters on the working branch.' }) }, chapters, docs);
+        body = await fillFromRaw(book, body);
+        body.lastCommit = null;
+        if (!body.converging) { commitTried.set(book.key, sha); body.lastCommit = await lastCommitOf(env, book, br, tok); }
+        return { ok: true, changed: true, body };
+      }
+      attempts.add(`tree ${chapterTree.status}`);
+    }
+  }
+
+  // Everything below is the REST API — the last resort.
+  return restListing(env, book, tok, trusted, est, cfg, checkedAt, [...attempts]);
+
+  async function fullPass(files, commit, etag, br) {
     // Entries whose bytes are what they were last time (same size, same
     // fingerprint) keep their exact count and title without a decode.
     // Everything else is read now, up to the budget; the remainder is
@@ -456,36 +549,45 @@ async function summarizeBook(env, book, tok, prev, { allowFull = true } = {}) {
     const docs = book.docs.filter(name => files.has(name)).map(entryFor);
     const body = withCounts({ ...base, configured: true, branch: br,
       branchUrl: `https://github.com/${book.owner}/${book.repo}/tree/${br}`,
-      etag: tar.etag, commit, cfg, checkedAt,
+      etag, commit, cfg, checkedAt, source: 'tarball',
       ...(chapters.length ? {} : { note: 'Not started yet — no chapters on the working branch.' }) }, chapters, docs);
     // The commit line is one REST call; not worth spending while still
     // converging, and never fatal. A finished pass tries once.
     body.lastCommit = null;
-    if (!body.converging) { commitTried.set(book.key, tar.etag); body.lastCommit = await lastCommitOf(env, book, br, tok); }
+    if (!body.converging) { commitTried.set(book.key, commit || etag); body.lastCommit = await lastCommitOf(env, book, br, tok); }
     return { ok: true, fullPass: true, changed: true, body };
   }
+}
 
-  // 2. REST listing — only if codeload could not serve any candidate branch.
+// 3. REST listing — only when neither the archive nor the tree page could be
+//    read for any candidate branch. It is the one path with a rate limit.
+async function restListing(env, book, tok, trusted, est, cfg, checkedAt, attempts) {
+  const base = { key: book.key, title: book.title, voice: book.voice, repo: `${book.owner}/${book.repo}` };
+  const tried = attempts.join(' · ');
   let branch = null, listing = null;
   for (const br of book.branches) {
     const res = await gh(env, `/repos/${book.owner}/${book.repo}/contents/${book.chapterDir}?ref=${encodeURIComponent(br)}`, tok);
-    if (rateLimited(res)) return { ok: false, note: 'GitHub rate limit reached — showing the last known state.' };
+    if (rateLimited(res)) return { ok: false, needsToken: true, note: `GitHub’s anonymous rate limit is spent (${tried} · api ${res.status}). A token with read access raises it.` };
     if (res.ok) { branch = br; listing = await res.json(); break; }
+    await discard(res);
   }
   if (!branch) {
     // A private repo with no valid token 404s on its contents EXACTLY like a
     // missing directory — so probe the repo itself to tell "not started yet"
-    // apart from "can't authenticate".
+    // apart from "can't authenticate" apart from "GitHub is refusing us".
     const repoRes = await gh(env, `/repos/${book.owner}/${book.repo}`, tok);
     if (!repoRes.ok) {
-      return { ok: false, needsToken: true,
-        note: tok
-          ? 'The saved GitHub token can’t read this repo — it may be expired or missing Contents access. Paste a fresh one to read the manuscript.'
-          : 'This repo can’t be read right now. If it is private, paste a GitHub token with read access to see the chapters Draco has committed.' };
+      const rejected = tokenRejected ? ' The saved token was rejected (401) and is being ignored.' : '';
+      if (repoRes.status === 404) {
+        return { ok: false, needsToken: true,
+          note: `GitHub says this repo does not exist for the dashboard (${tried} · api 404).${rejected} If it is private, paste a GitHub token with read access.` };
+      }
+      return { ok: false, needsToken: repoRes.status === 403 || repoRes.status === 429,
+        note: `GitHub refused the read (${tried} · api ${repoRes.status}).${rejected}` };
     }
     return { ok: true, changed: true, body: { ...base, configured: true, branch: book.branches[0],
       branchUrl: `https://github.com/${book.owner}/${book.repo}/tree/${book.branches[0]}`,
-      chapters: [], docs: [], totals: { chapters: 0, words: 0, loreWords: 0 }, cfg, checkedAt,
+      chapters: [], docs: [], totals: { chapters: 0, words: 0, loreWords: 0 }, cfg, checkedAt, source: 'listing',
       note: 'Not started yet — no chapters on the working branch.' } };
   }
   const files = (Array.isArray(listing) ? listing : [])
@@ -515,7 +617,7 @@ async function summarizeBook(env, book, tok, prev, { allowFull = true } = {}) {
   }
   const body = withCounts({ ...base, configured: true, branch,
     branchUrl: `https://github.com/${book.owner}/${book.repo}/tree/${branch}`,
-    etag: null, commit: null, cfg, checkedAt }, chapters, docs);
+    etag: null, commit: null, cfg, checkedAt, source: 'listing' }, chapters, docs);
   // Every count here is inexact by construction; that is a listing, not a
   // convergence in progress, so don't have the tile hammer a throttled origin.
   delete body.converging; delete body.pending;
