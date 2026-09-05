@@ -98,6 +98,25 @@ nohup ./run-town.sh >> town.log 2>&1 &
   WSL. To survive a reboot, start it from a tmux session you re-attach to, or,
   if your WSL has systemd enabled, `./setup-vm.sh` installs it as a service.
 
+## Pushing from anywhere
+
+A villager's "I committed it" is only true on GitHub once the push goes
+through — and a headless PC has no git credential, so every push fails until
+it has one. Set it once, from the dashboard, by messaging any villager:
+
+- `/token <your GitHub token>` — saves it to `github-token.txt` beside
+  `town.mjs`; every villager's `git push` uses it from then on. Use a classic
+  token with the `repo` scope (or a fine-grained one with Contents: read &
+  write on their repos). `/token` alone says whether one is set; `/token clear`
+  removes it. The token is never echoed back or written to the feed.
+- `/git` — every villager's repos: the branch, how many commits are still
+  unpushed, how many files are uncommitted, and the last local commit.
+  `/git draco` for one villager.
+- `/push` — pushes each villager's unpushed commits on their own `town/<id>`
+  branch (never `main`, never forced). `/push draco` for one villager.
+
+At the PC, `GITHUB_TOKEN` in the environment or the same file works too.
+
 ## It updates itself
 
 `town.mjs` checks the repo (`agent-town/town.mjs` on `main`) every 10 minutes.

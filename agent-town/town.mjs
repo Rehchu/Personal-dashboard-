@@ -205,6 +205,39 @@ if (!CF_TOKEN) {
   if (value) { CF_TOKEN = value; console.log(`  cloudflare: villagers' token from ${file}`); }
 }
 
+/* ---------------- the GitHub push credential ----------------
+   The villagers commit on their own town/<id> branches, but a headless PC has
+   no git credential helper, so every `git push` dies asking for a username and
+   their work strands on this machine — which is exactly how Draco came to hold
+   a finished revision that GitHub had never seen. This token is what lets a
+   push through. It comes from GITHUB_TOKEN in the env, or github-token.txt
+   beside town.mjs, or — so the owner never has to be at the PC — the
+   "/token <pat>" chat command, which writes that file. It needs the classic
+   `repo` scope (or Contents: read & write on the villagers' repos). */
+const GH_TOKEN_FILE = join(DIR, 'github-token.txt');
+let GH_TOKEN = (process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
+let GH_TOKEN_FROM = GH_TOKEN ? 'the environment' : '';
+if (!GH_TOKEN) {
+  const { value, file } = tokenFromFolder(l => l.includes('github') && l.includes('token'));
+  if (value) { GH_TOKEN = value; GH_TOKEN_FROM = file; console.log(`  github: push token from ${file}`); }
+  else console.log('  github: no push token — villagers can commit but not push (message any villager "/token <pat>")');
+}
+// The env that makes git use the token for an HTTPS push with no helper
+// installed: an inline credential helper for this one process (git ≥ 2.31)
+// that reads the token from the env, so it is never written into a .gitconfig
+// or a command line. GIT_TERMINAL_PROMPT=0 keeps a push with no token from
+// hanging on a password prompt nobody will ever answer.
+function gitCredEnv() {
+  if (!GH_TOKEN) return { GIT_TERMINAL_PROMPT: '0' };
+  return {
+    GIT_TERMINAL_PROMPT: '0',
+    GITHUB_TOKEN: GH_TOKEN,
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'credential.helper',
+    GIT_CONFIG_VALUE_0: '!f() { echo username=x-access-token; echo "password=$GITHUB_TOKEN"; }; f',
+  };
+}
+
 /* A SECOND, separate credential for the owner's real sites.
 
    cloudflare-token.txt is the villagers' playground token — a throwaway free
@@ -1119,6 +1152,7 @@ function bashGate(agent) {
     if (/api\.cloudflare\.com|\.wrangler[\\/]|CLOUDFLARE_API_TOKEN/i.test(cmd)) {
       return deny('the Cloudflare API and stored credentials are off limits — deploy with "npx wrangler deploy" from inside your own project folder');
     }
+    if (/GITHUB_TOKEN|GIT_CONFIG_VALUE|github-token\.txt/i.test(cmd)) return deny("the push credential is the owner's — git already uses it for you; you never need to read it");
     if (/town-key\.txt|cloudflare-token\.txt|maincloudflare-deploy-token\.txt/i.test(cmd)) return deny("those files hold the owner's secrets");
     if (!/\bwrangler\b/i.test(cmd)) return ok;
     if (/\bwrangler\s+(delete|rollback|secret|d1|r2|kv|queues|pages|tail|login|logout|versions|triggers)\b/i.test(cmd)) {
@@ -1267,6 +1301,8 @@ end with a 2-3 sentence plain-text summary, in character, of what you actually m
           GIT_AUTHOR_EMAIL: `${agent.id}@dyertown.local`,
           GIT_COMMITTER_NAME: `${agent.name} (Dyer Town)`,
           GIT_COMMITTER_EMAIL: `${agent.id}@dyertown.local`,
+          // and the push credential, so their own git push lands on GitHub
+          ...gitCredEnv(),
           ...(CF_TOKEN ? { CLOUDFLARE_API_TOKEN: CF_TOKEN } : {}),
         },
       },
@@ -2574,6 +2610,7 @@ you committed it). Be honest and specific. Never invent.`;
             GIT_AUTHOR_EMAIL: `${agent.id}@dyertown.local`,
             GIT_COMMITTER_NAME: `${agent.name} (Dyer Town)`,
             GIT_COMMITTER_EMAIL: `${agent.id}@dyertown.local`,
+            ...gitCredEnv(),
             ...(CF_TOKEN ? { CLOUDFLARE_API_TOKEN: CF_TOKEN } : {}),
           },
         },
@@ -2974,12 +3011,121 @@ if (DASH_URL && TOWN_KEY) {
   const inboxTimer = setInterval(() => answerInbox().catch(() => {}), INBOX_POLL_MS);
   inboxTimer.unref();
 }
+/* ---------------- the owner's git commands: /git, /push, /token ----------------
+   The owner is rarely at the PC, and a villager's "I committed it" is only
+   true on GitHub once the push goes through. These give the owner the same
+   view and the same push button from the dashboard chat, from anywhere. */
+const execFileP = (file, args, opts) => new Promise(resolve =>
+  execFile(file, args, opts, (err, stdout, stderr) =>
+    resolve({ ok: !err, out: String(stdout || '').trim(), err: String(stderr || err?.message || '').trim() })));
+
+const gitRun = (dir, args) =>
+  execFileP('git', args, { cwd: dir, env: { ...sessionEnv, ...gitCredEnv() }, timeout: 90000, maxBuffer: 1 << 20 });
+
+// One repo's standing: which branch, how many commits no remote has yet, how
+// many files are uncommitted, and the last local commit — "did it land?".
+async function repoStatus(id, repo) {
+  const dir = join(WORKSHOP, id, repo);
+  const branch = (await gitRun(dir, ['rev-parse', '--abbrev-ref', 'HEAD'])).out || '?';
+  const dirty = (await gitRun(dir, ['status', '--porcelain'])).out.split('\n').filter(Boolean).length;
+  const last = (await gitRun(dir, ['log', '-1', '--format=%h %s'])).out.slice(0, 90);
+  // "unpushed" = on HEAD but on no remote branch — right whether or not the
+  // branch has an upstream yet (a brand-new town/<id> has none until pushed)
+  const ahead = Number((await gitRun(dir, ['rev-list', '--count', 'HEAD', '--not', '--remotes'])).out) || 0;
+  return { repo, branch, ahead, dirty, last };
+}
+
+// "/git", "/git draco", "/push all": which villagers a command means
+function commandTargets(arg) {
+  const w = String(arg || '').trim().toLowerCase();
+  if (!w || w === 'all') return agents;
+  const a = agents.find(x => x.id === w || x.name.toLowerCase() === w);
+  return a ? [a] : [];
+}
+
+async function gitReport(arg) {
+  const who = commandTargets(arg);
+  if (!who.length) return `No villager called “${String(arg).trim()}”.`;
+  await refreshHoldings(); // a repo cloned since the last scan still counts
+  const lines = [];
+  let waiting = 0;
+  for (const a of who) {
+    const repos = world.holdings[a.id]?.repos || [];
+    if (!repos.length) { lines.push(`${a.name}: no repos in the workshop.`); continue; }
+    for (const r of repos) {
+      const s = await repoStatus(a.id, r);
+      waiting += s.ahead;
+      lines.push(`${a.name} · ${r} @ ${s.branch} — ${s.ahead ? `${s.ahead} UNPUSHED` : 'all pushed'}${
+        s.dirty ? `, ${s.dirty} uncommitted` : ', clean'} — ${s.last || '(no commits)'}`);
+    }
+  }
+  if (!GH_TOKEN) lines.push('⚠ No GitHub token on this PC, so nothing can push. Message any villager: /token <your GitHub token>');
+  else if (waiting) lines.push('→ "/push" sends them (each villager’s own town/ branch only).');
+  return lines.join('\n');
+}
+
+async function pushAll(arg) {
+  const who = commandTargets(arg);
+  if (!who.length) return `No villager called “${String(arg).trim()}”.`;
+  if (!GH_TOKEN) return 'No GitHub token on this PC, so nothing can push. Message any villager: /token <your GitHub token> — then /push again.';
+  await refreshHoldings();
+  const lines = [];
+  for (const a of who) {
+    for (const r of (world.holdings[a.id]?.repos || [])) {
+      const s = await repoStatus(a.id, r);
+      if (!s.ahead) { lines.push(`${a.name} · ${r}: nothing to push.`); continue; }
+      // only a villager's own draft branch goes up from here — main and the
+      // owner's branches are the owner's to push, from a real keyboard
+      if (!s.branch.startsWith('town/')) {
+        lines.push(`${a.name} · ${r}: ${s.ahead} unpushed on “${s.branch}” — not a town/ branch, so not pushing it from here.`);
+        continue;
+      }
+      const p = await gitRun(join(WORKSHOP, a.id, r), ['push', '-u', 'origin', s.branch]);
+      lines.push(p.ok
+        ? `${a.name} · ${r}: pushed ${s.ahead} commit${s.ahead === 1 ? '' : 's'} to ${s.branch} ✓`
+        : `${a.name} · ${r}: push FAILED — ${(p.err.split('\n').filter(Boolean).pop() || 'unknown error').slice(0, 160)}`);
+    }
+  }
+  return lines.join('\n') || 'Nothing to push.';
+}
+
+// "/token <pat>" saves the push credential on this PC; "/token" reports whether
+// one is set; "/token clear" removes it. The token itself is never echoed and
+// never reaches the feed or any villager's memory.
+function setToken(arg) {
+  const w = String(arg || '').trim();
+  if (!w) return GH_TOKEN ? `A GitHub token is set (from ${GH_TOKEN_FROM}). "/token clear" removes it.`
+    : 'No GitHub token set. Send: /token <your GitHub token> (a classic token with the repo scope).';
+  if (/^clear$/i.test(w)) {
+    GH_TOKEN = ''; GH_TOKEN_FROM = '';
+    try { rmSync(GH_TOKEN_FILE, { force: true }); } catch { /* already gone */ }
+    return 'GitHub token removed — pushes will fail until a new one is set.';
+  }
+  if (/\s/.test(w) || w.length < 20 || w.length > 300) return 'That does not look like a GitHub token.';
+  try { writeFileSync(GH_TOKEN_FILE, w + '\n', { mode: 0o600 }); }
+  catch (e) { return `Couldn’t save the token here: ${e.message}`; }
+  GH_TOKEN = w; GH_TOKEN_FROM = 'github-token.txt';
+  return 'GitHub token saved on this PC — the villagers can push now. "/git" shows what is waiting; "/push" sends it.';
+}
+
 async function answerInbox() {
   if (!DASH_URL || !TOWN_KEY || inboxBusy) return;
   inboxBusy = true;
   try {
     const { pending = [] } = await dashFetch('/api/town/inbox');
     for (const msg of pending) {
+      // "/token", "/git", "/push" from the owner, to any villager — handled
+      // FIRST, before the town-meeting branch, so a token sent to "all" is
+      // never read aloud at the plaza, logged to the feed, or remembered.
+      const ownerCmd = /^\/(token|git|push)\b\s*([\s\S]*)$/i.exec(String(msg.message || '').trim());
+      if (ownerCmd) {
+        const [, name, arg] = ownerCmd;
+        const reply = name.toLowerCase() === 'token' ? setToken(arg)
+          : name.toLowerCase() === 'git' ? await gitReport(arg)
+          : await pushAll(arg);
+        await dashFetch('/api/town/reply', { method: 'POST', body: JSON.stringify({ id: msg.id, reply }) });
+        continue;
+      }
       // 📣 agentId "all" is the owner calling a town meeting: everyone drops
       // what they're doing, gathers at the plaza, and answers in turn
       if (String(msg.agentId).toLowerCase() === 'all') {
