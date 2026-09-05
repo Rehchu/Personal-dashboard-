@@ -179,6 +179,8 @@ export function mount(root, tools) {
         <div class="panel" id="wr-saga-panel" hidden>
           <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:4px">
             <h3 style="flex:1;margin:0">Draco's books</h3>
+            <span class="muted" id="wr-saga-status" style="font-size:12px"></span>
+            <button class="btn small" id="wr-saga-refresh" title="Re-read the repos now">↻ Refresh</button>
             <a class="btn small" id="wr-saga-branch" href="#" target="_blank" rel="noopener" hidden>open the branch ↗</a>
           </div>
           <p class="muted" style="margin-bottom:14px">
@@ -329,12 +331,23 @@ export function mount(root, tools) {
      repository, so it is deliberately read-only — nothing typed here could
      survive Draco's next push, and pretending otherwise would lose work. */
   let sagaLoaded = false;
+  // The bridge re-validates the repos on every ask, so this view asks again on
+  // its own: a short beat later while the worker is still counting a fresh
+  // push, and every couple of minutes while the tile is open and visible.
+  let sagaInflight = false, lastSagaFetch = 0, sagaTimer = null, convergeTries = 0;
+  const CONVERGE_MAX = 8;
+
+  const clockOf = iso => {
+    const d = iso ? new Date(iso) : null;
+    return d && !Number.isNaN(d.getTime()) ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : null;
+  };
 
   function sagaRow(c, isDoc, bookKey) {
     const kb = c.bytes ? ` · ${Math.round(c.bytes / 1024)} KB` : '';
+    const n = c.words.toLocaleString();
     return `<button class="wr-saga-row" data-read="${esc(c.path)}" data-book="${esc(bookKey)}">
       <span class="wr-saga-t">${esc(c.title || c.file)}</span>
-      <span class="muted wr-saga-m">${c.words.toLocaleString()} words${kb}${isDoc ? ' · notes' : ''}</span>
+      <span class="muted wr-saga-m">${c.exact === false ? `≈ ${n}` : n} words${kb}${isDoc ? ' · notes' : ''}</span>
     </button>`;
   }
 
@@ -344,6 +357,15 @@ export function mount(root, tools) {
   function bookSection(bk) {
     const t = bk.totals || { chapters: 0, words: 0, loreWords: 0 };
     const when = bk.lastCommit?.at ? new Date(bk.lastCommit.at).toLocaleString() : null;
+    const checked = clockOf(bk.checkedAt);
+    // Say plainly when this is a remembered copy rather than a live read, and
+    // when the live read is still counting — the one thing this view must never
+    // do is look current while it isn't.
+    const state = bk.stale
+      ? `<p style="margin:0 0 12px;color:var(--warn,#c98a2e)">Couldn’t re-read the repo just now${bk.note ? ` — ${esc(bk.note)}` : ''} Showing the last good read${checked ? `, from ${esc(checked)}` : ''}.</p>`
+      : bk.converging
+        ? `<p class="muted" style="margin:0 0 12px">Counting a fresh push — ${bk.pending || 'some'} file${bk.pending === 1 ? '' : 's'} still estimated. This refreshes on its own.</p>`
+        : checked ? `<p class="muted" style="margin:0 0 12px">Up to date as of ${esc(checked)}.</p>` : '';
     return `
       <section class="wr-saga-book" style="margin-bottom:26px">
         <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin:0 0 10px">
@@ -357,6 +379,7 @@ export function mount(root, tools) {
           <div class="stat-tile"><div class="stat-value">${(t.loreWords || 0).toLocaleString()}</div><div class="stat-label">words of notes</div></div>
         </div>
         ${bk.lastCommit ? `<p class="muted" style="margin:0 0 12px">Last commit${when ? ` ${esc(when)}` : ''} — “${esc(bk.lastCommit.message)}”</p>` : ''}
+        ${state}
         ${(bk.chapters || []).length
           ? `<div class="wr-saga-list">${bk.chapters.map(c => sagaRow(c, false, bk.key)).join('')}</div>`
           : `<p class="muted">${esc(bk.note || 'No chapters yet.')}</p>`}
@@ -398,11 +421,17 @@ export function mount(root, tools) {
 
   async function renderSaga(force) {
     const box = root.querySelector('#wr-saga');
-    if (!box || (sagaLoaded && !force)) return;
+    if (!box || (sagaLoaded && !force) || sagaInflight) return;
+    const status = root.querySelector('#wr-saga-status');
+    sagaInflight = true;
+    clearTimeout(sagaTimer); sagaTimer = null;
+    if (status) status.textContent = sagaLoaded ? 'Re-reading…' : '';
     try {
       const res = await fetch('/api/book', { headers: { accept: 'application/json' } });
       const d = await res.json();
       if (!alive) return;
+      lastSagaFetch = Date.now();
+      if (status) status.textContent = '';
       if (d.error) { box.innerHTML = `<p class="muted">${esc(d.error)}</p>`; return; }
 
       const list = Array.isArray(d.books) && d.books.length ? d.books : [d];
@@ -424,10 +453,36 @@ export function mount(root, tools) {
       const tokBox = box.querySelector('.wr-book-token');
       if (tokBox) bindTokenBox(tokBox);
       sagaLoaded = true;
+      // Still counting a fresh push: ask again in a beat, a bounded number of
+      // times, so the estimates turn exact without anyone pressing anything.
+      if (list.some(b => b && b.converging) && convergeTries < CONVERGE_MAX) {
+        convergeTries++;
+        sagaTimer = setTimeout(() => { if (alive) renderSaga(true); }, 1500);
+      } else {
+        convergeTries = 0;
+      }
     } catch {
-      if (alive) box.innerHTML = '<p class="muted">Could not reach the manuscript bridge.</p>';
+      if (!alive) return;
+      // A failed re-read must not wipe a good view; only a first read can.
+      if (!sagaLoaded) box.innerHTML = '<p class="muted">Could not reach the manuscript bridge.</p>';
+      else if (status) status.textContent = 'Couldn’t reach the bridge — showing the last read.';
+    } finally {
+      sagaInflight = false;
     }
   }
+
+  // Re-read on request, when the tab comes back, and every couple of minutes
+  // while this view is open — the worker answers an unchanged repo with a 304,
+  // so asking is cheap.
+  const SAGA_REFRESH_MS = 2 * 60 * 1000;
+  root.querySelector('#wr-saga-refresh')?.addEventListener('click', () => { lastSagaFetch = 0; renderSaga(true); });
+  const sagaTick = setInterval(() => {
+    if (alive && view === 'saga' && document.visibilityState === 'visible' && Date.now() - lastSagaFetch > SAGA_REFRESH_MS) renderSaga(true);
+  }, 30 * 1000);
+  const onSagaVisible = () => {
+    if (alive && view === 'saga' && document.visibilityState === 'visible' && Date.now() - lastSagaFetch > 60 * 1000) renderSaga(true);
+  };
+  document.addEventListener('visibilitychange', onSagaVisible);
 
   async function openSaga(path, bookKey) {
     const pane = root.querySelector('#wr-saga-read');
@@ -648,6 +703,9 @@ export function mount(root, tools) {
 
   return () => {
     alive = false;
+    clearInterval(sagaTick);
+    clearTimeout(sagaTimer);
+    document.removeEventListener('visibilitychange', onSagaVisible);
     if (sprint) endSprint(false);
     commitNow(); // closing the module must not lose the last 600ms of typing
     document.documentElement.classList.remove('wr-focus'); // never leak focus mode
