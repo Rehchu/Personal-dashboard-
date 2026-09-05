@@ -6,17 +6,24 @@
 //   - The Dragon Saga  (Rehchu/Dragons, branch town/draco, chapters/)
 //   - Dark Assassin     (Rehchu/Dark-Assassin, town/draco then main, book-1/)
 //
-// Both repos are PUBLIC, so no credential is needed. GitHub's anonymous budget
-// is only 60 requests an hour, though, and reading two books' worth of chapters
-// on every refresh can exhaust it — which used to blank the whole view to zero.
-// Two defences make that impossible now:
-//   1. Chapters are cached by their git blob SHA, so an unchanged chapter is
-//      never fetched twice.
-//   2. The last GOOD summary of each book is persisted to D1. If a refresh is
-//      ever rate-limited, the bridge serves that last-known state (marked
-//      stale) instead of showing nothing.
-// A token is still optional (POST /api/book/token) and raises the limit to
-// 5,000/hour; it lives in the D1 secrets table and is never returned.
+// Both repos are PUBLIC, and that is the whole design: the bridge never NEEDS
+// a GitHub credential. It used to read through the REST API, which was fragile
+// in two ways that each blanked the tile to zero at some point — the anonymous
+// budget is only 60 requests an hour per IP (and a Worker's egress IP is shared
+// with the rest of Cloudflare, so it is often already spent), and an EXPIRED
+// saved token makes GitHub answer 401 to everything, even public content.
+//
+// So the primary path is now a repository TARBALL from codeload.github.com:
+// one request per book returns the complete chapter directory AND every
+// chapter's text, with no API rate limit and no token. Chapter counts and word
+// counts are therefore always exact, and opening a chapter is served from the
+// text we already hold. The REST API is only used for the last-commit line
+// (non-fatal if it fails) and as a fallback listing if codeload is unreachable.
+// A token is still optional (POST /api/book/token) — it only raises the REST
+// budget for that last-commit call; it lives in the D1 secrets table and is
+// never returned. The last GOOD summary of each book is persisted to D1 and
+// served (marked stale) if every live path fails, so the view never drops to
+// zero because of a transient upstream problem.
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -39,21 +46,23 @@ const BOOKS = [
   },
 ];
 
-// A stored GitHub token that has EXPIRED or been revoked is worse than no token
-// at all: GitHub answers every request from a bad credential with 401 — even a
-// public repo that would have served fine anonymously. That is exactly what
-// silently froze this bridge on a stale cache (dead token → every fresh read
-// 401s → the summary falls back to the last good state, and a chapter open just
-// 404s). Both manuscripts live in PUBLIC repos, so the token is strictly a
-// budget booster: the moment a tokened request comes back 401 we mark the token
+const UA = 'dyer-hq-book-bridge';
+
+// ---------------------------------------------------------------------------
+// GitHub REST — used only for the last-commit line and as a listing fallback.
+//
+// A stored token that has expired or been revoked is worse than no token at
+// all: GitHub answers every request from a bad credential with 401, even a
+// public repo that would have served fine anonymously. So the token is treated
+// as strictly optional: the moment a tokened request comes back 401 we mark it
 // bad for the life of this isolate and retry — and make every later call —
-// anonymously, so a stale token can never again break a read.
+// anonymously.
 let tokenRejected = false;
 
 const ghFetch = (path, token) => fetch(`https://api.github.com${path}`, {
   headers: {
     accept: 'application/vnd.github+json',
-    'user-agent': 'dyer-hq-book-bridge',
+    'user-agent': UA,
     'x-github-api-version': '2022-11-28',
     ...(token ? { authorization: `Bearer ${token}` } : {}),
   },
@@ -68,6 +77,9 @@ const gh = async (env, path, token) => {
   }
   return res;
 };
+
+const rateLimited = res =>
+  (res.status === 403 || res.status === 429) && res.headers.get('x-ratelimit-remaining') === '0';
 
 async function token(env) {
   const row = await env.DB.prepare('SELECT v FROM secrets WHERE k = ?').bind('github_token').first();
@@ -95,78 +107,145 @@ const b64 = s => {
   return new TextDecoder().decode(bytes);
 };
 
-async function readFile(env, book, branch, path, tok) {
-  const res = await gh(env, `/repos/${book.owner}/${book.repo}/contents/${encodeURI(path)}?ref=${encodeURIComponent(branch)}`, tok);
-  if (!res.ok) return null;
-  const j = await res.json();
-  if (j?.encoding !== 'base64' || typeof j.content !== 'string') return null;
-  return { text: b64(j.content), size: j.size, sha: j.sha, url: j.html_url };
+// ---------------------------------------------------------------------------
+// Tarball reader — the primary path.
+//
+// codeload.github.com serves a gzipped tar of any public branch with no API
+// budget at all. A minimal ustar walk is all we need: 512-byte headers, the
+// name at 0..100, the octal size at 124..136, the type flag at 156, and the
+// ustar path prefix at 345..500. Every entry — regular file or not, pax header
+// or not — is skipped by advancing over its size rounded up to the block, so
+// we never misread a header. The archive's top directory is "<repo>-<ref>",
+// which is stripped so paths match the repo ("chapters/01-foo.md").
+function walkTar(buf) {
+  const dec = new TextDecoder();
+  const str = (a, b) => dec.decode(buf.subarray(a, b)).replace(/\0[\s\S]*$/, '');
+  const files = new Map(); // repo-relative path -> { text, size }
+  let top = null, off = 0;
+  while (off + 512 <= buf.length) {
+    const name = str(off, off + 100);
+    if (!name) break;                                       // end-of-archive zero blocks
+    const size = parseInt(str(off + 124, off + 136).trim() || '0', 8) || 0;
+    const type = buf[off + 156];                            // '0' or NUL = regular file
+    const prefix = str(off + 345, off + 500);
+    const full = prefix ? `${prefix}/${name}` : name;
+    const dataStart = off + 512;
+    // The archive opens with a pax global header (type 'g', no slash) — the
+    // top directory is the first REAL entry, never that one or a pax 'x'.
+    if (top === null && type !== 103 && type !== 120) top = full.split('/')[0];
+    if ((type === 48 || type === 0) && top !== null && full.startsWith(`${top}/`)) {
+      const rel = full.slice(top.length + 1);
+      if (/\.md$/i.test(rel)) files.set(rel, { text: dec.decode(buf.subarray(dataStart, dataStart + size)), size });
+    }
+    off = dataStart + Math.ceil(size / 512) * 512;
+  }
+  return files;
 }
 
-// Word counts keyed by git blob sha: a chapter that has not changed since we
-// last read it is never fetched again. This is what keeps the anonymous budget
-// from being spent on prose that hasn't moved.
-const fileCache = new Map(); // sha -> { words, title }
+// { files } for the first branch that exists, or null if codeload can't serve
+// the book (unreachable, or no such branch on any candidate).
+async function fetchTarball(book, branch) {
+  const url = `https://codeload.github.com/${book.owner}/${book.repo}/tar.gz/refs/heads/${branch}`;
+  const res = await fetch(url, { headers: { 'user-agent': UA } });
+  if (!res.ok) return null;
+  const gz = res.body.pipeThrough(new DecompressionStream('gzip'));
+  const buf = new Uint8Array(await new Response(gz).arrayBuffer());
+  return walkTar(buf);
+}
 
-const EST_BYTES_PER_WORD = 5.6; // markdown prose — good enough for a live counter
+// Chapter text from the last tarball, so opening a chapter costs nothing and
+// always shows the same revision the listing was built from.
+const textCache = new Map(); // `${book.key}:${path}` -> text
+
+function entryFromText(book, branch, path, file, text, size) {
+  return {
+    book: book.key, path, file,
+    title: titleOf(text, file),
+    words: words(text),
+    exact: true,
+    bytes: size,
+    url: `https://github.com/${book.owner}/${book.repo}/blob/${branch}/${path}`,
+  };
+}
+
+// The REST-listing fallback keeps the old size-based estimate so the tile
+// still shows a count if codeload is unreachable; it becomes exact once the
+// chapter is opened.
+const EST_BYTES_PER_WORD = 5.6;
 const estWords = bytes => Math.max(0, Math.round((Number(bytes) || 0) / EST_BYTES_PER_WORD));
-
-// Build a chapter/doc entry from a directory LISTING alone — no per-file fetch.
-// The count of chapters is therefore always exact; each word count is estimated
-// from file size, and becomes exact once that chapter has been opened (its real
-// count is then cached by sha). A full refresh costs ~3 GitHub calls per book,
-// so the anonymous 60/hour budget can never blank the view again — and there is
-// no per-file read that could half-fail and cache an empty book as "good".
 function entryFromListing(book, entry) {
-  const hit = entry.sha && fileCache.get(entry.sha);
   return {
     book: book.key, path: entry.path, file: entry.name,
-    title: hit?.title || titleOf('', entry.name),
-    words: hit?.words ?? estWords(entry.size),
-    exact: !!hit,
+    title: titleOf('', entry.name),
+    words: estWords(entry.size),
+    exact: false,
     bytes: entry.size, url: entry.html_url,
   };
 }
 
-// { ok: true, ...summary } on success; { ok: false, note } when rate-limited so
-// the caller can fall back to the last known good state.
+async function lastCommitOf(env, book, branch, tok) {
+  try {
+    const commits = await gh(env, `/repos/${book.owner}/${book.repo}/commits?sha=${encodeURIComponent(branch)}&per_page=1`, tok);
+    if (!commits.ok) return null;
+    const c = (await commits.json())[0];
+    return c ? { message: String(c.commit?.message || '').split('\n')[0].slice(0, 140), at: c.commit?.author?.date || null, url: c.html_url } : null;
+  } catch { return null; }
+}
+
+// { ok: true, ...summary } on success; { ok: false, note } when every live path
+// failed so the caller can fall back to the last known good state.
 async function summarizeBook(env, book, tok) {
   const base = { key: book.key, title: book.title, voice: book.voice, repo: `${book.owner}/${book.repo}` };
+  const chapterRe = new RegExp(`^${book.chapterDir}/[^/]+\\.md$`, 'i');
 
+  // 1. Tarball — the whole book in one budget-free request.
+  for (const br of book.branches) {
+    let files = null;
+    try { files = await fetchTarball(book, br); } catch { files = null; }
+    if (!files) continue;                                   // branch absent or codeload down — try the next
+    const chapters = [...files.entries()]
+      .filter(([p]) => chapterRe.test(p))
+      .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+      .map(([p, f]) => entryFromText(book, br, p, p.slice(book.chapterDir.length + 1), f.text, f.size));
+    const docs = book.docs
+      .filter(name => files.has(name))
+      .map(name => entryFromText(book, br, name, name, files.get(name).text, files.get(name).size));
+    for (const [p, f] of files) textCache.set(`${book.key}:${p}`, f.text);
+    return { ok: true, ...base, configured: true, branch: br,
+      branchUrl: `https://github.com/${book.owner}/${book.repo}/tree/${br}`,
+      chapters, docs,
+      totals: { chapters: chapters.length, words: chapters.reduce((n, c) => n + c.words, 0), loreWords: docs.reduce((n, d) => n + d.words, 0) },
+      lastCommit: await lastCommitOf(env, book, br, tok),
+      ...(chapters.length ? {} : { note: 'Not started yet — no chapters on the working branch.' }) };
+  }
+
+  // 2. REST listing — only if codeload could not serve any candidate branch.
   let branch = null, listing = null;
   for (const br of book.branches) {
     const res = await gh(env, `/repos/${book.owner}/${book.repo}/contents/${book.chapterDir}?ref=${encodeURIComponent(br)}`, tok);
-    if ((res.status === 403 || res.status === 429) && res.headers.get('x-ratelimit-remaining') === '0')
-      return { ok: false, note: 'GitHub rate limit reached — showing the last known state.' };
+    if (rateLimited(res)) return { ok: false, note: 'GitHub rate limit reached — showing the last known state.' };
     if (res.ok) { branch = br; listing = await res.json(); break; }
-    // 404 (branch or directory absent) — try the next branch.
   }
   if (!branch) {
     // A private repo with no valid token 404s on its contents EXACTLY like a
     // missing directory — so probe the repo itself to tell "not started yet"
-    // apart from "can't authenticate". Otherwise an expired/absent token reads
-    // as "Draco wrote nothing", which is a lie: the chapters are there, we just
-    // can't see them.
+    // apart from "can't authenticate".
     const repoRes = await gh(env, `/repos/${book.owner}/${book.repo}`, tok);
     if (!repoRes.ok) {
       return { ok: false, needsToken: true,
         note: tok
-          ? 'The saved GitHub token can’t read this private repo — it may be expired or missing Contents access. Paste a fresh one to read the manuscript.'
-          : 'No GitHub token is set, so this private repo can’t be read yet. Paste a token with read access to see the chapters Draco has committed.' };
+          ? 'The saved GitHub token can’t read this repo — it may be expired or missing Contents access. Paste a fresh one to read the manuscript.'
+          : 'This repo can’t be read right now. If it is private, paste a GitHub token with read access to see the chapters Draco has committed.' };
     }
     return { ok: true, ...base, configured: true, branch: book.branches[0],
       branchUrl: `https://github.com/${book.owner}/${book.repo}/tree/${book.branches[0]}`,
       chapters: [], docs: [], totals: { chapters: 0, words: 0, loreWords: 0 },
       note: 'Not started yet — no chapters on the working branch.' };
   }
-
   const files = (Array.isArray(listing) ? listing : [])
     .filter(f => f.type === 'file' && /\.md$/i.test(f.name))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   const chapters = files.map(f => entryFromListing(book, f));
-
-  // The lore/plan docs live at the repo root, so ONE listing of the root
-  // directory covers them all — no per-doc fetch, same budget-safe rule.
   const docs = [];
   const rootRes = await gh(env, `/repos/${book.owner}/${book.repo}/contents?ref=${encodeURIComponent(branch)}`, tok);
   if (rootRes.ok) {
@@ -177,27 +256,36 @@ async function summarizeBook(env, book, tok) {
       if (e && e.type === 'file') docs.push(entryFromListing(book, e));
     }
   }
-
-  let last = null;
-  const commits = await gh(env, `/repos/${book.owner}/${book.repo}/commits?sha=${encodeURIComponent(branch)}&per_page=1`, tok);
-  if (commits.ok) {
-    const c = (await commits.json())[0];
-    if (c) last = { message: String(c.commit?.message || '').split('\n')[0].slice(0, 140), at: c.commit?.author?.date || null, url: c.html_url };
-  }
-
   return { ok: true, ...base, configured: true, branch,
     branchUrl: `https://github.com/${book.owner}/${book.repo}/tree/${branch}`,
     chapters, docs,
     totals: { chapters: chapters.length, words: chapters.reduce((n, c) => n + c.words, 0), loreWords: docs.reduce((n, d) => n + d.words, 0) },
-    lastCommit: last };
+    lastCommit: await lastCommitOf(env, book, branch, tok) };
+}
+
+// One chapter's text: the tarball cache first, then raw.githubusercontent.com
+// (a CDN, no API budget), then the REST contents API as a last resort.
+async function readOne(env, book, path, tok) {
+  const hit = textCache.get(`${book.key}:${path}`);
+  if (hit != null) return { text: hit, url: null };
+  for (const br of book.branches) {
+    const res = await fetch(`https://raw.githubusercontent.com/${book.owner}/${book.repo}/${br}/${encodeURI(path)}`, { headers: { 'user-agent': UA } });
+    if (res.ok) return { text: await res.text(), url: `https://github.com/${book.owner}/${book.repo}/blob/${br}/${path}` };
+  }
+  for (const br of book.branches) {
+    const res = await gh(env, `/repos/${book.owner}/${book.repo}/contents/${encodeURI(path)}?ref=${encodeURIComponent(br)}`, tok);
+    if (!res.ok) continue;
+    const j = await res.json();
+    if (j?.encoding === 'base64' && typeof j.content === 'string') return { text: b64(j.content), url: j.html_url };
+  }
+  return null;
 }
 
 const CACHE_MS = 5 * 60 * 1000;
-const ANON_CACHE_MS = 15 * 60 * 1000;
 const memCache = new Map(); // book.key -> { at, body }  (a GOOD body)
 
 // The last good body of each book, persisted so it survives a Worker restart or
-// redeploy — that is what stops a redeploy-plus-rate-limit from blanking the view.
+// redeploy — that is what stops a redeploy-plus-outage from blanking the view.
 async function getPersisted(env, key) {
   try {
     const row = await env.DB.prepare('SELECT v FROM secrets WHERE k = ?').bind('bookcache_' + key).first();
@@ -221,6 +309,7 @@ export async function handleBook(url, request, env) {
     await env.DB.prepare(
       `INSERT INTO secrets (k, v) VALUES ('github_token', ?)
        ON CONFLICT(k) DO UPDATE SET v = excluded.v`).bind(t).run();
+    tokenRejected = false;      // a fresh token deserves a fresh try
     memCache.clear();
     return json({ ok: true });
   }
@@ -234,15 +323,10 @@ export async function handleBook(url, request, env) {
     const ok = (want.startsWith(`${book.chapterDir}/`) && /^[\w./-]+\.md$/i.test(want) && !want.includes('..'))
       || book.docs.includes(want);
     if (!ok) return json({ error: 'not part of the manuscript' }, 400);
-    let file = null;
-    for (const br of book.branches) { file = await readFile(env, book, br, want, tok); if (file) break; }
+    const file = await readOne(env, book, want, tok).catch(() => null);
     if (!file) return json({ error: 'could not read that file' }, 404);
-    // Reading a chapter is the moment we learn its real count and title — cache
-    // both by blob sha so the next summary shows them exactly instead of the
-    // size estimate, without spending another request.
-    const wc = words(file.text), ttl = titleOf(file.text, want);
-    if (file.sha) fileCache.set(file.sha, { words: wc, title: ttl });
-    return json({ book: book.key, path: want, title: ttl, words: wc, text: file.text, url: file.url });
+    return json({ book: book.key, path: want, title: titleOf(file.text, want), words: words(file.text), text: file.text,
+      url: file.url || `https://github.com/${book.owner}/${book.repo}/blob/${book.branches[0]}/${want}` });
   }
 
   // GET /api/book — both books, each cached, each falling back to its last good
@@ -250,7 +334,7 @@ export async function handleBook(url, request, env) {
   const summaries = [];
   for (const book of BOOKS) {
     const cached = memCache.get(book.key);
-    if (cached && Date.now() - cached.at < (tok ? CACHE_MS : ANON_CACHE_MS)) {
+    if (cached && Date.now() - cached.at < CACHE_MS) {
       summaries.push({ ...cached.body, cached: true });
       continue;
     }
@@ -263,7 +347,7 @@ export async function handleBook(url, request, env) {
     } else {
       const good = cached?.body || await getPersisted(env, book.key);
       // Only fall back to a remembered body if it actually HAD chapters — a
-      // remembered empty would just re-hide a token problem behind "0 chapters".
+      // remembered empty would just re-hide a real problem behind "0 chapters".
       if (good && good.totals && good.totals.chapters > 0) {
         summaries.push({ ...good, stale: true, note: fresh.note });
       } else {
