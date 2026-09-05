@@ -187,6 +187,8 @@ export function mount(root, tools) {
             What Draco has actually committed — read straight from the repo, not from this browser.
           </p>
           <div id="wr-saga"><p class="muted">Reading the manuscript…</p></div>
+          <!-- the reader lives outside the list so a re-read never wipes an open chapter -->
+          <div id="wr-saga-read" hidden></div>
         </div>
       </div>
     </div>`;
@@ -335,7 +337,7 @@ export function mount(root, tools) {
   // its own: a short beat later while the worker is still counting a fresh
   // push, and every couple of minutes while the tile is open and visible.
   let sagaInflight = false, lastSagaFetch = 0, sagaTimer = null, convergeTries = 0;
-  const CONVERGE_MAX = 8;
+  const CONVERGE_MAX = 12;
 
   const clockOf = iso => {
     const d = iso ? new Date(iso) : null;
@@ -358,14 +360,24 @@ export function mount(root, tools) {
     const t = bk.totals || { chapters: 0, words: 0, loreWords: 0 };
     const when = bk.lastCommit?.at ? new Date(bk.lastCommit.at).toLocaleString() : null;
     const checked = clockOf(bk.checkedAt);
+    // A remembered read can be days old, so the stale line carries the date
+    // once it is not today's.
+    const checkedDate = bk.checkedAt ? new Date(bk.checkedAt) : null;
+    const checkedFull = checkedDate && !Number.isNaN(checkedDate.getTime())
+      ? (checkedDate.toDateString() === new Date().toDateString() ? checked : checkedDate.toLocaleString())
+      : null;
+    const reason = String(bk.note || '').replace(/\.\s*$/, '');
+    const approx = bk.converging || bk.listingOnly ? '≈ ' : '';
     // Say plainly when this is a remembered copy rather than a live read, and
     // when the live read is still counting — the one thing this view must never
     // do is look current while it isn't.
     const state = bk.stale
-      ? `<p style="margin:0 0 12px;color:var(--warn,#c98a2e)">Couldn’t re-read the repo just now${bk.note ? ` — ${esc(bk.note)}` : ''} Showing the last good read${checked ? `, from ${esc(checked)}` : ''}.</p>`
+      ? `<p style="margin:0 0 12px;color:var(--warn,#c98a2e)">Couldn’t re-read the repo just now${reason ? ` (${esc(reason)})` : ''}. Showing the last good read${checkedFull ? `, from ${esc(checkedFull)}` : ''}.</p>`
       : bk.converging
         ? `<p class="muted" style="margin:0 0 12px">Counting a fresh push — ${bk.pending || 'some'} file${bk.pending === 1 ? '' : 's'} still estimated. This refreshes on its own.</p>`
-        : checked ? `<p class="muted" style="margin:0 0 12px">Up to date as of ${esc(checked)}.</p>` : '';
+        : bk.listingOnly
+          ? `<p class="muted" style="margin:0 0 12px">Read from the repo listing — counts are estimates until the archive can be read again.</p>`
+          : checked ? `<p class="muted" style="margin:0 0 12px">Up to date as of ${esc(checked)}.</p>` : '';
     return `
       <section class="wr-saga-book" style="margin-bottom:26px">
         <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin:0 0 10px">
@@ -375,8 +387,8 @@ export function mount(root, tools) {
         </div>
         <div class="stat-row" style="margin-bottom:12px">
           <div class="stat-tile"><div class="stat-value">${t.chapters}</div><div class="stat-label">chapters</div></div>
-          <div class="stat-tile"><div class="stat-value">${(t.words || 0).toLocaleString()}</div><div class="stat-label">words of prose</div></div>
-          <div class="stat-tile"><div class="stat-value">${(t.loreWords || 0).toLocaleString()}</div><div class="stat-label">words of notes</div></div>
+          <div class="stat-tile"><div class="stat-value">${approx}${(t.words || 0).toLocaleString()}</div><div class="stat-label">words of prose</div></div>
+          <div class="stat-tile"><div class="stat-value">${approx}${(t.loreWords || 0).toLocaleString()}</div><div class="stat-label">words of notes</div></div>
         </div>
         ${bk.lastCommit ? `<p class="muted" style="margin:0 0 12px">Last commit${when ? ` ${esc(when)}` : ''} — “${esc(bk.lastCommit.message)}”</p>` : ''}
         ${state}
@@ -410,7 +422,8 @@ export function mount(root, tools) {
         if (!res.ok || d.error) { show(d.error || 'GitHub rejected that token.', false); btn.disabled = false; return; }
         input.value = '';
         show('Connected — reading the manuscript…', true);
-        renderSaga(true);
+        lastSagaFetch = 0;                 // if this re-read is dropped, the next tick retries soon
+        if (alive) renderSaga(true);
       } catch {
         show('Could not reach the dashboard.', false); btn.disabled = false;
       }
@@ -419,20 +432,28 @@ export function mount(root, tools) {
     input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
   }
 
-  async function renderSaga(force) {
+  // `quiet` is the converge re-ask: no status flicker every beat and a half.
+  async function renderSaga(force, quiet) {
+    if (!alive) return;
     const box = root.querySelector('#wr-saga');
     if (!box || (sagaLoaded && !force) || sagaInflight) return;
     const status = root.querySelector('#wr-saga-status');
     sagaInflight = true;
     clearTimeout(sagaTimer); sagaTimer = null;
-    if (status) status.textContent = sagaLoaded ? 'Re-reading…' : '';
+    if (status && !quiet) status.textContent = sagaLoaded ? 'Re-reading…' : '';
     try {
       const res = await fetch('/api/book', { headers: { accept: 'application/json' } });
       const d = await res.json();
       if (!alive) return;
       lastSagaFetch = Date.now();
       if (status) status.textContent = '';
-      if (d.error) { box.innerHTML = `<p class="muted">${esc(d.error)}</p>`; return; }
+      // A refused or failed re-read must not wipe a good view; only a first
+      // read has nothing better to show.
+      if (d.error) {
+        if (!sagaLoaded) box.innerHTML = `<p class="muted">${esc(d.error)}</p>`;
+        else if (status) status.textContent = `Couldn’t re-read — ${d.error}`;
+        return;
+      }
 
       const list = Array.isArray(d.books) && d.books.length ? d.books : [d];
       // If any book can't be read for lack of a token, offer to connect one
@@ -447,7 +468,7 @@ export function mount(root, tools) {
           </div>
           <p class="muted wr-token-msg" style="margin:8px 0 0" hidden></p>
         </div>` : '';
-      box.innerHTML = `${tokenBox}${list.map(bookSection).join('')}<div id="wr-saga-read" hidden></div>`;
+      box.innerHTML = `${tokenBox}${list.map(bookSection).join('')}`;
       box.querySelectorAll('[data-read]').forEach(b =>
         b.addEventListener('click', () => openSaga(b.dataset.read, b.dataset.book)));
       const tokBox = box.querySelector('.wr-book-token');
@@ -457,7 +478,7 @@ export function mount(root, tools) {
       // times, so the estimates turn exact without anyone pressing anything.
       if (list.some(b => b && b.converging) && convergeTries < CONVERGE_MAX) {
         convergeTries++;
-        sagaTimer = setTimeout(() => { if (alive) renderSaga(true); }, 1500);
+        sagaTimer = setTimeout(() => { if (alive) renderSaga(true, true); }, 1500);
       } else {
         convergeTries = 0;
       }

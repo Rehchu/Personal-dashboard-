@@ -23,18 +23,21 @@
 // table and is never returned.
 //
 // The work per request is BOUNDED, because a Worker gets a few milliseconds of
-// CPU per request and a finished book is a lot of words to count. Three things
-// keep it small, whatever size the books grow to:
+// CPU per request and a finished book is a lot of words to count. What keeps
+// it small, whatever size the books grow to:
 //   1. codeload honours If-None-Match. The last good summary (persisted in D1
-//      with the tarball's ETag) is re-validated with a conditional request; an
-//      unchanged branch is a 304 with no body — nothing to gunzip or count.
+//      with the tarball's ETag and commit) is re-validated with a conditional
+//      request; an unchanged branch is a 304 with no body — nothing to gunzip
+//      or count.
 //   2. When the branch HAS changed, only files that changed are re-read: an
-//      entry whose path and size match the last good summary keeps its title
-//      and count without being decoded at all.
-//   3. Re-reading is budgeted per request. Past the budget, a changed file is
-//      listed with an estimated count (marked inexact) and the summary is
-//      flagged `converging`; the next request picks up where this one stopped,
-//      and the tile re-asks on its own until every count is exact.
+//      entry whose size and content fingerprint match the last good summary
+//      keeps its title and count without being decoded at all.
+//   3. Re-reading is budgeted by bytes of text per request. Past the budget, a
+//      changed file is listed with an estimated count (marked inexact) and
+//      the summary is flagged `converging`; the tile re-asks on its own, and
+//      each later pass fills a few more counts from the raw-file CDN (one
+//      small request per file, no archive to unpack) until every count is
+//      exact. Only one archive is unpacked per request, across both books.
 // The last GOOD summary of each book is served (marked stale, with the reason)
 // if every live path fails, so the view never drops to zero because of a
 // transient upstream problem.
@@ -61,6 +64,13 @@ const BOOKS = [
 ];
 
 const UA = 'dyer-hq-book-bridge';
+
+// Bump when the counting rule changes, so counts persisted under the old rule
+// are recounted rather than mixed with new ones.
+const WORDS_VERSION = 2;
+// What a persisted summary was built with. If this differs, its entries are
+// not reused and it is not revalidated — the book is read afresh.
+const cfgOf = book => `${WORDS_VERSION}|${book.chapterDir}|${book.docs.join(',')}`;
 
 // ---------------------------------------------------------------------------
 // GitHub REST — used only for the last-commit line and as a listing fallback.
@@ -95,9 +105,13 @@ const gh = async (env, path, token) => {
 const rateLimited = res =>
   (res.status === 403 || res.status === 429) && res.headers.get('x-ratelimit-remaining') === '0';
 
+// The token is optional, so a D1 hiccup here degrades to "no token" rather
+// than failing a route whose primary path never touches D1.
 async function token(env) {
-  const row = await env.DB.prepare('SELECT v FROM secrets WHERE k = ?').bind('github_token').first();
-  return row?.v || env.GITHUB_TOKEN || '';
+  try {
+    const row = await env.DB.prepare('SELECT v FROM secrets WHERE k = ?').bind('github_token').first();
+    return row?.v || env.GITHUB_TOKEN || '';
+  } catch { return env.GITHUB_TOKEN || ''; }
 }
 
 export function titleOf(markdown, file) {
@@ -107,10 +121,10 @@ export function titleOf(markdown, file) {
 }
 
 // Word count as one pass over the text — a word is a run of letters, digits,
-// apostrophes and hyphens that contains at least one letter or digit; fenced
-// code blocks are skipped. This is the same rule the old regex applied and it
-// gives the same counts on every chapter of both books, at a fraction of the
-// CPU: a finished novel counts in a few milliseconds instead of tens.
+// apostrophes and hyphens that contains at least one letter or digit. A fenced
+// code block (``` at the start of a line, with a closing fence somewhere
+// after it) is skipped. This is the rule the old regex applied, at a fraction
+// of the CPU: a finished novel counts in a few milliseconds instead of tens.
 const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
 export function words(markdown) {
   const s = String(markdown);
@@ -118,7 +132,9 @@ export function words(markdown) {
   const endWord = () => { if (inWord && hasAlnum) n++; inWord = false; hasAlnum = false; };
   for (let i = 0; i < s.length; i++) {
     const c = s.charCodeAt(i);
-    if (c === 96 && s.charCodeAt(i + 1) === 96 && s.charCodeAt(i + 2) === 96) { // ``` toggles a code fence
+    if (c === 96 && s.charCodeAt(i + 1) === 96 && s.charCodeAt(i + 2) === 96
+        && (i === 0 || s.charCodeAt(i - 1) === 10)
+        && (fence || s.indexOf('```', i + 3) !== -1)) {
       endWord(); fence = !fence; i += 2; continue;
     }
     if (fence) continue;
@@ -126,9 +142,16 @@ export function words(markdown) {
     if (c < 128) {
       alnum = (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122);
       joins = alnum || c === 39 || c === 45;                // ' and - stay inside a word
+    } else if (c >= 0x2010 && c <= 0x2030) {                // dashes, curly quotes, ellipsis — common in prose
+      alnum = false;
+      joins = c === 8217;                                   // ’ (curly apostrophe) joins
+    } else if (c >= 0xd800 && c <= 0xdbff) {                // an astral letter is two UTF-16 units
+      alnum = LETTER_OR_DIGIT.test(s.slice(i, i + 2));
+      joins = alnum;
+      i++;
     } else {
       alnum = LETTER_OR_DIGIT.test(s[i]);
-      joins = alnum || c === 8217;                          // ’ (curly apostrophe) too
+      joins = alnum;
     }
     if (joins) { inWord = true; if (alnum) hasAlnum = true; } else endWord();
   }
@@ -142,6 +165,16 @@ const b64 = s => {
   return new TextDecoder().decode(bytes);
 };
 
+// A cheap fingerprint of a file's bytes (32-bit FNV-1a), so "unchanged" means
+// the same content, not merely the same size — a one-word edit that leaves the
+// byte count alone must still be re-counted. A whole novel hashes in about a
+// millisecond.
+function fingerprint(bytes) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < bytes.length; i++) h = Math.imul(h ^ bytes[i], 0x01000193);
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
 // ---------------------------------------------------------------------------
 // Tarball reader — the primary path.
 //
@@ -153,64 +186,90 @@ const b64 = s => {
 // we never misread a header. The archive's top directory is "<repo>-<ref>",
 // which is stripped so paths match the repo ("chapters/01-foo.md").
 //
+// Two pax records matter: the global header ('g') git archive opens with
+// carries the commit id as `comment=`, and a file whose name does not fit the
+// ustar fields gets an extended header ('x') carrying its real `path=`.
+//
 // Only the entries `want(path)` asks for keep their bytes, and nothing is
 // decoded here: the caller decodes a file the moment it needs the text, so an
 // unchanged chapter costs a header read and nothing more.
 function walkTar(buf, want = () => true) {
   const dec = new TextDecoder();
   const str = (a, b) => dec.decode(buf.subarray(a, b)).replace(/\0[\s\S]*$/, '');
+  const pax = (a, b) => {
+    const out = {};
+    for (const line of str(a, b).split('\n')) {
+      const m = /^\d+ ([^=]+)=([\s\S]*)$/.exec(line);
+      if (m) out[m[1]] = m[2];
+    }
+    return out;
+  };
   const files = new Map(); // repo-relative path -> { size, bytes|null }
-  let top = null, off = 0;
+  let top = null, off = 0, commit = '', pending = null;
   while (off + 512 <= buf.length) {
     const name = str(off, off + 100);
     if (!name) break;                                       // end-of-archive zero blocks
     const size = parseInt(str(off + 124, off + 136).trim() || '0', 8) || 0;
     const type = buf[off + 156];                            // '0' or NUL = regular file
-    const prefix = str(off + 345, off + 500);
-    const full = prefix ? `${prefix}/${name}` : name;
     const dataStart = off + 512;
-    // The archive opens with a pax global header (type 'g', no slash) — the
-    // top directory is the first REAL entry, never that one or a pax 'x'.
-    if (top === null && type !== 103 && type !== 120) top = full.split('/')[0];
-    if ((type === 48 || type === 0) && top !== null && full.startsWith(`${top}/`)) {
-      const rel = full.slice(top.length + 1);
-      if (/\.md$/i.test(rel)) files.set(rel, { size, bytes: want(rel) ? buf.subarray(dataStart, dataStart + size) : null });
+    if (type === 103) {                                     // 'g' — pax global header
+      commit = pax(dataStart, dataStart + size).comment || commit;
+    } else if (type === 120) {                              // 'x' — pax extended header for the NEXT entry
+      pending = pax(dataStart, dataStart + size);
+    } else {
+      const prefix = str(off + 345, off + 500);
+      const full = pending?.path || (prefix ? `${prefix}/${name}` : name);
+      pending = null;
+      // The top directory is the first real entry, never a pax header.
+      if (top === null) top = full.split('/')[0];
+      if ((type === 48 || type === 0) && full.startsWith(`${top}/`)) {
+        const rel = full.slice(top.length + 1);
+        if (/\.md$/i.test(rel)) files.set(rel, { size, bytes: want(rel) ? buf.subarray(dataStart, dataStart + size) : null });
+      }
     }
     off = dataStart + Math.ceil(size / 512) * 512;
   }
-  return files;
+  return { files, commit };
 }
 
 const textOf = f => (f.text ??= new TextDecoder().decode(f.bytes));
 
-// A cheap fingerprint of a file's bytes (32-bit FNV-1a), so "unchanged" means
-// the same content, not merely the same size — a one-word edit that leaves the
-// byte count alone must still be re-counted. A whole novel hashes in about a
-// millisecond.
-function fingerprint(bytes) {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < bytes.length; i++) h = Math.imul(h ^ bytes[i], 0x01000193);
-  return (h >>> 0).toString(16).padStart(8, '0');
+// The conditional request for one branch's archive. Returns { status: 304 }
+// when `etag` still matches (nothing downloaded), null when codeload can't
+// serve it (no such branch, throttled, unreachable), or the open response for
+// the caller to unpack — or to cancel, if this request has no room for it.
+// Accept-Encoding is pinned because codeload's ETag varies with it and the
+// archive is never content-encoded anyway; the same ETag then comes back on
+// every revalidation.
+async function openTarball(book, branch, etag) {
+  const url = `https://codeload.github.com/${book.owner}/${book.repo}/tar.gz/refs/heads/${branch}`;
+  const headers = { 'user-agent': UA, 'accept-encoding': 'identity', ...(etag ? { 'if-none-match': etag } : {}) };
+  const res = await fetch(url, { headers });
+  if (res.status === 304) { await res.body?.cancel().catch(() => {}); return { status: 304 }; }
+  if (!res.ok) { await res.body?.cancel().catch(() => {}); return null; }
+  return { status: 200, etag: res.headers.get('etag') || '', res };
 }
 
-// One branch's tarball: { status: 304 } when `etag` still matches (nothing was
-// downloaded), { status: 200, etag, files } for a fresh archive, or null when
-// codeload can't serve it (no such branch, throttled, unreachable).
-async function fetchTarball(book, branch, etag, want) {
-  const url = `https://codeload.github.com/${book.owner}/${book.repo}/tar.gz/refs/heads/${branch}`;
-  const headers = { 'user-agent': UA, ...(etag ? { 'if-none-match': etag } : {}) };
-  const res = await fetch(url, { headers });
-  if (res.status === 304) return { status: 304 };
-  if (!res.ok) return null;
+async function unpackTarball(res, want) {
   const gz = res.body.pipeThrough(new DecompressionStream('gzip'));
   const buf = new Uint8Array(await new Response(gz).arrayBuffer());
-  return { status: 200, etag: res.headers.get('etag') || '', files: walkTar(buf, want) };
+  return walkTar(buf, want);
 }
 
-// Chapter text from the last tarball we actually decoded, so opening a chapter
-// that just landed costs nothing and shows the revision the listing was built
-// from. Unchanged chapters are read from the raw CDN on demand instead.
-const textCache = new Map(); // `${book.key}:${path}` -> text
+// Chapter text from the last archive we actually decoded (or the last raw read),
+// so opening a chapter that just landed costs nothing and shows the revision
+// the listing was built from. Unchanged chapters are read from the raw CDN on
+// demand instead.
+const textCache = new Map(); // `${book.key}:${path}` -> { text, branch }
+
+// One file from the raw CDN — no API budget, no archive. Null if unavailable.
+async function rawText(book, branch, path) {
+  try {
+    const res = await fetch(`https://raw.githubusercontent.com/${book.owner}/${book.repo}/${branch}/${encodeURI(path)}`, { headers: { 'user-agent': UA } });
+    if (!res.ok) { await res.body?.cancel().catch(() => {}); return null; }
+    return await res.text();
+  } catch { return null; }
+}
 
 const blobUrl = (book, branch, path) => `https://github.com/${book.owner}/${book.repo}/blob/${branch}/${path}`;
 
@@ -228,34 +287,44 @@ function entryFromText(book, branch, path, file, text, size, hash) {
 
 // The size-based estimate: for the REST-listing fallback and for a changed
 // file past this request's read budget. It becomes exact on a later pass or
-// when the chapter is opened.
-const EST_BYTES_PER_WORD = 5.6;
-const estWords = bytes => Math.max(0, Math.round((Number(bytes) || 0) / EST_BYTES_PER_WORD));
-function entryEstimated(book, branch, path, file, size) {
+// when the chapter is opened. The ratio is taken from the exact entries we
+// already hold when there are any; the constant is a fallback.
+const EST_BYTES_PER_WORD = 5.1;
+function estimator(prev) {
+  const exact = [...(prev?.chapters || []), ...(prev?.docs || [])].filter(e => e.exact && e.bytes && e.words);
+  const bytes = exact.reduce((n, e) => n + e.bytes, 0), ws = exact.reduce((n, e) => n + e.words, 0);
+  const ratio = bytes > 20000 && ws > 0 ? bytes / ws : EST_BYTES_PER_WORD;
+  return size => Math.max(0, Math.round((Number(size) || 0) / ratio));
+}
+function entryEstimated(book, branch, path, file, size, hash, est) {
   return {
     book: book.key, path, file,
     title: titleOf('', file),
-    words: estWords(size),
+    words: est(size),
     exact: false,
     bytes: size,
+    ...(hash ? { hash } : {}),
     url: blobUrl(book, branch, path),
   };
 }
-function entryFromListing(book, entry) {
+function entryFromListing(book, entry, est) {
   return {
     book: book.key, path: entry.path, file: entry.name,
     title: titleOf('', entry.name),
-    words: estWords(entry.size),
+    words: est(entry.size),
     exact: false,
     bytes: entry.size, url: entry.html_url,
   };
 }
 
-// How many changed files one request will decode and count. Twelve chapters
-// is a whole act of a novel — comfortably inside a request's CPU allowance —
-// and a book that lands all at once converges in two or three passes.
-const READ_BUDGET = 12;
+// How much text one request will decode and count: about thirty thousand
+// words, a few milliseconds even in a cold isolate. A whole novel landing at
+// once converges over three or four quick passes.
+const READ_BYTES = 160 * 1024;
 
+// The last-commit line is one REST call that fails quietly under the shared
+// anonymous rate limit. Try it once per revision per isolate, not every minute.
+const commitTried = new Map(); // book.key -> etag it was last attempted for
 async function lastCommitOf(env, book, branch, tok) {
   try {
     const commits = await gh(env, `/repos/${book.owner}/${book.repo}/commits?sha=${encodeURIComponent(branch)}&per_page=1`, tok);
@@ -271,68 +340,129 @@ const totalsOf = (chapters, docs) => ({
   loreWords: docs.reduce((n, d) => n + d.words, 0),
 });
 
-// { ok: true, ...summary } on success; { ok: false, note } when every live path
+const withCounts = (body, chapters, docs) => {
+  const pending = [...chapters, ...docs].filter(e => !e.exact).length;
+  const { converging, pending: _p, ...rest } = body;
+  return { ...rest, chapters, docs, totals: totalsOf(chapters, docs), ...(pending ? { converging: true, pending } : {}) };
+};
+
+// A summary whose branch has not moved: refresh the stamp, drop the flags that
+// described a moment, and give a zero-chapter body its note back.
+function revalidatedBody(prev, checkedAt) {
+  const { stale, note, cached, needsToken, ...clean } = prev;
+  return { ...clean, checkedAt,
+    ...(clean.chapters?.length ? {} : { note: 'Not started yet — no chapters on the working branch.' }) };
+}
+
+// Fill in estimated entries from the raw CDN, within the byte budget. A file
+// whose raw copy does not yet match the listing's fingerprint (the CDN can lag
+// a push by a few minutes) keeps its estimate for a later pass.
+async function fillFromRaw(book, body) {
+  const branch = body.branch;
+  const picked = [];
+  let planned = 0;
+  for (const e of [...body.chapters, ...body.docs]) {
+    if (e.exact) continue;
+    if (picked.length && planned + e.bytes > READ_BYTES) break;
+    picked.push(e); planned += e.bytes;
+  }
+  if (!picked.length) return body;
+  const texts = await Promise.all(picked.map(e => rawText(book, branch, e.path)));
+  const filled = new Map();
+  picked.forEach((e, i) => {
+    const text = texts[i];
+    if (text == null) return;
+    const bytes = new TextEncoder().encode(text);
+    if (bytes.length !== e.bytes || (e.hash && fingerprint(bytes) !== e.hash)) return;   // not this revision yet
+    textCache.set(`${book.key}:${e.path}`, { text, branch });
+    filled.set(e.path, entryFromText(book, branch, e.path, e.file, text, e.bytes, e.hash || fingerprint(bytes)));
+  });
+  const swap = e => filled.get(e.path) || e;
+  return withCounts(body, body.chapters.map(swap), body.docs.map(swap));
+}
+
+// { ok: true, body, fullPass?, revalidated?, changed } on success;
+// { ok: true, deferred: true } when the book needs an archive unpacked and this
+// request has no room left for one; { ok: false, note } when every live path
 // failed so the caller can fall back to the last known good state. `prev` is
 // that last good state (memory or D1), used to revalidate cheaply and to keep
 // the counts of files that have not changed.
-async function summarizeBook(env, book, tok, prev) {
+async function summarizeBook(env, book, tok, prev, { allowFull = true } = {}) {
   const base = { key: book.key, title: book.title, voice: book.voice, repo: `${book.owner}/${book.repo}` };
+  const cfg = cfgOf(book);
   const chapterRe = new RegExp(`^${book.chapterDir}/[^/]+\\.md$`, 'i');
   const isManuscript = p => chapterRe.test(p) || book.docs.includes(p);
   const checkedAt = new Date().toISOString();
+  const trusted = prev && prev.cfg === cfg ? prev : null;   // built the same way: its entries and ETag mean something
+  const est = estimator(trusted);
 
   // 1. Tarball — the whole book in one budget-free request, or a 304 in none.
   for (const br of book.branches) {
-    // Revalidate only a COMPLETE summary of this same branch: a converging one
-    // must fetch the archive again to keep counting.
-    const canRevalidate = prev && prev.branch === br && prev.etag && !prev.converging;
+    const sameBranch = trusted && trusted.branch === br;
     let tar = null;
-    try { tar = await fetchTarball(book, br, canRevalidate ? prev.etag : '', isManuscript); } catch { tar = null; }
+    try { tar = await openTarball(book, br, sameBranch && trusted.etag ? trusted.etag : ''); } catch { tar = null; }
     if (!tar) continue;                                     // branch absent or codeload down — try the next
-    if (tar.status === 304) {
-      const { stale, note, cached, ...clean } = prev;       // the flags describe a moment, not the book
-      return { ok: true, ...clean, checkedAt };
+
+    // Unchanged branch: keep everything, fill in any counts still owed.
+    const unchanged = async () => {
+      let body = revalidatedBody(trusted, checkedAt);
+      if (body.lastCommit == null && commitTried.get(book.key) !== body.etag) {
+        commitTried.set(book.key, body.etag);
+        body.lastCommit = await lastCommitOf(env, book, br, tok);
+      }
+      if (!body.converging) return { ok: true, revalidated: true, changed: body.lastCommit !== trusted.lastCommit, body };
+      body = await fillFromRaw(book, body);
+      return { ok: true, revalidated: true, changed: true, body };
+    };
+    if (tar.status === 304) return unchanged();
+
+    if (!allowFull) { await tar.res.body?.cancel().catch(() => {}); return { ok: true, deferred: true }; }
+    const { files, commit } = await unpackTarball(tar.res, isManuscript);
+    // Same commit under a different ETag (the header can vary with the
+    // request's negotiation): nothing changed, so count nothing.
+    if (sameBranch && commit && trusted.commit === commit) {
+      const r = await unchanged();
+      r.body = { ...r.body, etag: tar.etag };
+      r.changed = true;
+      return r;
     }
-    const { files, etag } = tar;
 
     // Entries whose bytes are what they were last time (same size, same
     // fingerprint) keep their exact count and title without a decode.
     // Everything else is read now, up to the budget; the remainder is
-    // estimated and picked up next pass.
+    // estimated and filled in on later passes.
     const known = new Map();
-    for (const e of [...(prev?.chapters || []), ...(prev?.docs || [])]) if (e.exact && e.hash) known.set(e.path, e);
-    let budget = READ_BUDGET, deferred = 0;
+    for (const e of [...(trusted?.chapters || []), ...(trusted?.docs || [])]) if (e.exact && e.hash) known.set(e.path, e);
+    let spent = 0;
     const entryFor = (path) => {
       const f = files.get(path);
       const file = chapterRe.test(path) ? path.slice(book.chapterDir.length + 1) : path;
       const hash = fingerprint(f.bytes);
       const old = known.get(path);
       if (old && old.bytes === f.size && old.hash === hash) return { ...old, book: book.key, file, url: blobUrl(book, br, path) };
-      if (budget > 0) {
-        budget--;
+      if (spent === 0 || spent + f.size <= READ_BYTES) {
+        spent += f.size;
         const text = textOf(f);
-        textCache.set(`${book.key}:${path}`, text);
+        textCache.set(`${book.key}:${path}`, { text, branch: br });
         return entryFromText(book, br, path, file, text, f.size, hash);
       }
-      deferred++;
-      return entryEstimated(book, br, path, file, f.size);
+      textCache.delete(`${book.key}:${path}`);            // whatever we held is a previous revision
+      return entryEstimated(book, br, path, file, f.size, hash, est);
     };
     const chapters = [...files.keys()]
       .filter(p => chapterRe.test(p))
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
       .map(entryFor);
     const docs = book.docs.filter(name => files.has(name)).map(entryFor);
-    const converging = deferred > 0;
-    return { ok: true, ...base, configured: true, branch: br,
+    const body = withCounts({ ...base, configured: true, branch: br,
       branchUrl: `https://github.com/${book.owner}/${book.repo}/tree/${br}`,
-      chapters, docs,
-      totals: totalsOf(chapters, docs),
-      etag, checkedAt,
-      ...(converging ? { converging: true, pending: deferred } : {}),
-      // The commit line is one REST call; not worth spending while still
-      // converging, and never fatal. A finished pass tries once.
-      lastCommit: converging ? null : await lastCommitOf(env, book, br, tok),
-      ...(chapters.length ? {} : { note: 'Not started yet — no chapters on the working branch.' }) };
+      etag: tar.etag, commit, cfg, checkedAt,
+      ...(chapters.length ? {} : { note: 'Not started yet — no chapters on the working branch.' }) }, chapters, docs);
+    // The commit line is one REST call; not worth spending while still
+    // converging, and never fatal. A finished pass tries once.
+    body.lastCommit = null;
+    if (!body.converging) { commitTried.set(book.key, tar.etag); body.lastCommit = await lastCommitOf(env, book, br, tok); }
+    return { ok: true, fullPass: true, changed: true, body };
   }
 
   // 2. REST listing — only if codeload could not serve any candidate branch.
@@ -353,20 +483,24 @@ async function summarizeBook(env, book, tok, prev) {
           ? 'The saved GitHub token can’t read this repo — it may be expired or missing Contents access. Paste a fresh one to read the manuscript.'
           : 'This repo can’t be read right now. If it is private, paste a GitHub token with read access to see the chapters Draco has committed.' };
     }
-    return { ok: true, ...base, configured: true, branch: book.branches[0],
+    return { ok: true, changed: true, body: { ...base, configured: true, branch: book.branches[0],
       branchUrl: `https://github.com/${book.owner}/${book.repo}/tree/${book.branches[0]}`,
-      chapters: [], docs: [], totals: { chapters: 0, words: 0, loreWords: 0 }, checkedAt,
-      note: 'Not started yet — no chapters on the working branch.' };
+      chapters: [], docs: [], totals: { chapters: 0, words: 0, loreWords: 0 }, cfg, checkedAt,
+      note: 'Not started yet — no chapters on the working branch.' } };
   }
   const files = (Array.isArray(listing) ? listing : [])
     .filter(f => f.type === 'file' && /\.md$/i.test(f.name))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-  // Keep exact counts we already have for files the listing shows unchanged.
+  // A listing carries sizes but no content, so an old count is only a good
+  // guess here: keep it, marked inexact, for a file the listing shows the
+  // same size. The next archive pass makes it exact again.
   const known = new Map();
-  for (const e of [...(prev?.chapters || []), ...(prev?.docs || [])]) if (e.exact) known.set(e.path, e);
+  for (const e of [...(trusted?.chapters || []), ...(trusted?.docs || [])]) if (e.exact) known.set(e.path, e);
   const fromListing = f => {
     const old = known.get(f.path);
-    return old && old.bytes === f.size ? { ...old, book: book.key, url: f.html_url } : entryFromListing(book, f);
+    return old && old.bytes === f.size
+      ? { ...old, book: book.key, exact: false, hash: undefined, url: f.html_url }
+      : entryFromListing(book, f, est);
   };
   const chapters = files.map(fromListing);
   const docs = [];
@@ -379,22 +513,25 @@ async function summarizeBook(env, book, tok, prev) {
       if (e && e.type === 'file') docs.push(fromListing(e));
     }
   }
-  return { ok: true, ...base, configured: true, branch,
+  const body = withCounts({ ...base, configured: true, branch,
     branchUrl: `https://github.com/${book.owner}/${book.repo}/tree/${branch}`,
-    chapters, docs,
-    totals: totalsOf(chapters, docs),
-    etag: null, checkedAt,
-    lastCommit: await lastCommitOf(env, book, branch, tok) };
+    etag: null, commit: null, cfg, checkedAt }, chapters, docs);
+  // Every count here is inexact by construction; that is a listing, not a
+  // convergence in progress, so don't have the tile hammer a throttled origin.
+  delete body.converging; delete body.pending;
+  body.listingOnly = true;
+  body.lastCommit = await lastCommitOf(env, book, branch, tok);
+  return { ok: true, changed: true, body };
 }
 
 // One chapter's text: the tarball cache first, then raw.githubusercontent.com
 // (a CDN, no API budget), then the REST contents API as a last resort.
 async function readOne(env, book, path, tok) {
   const hit = textCache.get(`${book.key}:${path}`);
-  if (hit != null) return { text: hit, url: null };
+  if (hit != null) return { text: hit.text, url: blobUrl(book, hit.branch, path) };
   for (const br of book.branches) {
-    const res = await fetch(`https://raw.githubusercontent.com/${book.owner}/${book.repo}/${br}/${encodeURI(path)}`, { headers: { 'user-agent': UA } });
-    if (res.ok) return { text: await res.text(), url: `https://github.com/${book.owner}/${book.repo}/blob/${br}/${path}` };
+    const text = await rawText(book, br, path);
+    if (text != null) return { text, url: blobUrl(book, br, path) };
   }
   for (const br of book.branches) {
     const res = await gh(env, `/repos/${book.owner}/${book.repo}/contents/${encodeURI(path)}?ref=${encodeURIComponent(br)}`, tok);
@@ -407,9 +544,10 @@ async function readOne(env, book, path, tok) {
 
 // A revalidation is one conditional request that usually answers 304 with no
 // body, so the in-memory copy only needs to cover a burst of tile loads — a
-// push shows up within a minute.
+// push shows up within a minute. A converging body is kept here too, with no
+// serve-by time, so the next pass continues from it even if D1 is unwell.
 const CACHE_MS = 60 * 1000;
-const memCache = new Map(); // book.key -> { at, body }  (a GOOD, complete body)
+const memCache = new Map(); // book.key -> { at, body }  (at = 0: hold as prev, never serve as cached)
 
 // The last good body of each book, persisted so it survives a Worker restart or
 // redeploy — that is what stops a redeploy-plus-outage from blanking the view,
@@ -426,6 +564,11 @@ async function setPersisted(env, key, body) {
       .bind('bookcache_' + key, JSON.stringify(body)).run();
   } catch { /* persistence is best-effort */ }
 }
+
+const emptyBody = (book, extra) => ({
+  key: book.key, title: book.title, voice: book.voice, repo: `${book.owner}/${book.repo}`,
+  chapters: [], docs: [], totals: { chapters: 0, words: 0, loreWords: 0 }, ...extra,
+});
 
 export async function handleBook(url, request, env) {
   const path = url.pathname;
@@ -453,41 +596,45 @@ export async function handleBook(url, request, env) {
     if (!ok) return json({ error: 'not part of the manuscript' }, 400);
     const file = await readOne(env, book, want, tok).catch(() => null);
     if (!file) return json({ error: 'could not read that file' }, 404);
-    return json({ book: book.key, path: want, title: titleOf(file.text, want), words: words(file.text), text: file.text,
-      url: file.url || `https://github.com/${book.owner}/${book.repo}/blob/${book.branches[0]}/${want}` });
+    return json({ book: book.key, path: want, title: titleOf(file.text, want), words: words(file.text), text: file.text, url: file.url });
   }
 
   // GET /api/book — both books, each revalidated, each falling back to its
-  // last good state rather than ever showing zero.
+  // last good state rather than ever showing zero. At most one archive is
+  // unpacked per request; a second book that would need one is served from
+  // its last state and flagged converging, so the tile asks again in a beat.
   const summaries = [];
+  let fullPassUsed = false;
   for (const book of BOOKS) {
     const cached = memCache.get(book.key);
-    if (cached && Date.now() - cached.at < CACHE_MS) {
+    if (cached && cached.at && Date.now() - cached.at < CACHE_MS) {
       summaries.push({ ...cached.body, cached: true });
       continue;
     }
     const prev = cached?.body || await getPersisted(env, book.key);
-    const fresh = await summarizeBook(env, book, tok, prev).catch(() => ({ ok: false, note: 'the manuscript bridge hit an error' }));
+    const fresh = await summarizeBook(env, book, tok, prev, { allowFull: !fullPassUsed })
+      .catch(() => ({ ok: false, note: 'the manuscript bridge hit an error' }));
+    if (fresh.ok && fresh.deferred) {
+      summaries.push(prev && prev.totals?.chapters
+        ? { ...revalidatedBody(prev, prev.checkedAt), converging: true, pending: prev.pending || 0 }
+        : emptyBody(book, { converging: true, pending: 0, note: 'Reading the repo…' }));
+      continue;
+    }
     if (fresh.ok) {
-      const { ok, ...body } = fresh;
-      // A converging body is progress, not a resting state: persist it so the
-      // next pass continues from here, but don't let it sit in memory for a
-      // minute — the tile is about to ask again.
-      if (!body.converging) memCache.set(book.key, { at: Date.now(), body });
-      else memCache.delete(book.key);
-      await setPersisted(env, book.key, body);
+      if (fresh.fullPass) fullPassUsed = true;
+      const body = fresh.body;
+      memCache.set(book.key, { at: body.converging ? 0 : Date.now(), body });
+      if (fresh.changed) await setPersisted(env, book.key, body);
       summaries.push(body);
     } else {
       const good = prev;
       // Only fall back to a remembered body if it actually HAD chapters — a
       // remembered empty would just re-hide a real problem behind "0 chapters".
       if (good && good.totals && good.totals.chapters > 0) {
-        const { converging, pending, ...rest } = good;
-        summaries.push({ ...rest, stale: true, note: fresh.note, needsToken: !!fresh.needsToken });
+        const { converging, pending, ...rest } = revalidatedBody(good, good.checkedAt);
+        summaries.push({ ...rest, stale: true, note: fresh.note });
       } else {
-        summaries.push({ key: book.key, title: book.title, voice: book.voice, repo: `${book.owner}/${book.repo}`,
-          chapters: [], docs: [], totals: { chapters: 0, words: 0, loreWords: 0 },
-          note: fresh.note || 'Temporarily unavailable.', needsToken: !!fresh.needsToken });
+        summaries.push(emptyBody(book, { note: fresh.note || 'Temporarily unavailable.', needsToken: !!fresh.needsToken }));
       }
     }
   }
