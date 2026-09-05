@@ -39,7 +39,18 @@ const BOOKS = [
   },
 ];
 
-const gh = (env, path, token) => fetch(`https://api.github.com${path}`, {
+// A stored GitHub token that has EXPIRED or been revoked is worse than no token
+// at all: GitHub answers every request from a bad credential with 401 — even a
+// public repo that would have served fine anonymously. That is exactly what
+// silently froze this bridge on a stale cache (dead token → every fresh read
+// 401s → the summary falls back to the last good state, and a chapter open just
+// 404s). Both manuscripts live in PUBLIC repos, so the token is strictly a
+// budget booster: the moment a tokened request comes back 401 we mark the token
+// bad for the life of this isolate and retry — and make every later call —
+// anonymously, so a stale token can never again break a read.
+let tokenRejected = false;
+
+const ghFetch = (path, token) => fetch(`https://api.github.com${path}`, {
   headers: {
     accept: 'application/vnd.github+json',
     'user-agent': 'dyer-hq-book-bridge',
@@ -47,6 +58,16 @@ const gh = (env, path, token) => fetch(`https://api.github.com${path}`, {
     ...(token ? { authorization: `Bearer ${token}` } : {}),
   },
 });
+
+const gh = async (env, path, token) => {
+  const useToken = token && !tokenRejected;
+  const res = await ghFetch(path, useToken ? token : '');
+  if (res.status === 401 && useToken) {
+    tokenRejected = true;       // stop paying the 401 round-trip on every call
+    return ghFetch(path, '');   // public repos still read fine unauthenticated
+  }
+  return res;
+};
 
 async function token(env) {
   const row = await env.DB.prepare('SELECT v FROM secrets WHERE k = ?').bind('github_token').first();
@@ -115,7 +136,8 @@ async function summarizeBook(env, book, tok) {
   let branch = null, listing = null;
   for (const br of book.branches) {
     const res = await gh(env, `/repos/${book.owner}/${book.repo}/contents/${book.chapterDir}?ref=${encodeURIComponent(br)}`, tok);
-    if (res.status === 403 && !tok) return { ok: false, note: 'GitHub rate limit reached — showing the last known state.' };
+    if ((res.status === 403 || res.status === 429) && res.headers.get('x-ratelimit-remaining') === '0')
+      return { ok: false, note: 'GitHub rate limit reached — showing the last known state.' };
     if (res.ok) { branch = br; listing = await res.json(); break; }
     // 404 (branch or directory absent) — try the next branch.
   }
