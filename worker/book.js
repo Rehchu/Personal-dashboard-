@@ -48,16 +48,20 @@ const json = (data, status = 200) =>
     headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
   });
 
+// Branches are tried in order. Draco writes on town/draco; the town engine also
+// keeps `draco` pointing at the same commit, because a branch name with a
+// slash in it cannot be addressed on the jsDelivr mirror — the one source that
+// still answers when GitHub's own hosts refuse the Worker.
 const BOOKS = [
   {
     key: 'dragons', title: 'The Dragon Saga', voice: 'chronicle',
-    owner: 'Rehchu', repo: 'Dragons', branches: ['town/draco'],
+    owner: 'Rehchu', repo: 'Dragons', branches: ['town/draco', 'draco'],
     chapterDir: 'chapters',
     docs: ['LORE.md', 'LORE_TIMELINE.md', 'TIMELINE.md', 'GAP-MAP.md', 'AUDIT.md'],
   },
   {
     key: 'dark-assassin', title: 'Dark Assassin', voice: 'contemporary',
-    owner: 'Rehchu', repo: 'Dark-Assassin', branches: ['town/draco', 'main'],
+    owner: 'Rehchu', repo: 'Dark-Assassin', branches: ['town/draco', 'draco', 'main'],
     chapterDir: 'book-1',
     docs: ['README.md', 'PLAN.md'],
   },

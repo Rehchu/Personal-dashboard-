@@ -3081,6 +3081,13 @@ async function pushAll(arg) {
         continue;
       }
       const p = await gitRun(join(WORKSHOP, a.id, r), ['push', '-u', 'origin', s.branch]);
+      // The dashboard's book tile reads through the jsDelivr mirror when
+      // GitHub's own hosts refuse it, and the mirror cannot address a branch
+      // with a slash in its name — so a slash-free alias (town/draco → draco)
+      // follows every push. It is a mirror of the same commit, never a place
+      // anyone works, which is why it is updated with force.
+      const alias = s.branch.replace(/^town\//, '');
+      if (p.ok && alias !== s.branch) await gitRun(join(WORKSHOP, a.id, r), ['push', 'origin', `+HEAD:refs/heads/${alias}`]);
       lines.push(p.ok
         ? `${a.name} · ${r}: pushed ${s.ahead} commit${s.ahead === 1 ? '' : 's'} to ${s.branch} ✓`
         : `${a.name} · ${r}: push FAILED — ${(p.err.split('\n').filter(Boolean).pop() || 'unknown error').slice(0, 160)}`);

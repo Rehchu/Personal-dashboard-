@@ -100,6 +100,12 @@ nohup ./run-town.sh >> town.log 2>&1 &
 
 ## Pushing from anywhere
 
+Every `/push` of a `town/<villager>` branch also moves a slash-free alias
+(`town/draco` → `draco`) to the same commit. The dashboard's book tile reads
+that alias through the jsDelivr mirror when GitHub's own hosts refuse it; a
+branch name with a slash cannot be addressed there. Nobody works on the
+alias, and it is force-updated on every push.
+
 A villager's "I committed it" is only true on GitHub once the push goes
 through — and a headless PC has no git credential, so every push fails until
 it has one. Set it once, from the dashboard, by messaging any villager:
