@@ -309,6 +309,34 @@ async function rawText(book, ref, path) {
   } catch { return null; }
 }
 
+// jsDelivr mirrors every public GitHub repo on its own network, with a file
+// listing of its own — the one source here that needs nothing from GitHub's
+// hosts at all. Pinned to a commit it is exact; addressed by branch it can
+// be hours behind a push, which the summary says out loud.
+async function mirrorListing(book, ref) {
+  try {
+    const res = await fetch(`https://data.jsdelivr.com/v1/package/gh/${book.owner}/${book.repo}@${ref}/flat`, { headers: { accept: 'application/json', 'user-agent': UA } });
+    if (!res.ok) { await discard(res); return { status: res.status, files: null }; }
+    const j = await res.json().catch(() => null);
+    const list = Array.isArray(j?.files) ? j.files : null;
+    if (!list) return { status: 200, files: null };
+    const files = new Map(); // repo-relative path -> { size, mark }
+    for (const f of list) {
+      const name = String(f?.name || '');
+      if (!name.startsWith('/') || !/\.md$/i.test(name)) continue;
+      files.set(name.slice(1), { size: Number(f.size) || 0, mark: String(f.hash || '') });
+    }
+    return { status: 200, files };
+  } catch { return { status: 0, files: null }; }
+}
+async function mirrorText(book, ref, path) {
+  try {
+    const res = await fetch(`https://cdn.jsdelivr.net/gh/${book.owner}/${book.repo}@${ref}/${encodeURI(path)}`, { headers: { 'user-agent': UA } });
+    if (!res.ok) { await discard(res); return null; }
+    return await res.text();
+  } catch { return null; }
+}
+
 const blobUrl = (book, branch, path) => `https://github.com/${book.owner}/${book.repo}/blob/${branch}/${path}`;
 
 function entryFromText(book, branch, path, file, text, size, hash) {
@@ -401,6 +429,8 @@ const PLAN_BYTES_UNKNOWN = 20 * 1024;   // budget planning for a file whose size
 async function fillFromRaw(book, body) {
   const branch = body.branch;
   const ref = body.commit || branch;
+  const viaMirror = body.source === 'mirror';      // a summary from the mirror reads its files there too
+  const read = viaMirror ? mirrorText : rawText;
   const picked = [];
   let planned = 0;
   for (const e of [...body.chapters, ...body.docs]) {
@@ -410,16 +440,16 @@ async function fillFromRaw(book, body) {
     picked.push(e); planned += size;
   }
   if (!picked.length) return body;
-  const texts = await Promise.all(picked.map(e => rawText(book, ref, e.path)));
+  const texts = await Promise.all(picked.map(e => read(book, ref, e.path)));
   const filled = new Map();
   picked.forEach((e, i) => {
     const text = texts[i];
     if (text == null) return;
     const bytes = new TextEncoder().encode(text);
     const hash = fingerprint(bytes);
-    if (!body.commit && e.bytes && (bytes.length !== e.bytes || (e.hash && hash !== e.hash))) return;   // not this revision yet
+    if (!body.commit && !viaMirror && e.bytes && (bytes.length !== e.bytes || (e.hash && hash !== e.hash))) return;   // not this revision yet
     textCache.set(`${book.key}:${e.path}`, { text, branch });
-    filled.set(e.path, entryFromText(book, branch, e.path, e.file, text, bytes.length, hash));
+    filled.set(e.path, { ...entryFromText(book, branch, e.path, e.file, text, bytes.length, hash), ...(e.mark ? { mark: e.mark } : {}) });
   });
   const swap = e => filled.get(e.path) || e;
   return withCounts(body, body.chapters.map(swap), body.docs.map(swap));
@@ -513,6 +543,43 @@ async function summarizeBook(env, book, tok, prev, { allowFull = true } = {}) {
         return { ok: true, changed: true, body };
       }
       attempts.add(`tree ${chapterTree.status}`);
+    }
+
+    // 3. The jsDelivr mirror: its own listing and its own copies of the files,
+    //    on its own network. Pinned to the commit when git could tell us one;
+    //    by branch name otherwise, which can trail a push by hours.
+    {
+      const ref = sha || br;
+      const mirror = await mirrorListing(book, ref);
+      const files = mirror.files;
+      if (files && ([...files.keys()].some(p => chapterRe.test(p)) || !trusted?.chapters?.length)) {
+        const known = new Map();
+        for (const e of [...(trusted?.chapters || []), ...(trusted?.docs || [])]) known.set(e.path, e);
+        // The mirror's own content mark says whether a file is what it was
+        // last time we read it there; anything else is read again, budget by
+        // budget, with the old count as its estimate meanwhile.
+        const seed = (path) => {
+          const f = files.get(path);
+          const file = chapterRe.test(path) ? path.slice(book.chapterDir.length + 1) : path;
+          const old = known.get(path);
+          if (old && old.exact && old.mark && f.mark && old.mark === f.mark) return { ...old, book: book.key, file, url: blobUrl(book, br, path) };
+          return old
+            ? { ...old, book: book.key, file, exact: false, hash: undefined, bytes: f.size || old.bytes, mark: f.mark, url: blobUrl(book, br, path) }
+            : { ...entryEstimated(book, br, path, file, f.size, undefined, est), mark: f.mark };
+        };
+        const chapters = [...files.keys()].filter(p => chapterRe.test(p))
+          .sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).map(seed);
+        const docs = book.docs.filter(name => files.has(name)).map(seed);
+        let body = withCounts({ ...base, configured: true, branch: br,
+          branchUrl: `https://github.com/${book.owner}/${book.repo}/tree/${br}`,
+          etag: null, commit: sha || null, cfg, checkedAt, source: 'mirror', ...(sha ? {} : { mirrorLag: true }),
+          ...(chapters.length ? {} : { note: 'Not started yet — no chapters on the working branch.' }) }, chapters, docs);
+        body = await fillFromRaw(book, body);
+        body.lastCommit = null;
+        if (!body.converging && sha) { commitTried.set(book.key, sha); body.lastCommit = await lastCommitOf(env, book, br, tok); }
+        return { ok: true, changed: true, body };
+      }
+      attempts.add(`mirror ${mirror.status}`);
     }
   }
 
@@ -633,6 +700,10 @@ async function readOne(env, book, path, tok) {
   if (hit != null) return { text: hit.text, url: blobUrl(book, hit.branch, path) };
   for (const br of book.branches) {
     const text = await rawText(book, br, path);
+    if (text != null) return { text, url: blobUrl(book, br, path) };
+  }
+  for (const br of book.branches) {
+    const text = await mirrorText(book, br, path);
     if (text != null) return { text, url: blobUrl(book, br, path) };
   }
   for (const br of book.branches) {
