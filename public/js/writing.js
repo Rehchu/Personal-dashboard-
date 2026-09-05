@@ -377,7 +377,9 @@ export function mount(root, tools) {
         ? `<p class="muted" style="margin:0 0 12px">Counting a fresh push — ${bk.pending || 'some'} file${bk.pending === 1 ? '' : 's'} still estimated. This refreshes on its own.</p>`
         : bk.listingOnly
           ? `<p class="muted" style="margin:0 0 12px">Read from the repo listing — counts are estimates until the archive can be read again.</p>`
-          : checked ? `<p class="muted" style="margin:0 0 12px">Up to date as of ${esc(checked)}.</p>` : '';
+          : bk.mirrorLag
+            ? `<p class="muted" style="margin:0 0 12px">GitHub itself is refusing the dashboard right now, so this was read through the jsDelivr mirror${checked ? ` at ${esc(checked)}` : ''}. It can trail a push by a few hours.</p>`
+            : checked ? `<p class="muted" style="margin:0 0 12px">Up to date as of ${esc(checked)}.</p>` : '';
     return `
       <section class="wr-saga-book" style="margin-bottom:26px">
         <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin:0 0 10px">
