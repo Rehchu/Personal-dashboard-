@@ -9,6 +9,7 @@ token.txt
 cloudflare-token.txt
 MainCloudflare-deploy-token.txt
 github-token.txt
+ctrl-portal-key.txt
 town-state.json
 town-state.json.tmp
 # self-update leftovers: the previous engine, the file being checked, the

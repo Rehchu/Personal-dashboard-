@@ -123,6 +123,34 @@ it has one. Set it once, from the dashboard, by messaging any villager:
 
 At the PC, `GITHUB_TOKEN` in the environment or the same file works too.
 
+## Ctrl's key to the live shop
+
+Ctrl can work the real technician portal at myfaithtech.com — tickets,
+inquiries, invoices, email threads, the dashboard — with an API key you create
+in **Settings → API Keys**. The key is shown once, so send it to the town the
+same way you send a GitHub token, by messaging any villager:
+
+- `/key <the cak_… key>` — saves it to `ctrl-portal-key.txt` beside `town.mjs`.
+  `/key` alone says whether one is set; `/key clear` removes it from this PC
+  (revoke it in Settings → API Keys as well, or it is still live elsewhere).
+  The key is never echoed back, never written to the feed, and never enters any
+  villager's session except Ctrl's. `CTRL_ALT_API_KEY` in the environment works
+  too, at the PC.
+
+**He reads and drafts on his own; he never sends on his own.** The portal itself
+refuses a `tech` key the photo ID records, refunds, and making more keys. The
+town adds the part the portal leaves open: anything that emails a real customer,
+charges a card, buys a postage label, or changes a ticket status with
+`notify: true` is refused unless you approved that exact call. Ctrl asks, the ask
+lands in your approval inbox naming the path and what it would do in plain words
+("PORTAL /invoices/42/email — would email an invoice, its PDF and a pay link"),
+and your yes is good for that one call within 30 minutes. A second send needs a
+second yes, and the chief of staff can never rule on one of these in your place.
+
+So the shape of his day is: triage the inbox, analyze inquiries, quote repairs,
+update tickets, write the reply with `/inquiries/:id/draft-reply` — and leave it
+sitting ready for you.
+
 ## It updates itself
 
 `town.mjs` checks the repo (`agent-town/town.mjs` on `main`) every 10 minutes.
