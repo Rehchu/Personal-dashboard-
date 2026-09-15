@@ -683,6 +683,56 @@ const PORTAL_ONE_WAY = [
 const PORTAL_STATUS = new RegExp(`/tickets/${SEG}/status(?![\\w-])`, 'i');
 const PORTAL_NOTIFY = /["']?notify["']?\s*[:=]\s*true/i;
 
+/* Storefront money, judged the same way and for a nearer reason.
+
+   docs/AGENT-API.md warns that "publishing prebuilts or changing plan prices is
+   visible to the public", and the list above did not cover it — so a price was
+   the one consequential act an agent could perform with nobody asked. It is not
+   irreversible the way an email is, which is why it was not there; but it is
+   public the instant it lands, it is the number a customer pays, and an
+   unattended town can reach it at 3am. A wrong price that is corrected an hour
+   later still sold something at the wrong price.
+
+   Path alone cannot decide it: PUT /inventory/42 setting a shelf count is
+   ordinary work and the same call setting sell_price is not. So the body
+   decides, exactly as notify does for a ticket status. The field names are the
+   shop's own — cost_price, sell_price, unit_price, purchase_price, actual_cost,
+   estimated_cost — matched by shape so a column added tomorrow is covered.
+
+   /price-search is excluded on purpose: AGENT-API.md calls it a supplier price
+   LOOKUP. It reads the market, it changes nothing, and it is the tool that makes
+   an accurate price possible — gating it would stop the research and leave the
+   guessing. */
+const PORTAL_STOREFRONT = new RegExp(`/(?:inventory|inventory-items|prebuilts|builds|service-plans|plans)(?:/${SEG})*$`, 'i');
+const PORTAL_PRICE_LOOKUP = /\/price-search$/i;
+const PRICE_FIELD = /(?:^|_)(?:price|cost|msrp)$|^sell$/i;
+const PRICE_TEXT = /["']?[\w.]*(?:price|cost|msrp)["']?\s*[:=]/i;
+const PUBLISH_TEXT = /["']?(?:status|state)["']?\s*[:=]\s*["']?published\b|["']?(?:is_)?published["']?\s*[:=]\s*["']?(?:true|1|yes)\b/i;
+
+/* Both walk the whole decoded body, because a price arrives nested as often as
+   not — items:[{unit_cost}] on a prebuilt, or a single field on an update. */
+function moneyInBody(v, depth = 0) {
+  if (depth > 6 || v === null || typeof v !== 'object') return false;
+  if (Array.isArray(v)) return v.some(x => moneyInBody(x, depth + 1));
+  for (const [k, val] of Object.entries(v)) {
+    if (PRICE_FIELD.test(k) && val !== null && val !== undefined && val !== '') return true;
+    if (moneyInBody(val, depth + 1)) return true;
+  }
+  return false;
+}
+
+function publishesInBody(v, depth = 0) {
+  if (depth > 6 || v === null || typeof v !== 'object') return false;
+  if (Array.isArray(v)) return v.some(x => publishesInBody(x, depth + 1));
+  for (const [k, val] of Object.entries(v)) {
+    if (/^(?:status|state)$/i.test(k) && /^published$/i.test(String(val))) return true;
+    if (/^(?:published|is_published|publish)$/i.test(k)
+      && /^(?:true|1|yes|on)$/i.test(String(val))) return true;
+    if (publishesInBody(val, depth + 1)) return true;
+  }
+  return false;
+}
+
 /* One spelling per path, before anything is matched against it.
 
    A router sees `/email%2Fsend`, `//email//send` and `/x/../email/send` as the
@@ -763,6 +813,15 @@ function oneWay(subject, body, parsed) {
     const sends = parsed !== undefined ? notifyInBody(parsed)
       : /notify["']?\s*[:=]\s*["']?(?:true|1|yes|on)\b/i.test(String(body || ''));
     if (sends) return 'change a ticket status AND email the customer about it';
+  }
+  if (cands.some(c => PORTAL_STOREFRONT.test(c) && !PORTAL_PRICE_LOOKUP.test(c))) {
+    const text = String(body || '');
+    if (parsed !== undefined ? publishesInBody(parsed) : PUBLISH_TEXT.test(text)) {
+      return 'publish this to the public storefront, where customers will see it';
+    }
+    if (parsed !== undefined ? moneyInBody(parsed) : PRICE_TEXT.test(text)) {
+      return 'change a price on the public storefront, which is what a customer pays';
+    }
   }
   return null;
 }
@@ -885,10 +944,19 @@ THE TECHNICIAN PORTAL: you can work the live shop (tickets, inquiries, invoices,
 customer email) through your own door at $CTRL_ALT_PORTAL. Read it, triage it,
 draft replies — freely, in a work session. But nothing that reaches a customer or
 moves money goes out without the owner: emailing anyone, charging a card, buying
-a postage label, or a status change with notify true is refused until he approved
-that exact call. Use request_portal to ask; he answers one call at a time.`;
+a postage label, a status change with notify true, or changing a storefront price
+or publishing a prebuilt, is refused until he approved that exact call. Reading
+prices and running a supplier price-search are free — it is only the write that
+waits. Use request_portal to ask; he answers one call at a time.`;
   return `
 THE TECHNICIAN PORTAL — you can work the live shop.
+
+Prices are a special case worth knowing before you start: read them freely, and
+run /inventory/:id/price-search as often as you like — it looks up what suppliers
+are charging and changes nothing. But WRITING a price, or publishing a prebuilt,
+goes to the owner first, because that number is what a customer pays and it is
+public the moment it lands. Do the research, get it right, then ask for the one
+call.
 
 Your door is $CTRL_ALT_PORTAL and your ticket is $CTRL_ALT_PORTAL_TICKET:
   curl -s "$CTRL_ALT_PORTAL/dashboard" -H "x-town-ticket: $CTRL_ALT_PORTAL_TICKET"

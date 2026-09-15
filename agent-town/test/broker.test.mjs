@@ -129,6 +129,17 @@ for (const [label, path, opts] of [
   ['status nested notify', '/tickets/7/status', { method: 'POST', body: '{"options":{"notify":true}}' }],
   ['status form-encoded', '/tickets/7/status', { method: 'POST', body: 'status=done&notify=true', ct: 'application/x-www-form-urlencoded' }],
   ['status notifyCustomer', '/tickets/7/status', { method: 'POST', body: '{"notifyCustomer":true}' }],
+  // storefront money — public the moment it lands, and the number a customer pays
+  ['sell price on an item', '/inventory/42', { method: 'PUT', body: '{"sell_price":1299.99}' }],
+  ['cost price on an item', '/inventory/42', { method: 'PUT', body: '{"cost_price":940}' }],
+  ['bare price on a prebuilt', '/prebuilts/7', { method: 'PUT', body: '{"price":2658}' }],
+  ['unit price on a build', '/builds/3', { method: 'PATCH', body: '{"unit_price":120}' }],
+  ['a plan price', '/service-plans/2', { method: 'PUT', body: '{"price":29}' }],
+  ['a price nested in items', '/prebuilts/7', { method: 'PUT', body: '{"items":[{"name":"RAM","unit_cost":210}]}' }],
+  ['form-encoded price', '/inventory/42', { method: 'PUT', body: 'sell_price=1299', ct: 'application/x-www-form-urlencoded' }],
+  ['publishing a prebuilt', '/prebuilts/7', { method: 'PUT', body: '{"status":"published"}' }],
+  ['publish flag', '/prebuilts/7', { method: 'PUT', body: '{"is_published":true}' }],
+  ['creating a priced prebuilt', '/prebuilts', { method: 'POST', body: '{"name":"Arc 570","sell_price":1516}' }],
 ]) expect(await call(label, path, opts), { blocked: true });
 
 console.log('— ordinary work must go through, with the key attached —');
@@ -143,6 +154,14 @@ for (const [label, path, opts] of [
   ['status notify:false', '/tickets/7/status', { method: 'POST', body: '{"notify":false}' }],
   ['create an invoice', '/invoices', { method: 'POST', body: '{}' }],
   ['/email/sender is not /email/send', '/email/sender', {}],
+  // reading prices is the point of having the door — only the write waits
+  ['read the inventory', '/inventory', {}],
+  ['read one prebuilt', '/prebuilts/7', {}],
+  ['read the builds', '/builds', {}],
+  ['supplier price LOOKUP', '/inventory/42/price-search', { method: 'POST', body: '{}' }],
+  ['a stock count is not a price', '/inventory/42', { method: 'PUT', body: '{"qty_on_hand":4}' }],
+  ['renaming an item', '/inventory/42', { method: 'PUT', body: '{"name":"RTX 4070 Super"}' }],
+  ['a draft prebuilt stays draft', '/prebuilts/7', { method: 'PUT', body: '{"status":"draft"}' }],
 ]) expect(await call(label, path, opts), { blocked: false });
 
 console.log('— the ticket —');
