@@ -10,6 +10,16 @@ cloudflare-token.txt
 MainCloudflare-deploy-token.txt
 github-token.txt
 ctrl-portal-key.txt
+arisehub-agent-key.txt
+# A backstop, because the list above is exact filenames and that failed once:
+# arisehub-agent-key.txt was created beside town.mjs before it was listed here,
+# and ctrl-alt-agent-api-key.json arrived under a name no rule matched either.
+# Any future credential dropped here is covered by its shape now, whether or not
+# anyone remembers to add its name.
+*-key.txt
+*-token.txt
+*-key.json
+*.key
 town-state.json
 town-state.json.tmp
 # self-update leftovers: the previous engine, the file being checked, the
