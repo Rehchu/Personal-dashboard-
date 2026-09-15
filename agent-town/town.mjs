@@ -238,6 +238,38 @@ function gitCredEnv() {
   };
 }
 
+/* ---------------- Ctrl's technician-portal key ----------------
+   The owner created an API key so Ctrl can work the real technician side of
+   Ctrl+Alt PC Repair — the same portal a signed-in tech uses. The contract is
+   docs/AGENT-API.md in that repo: Bearer auth, base https://myfaithtech.com/api/admin,
+   and a `tech` key that the SERVER already refuses for photo ID records,
+   refunds, and minting more keys.
+
+   What the server does NOT refuse is the part with consequences: a `tech` key
+   may email real customers, charge a card at the point of sale, and buy a real
+   postage label. The doc's advice is "read freely, draft freely, and ask a
+   human before anything in this list" — advice, which is a request. In this
+   town that is a gate instead (see bashGate + request_portal): those calls need
+   the owner's approval, one call at a time, exactly like a deploy.
+
+   The key lives in ONE of two places and nowhere else: CTRL_ALT_API_KEY in the
+   environment, or ctrl-portal-key.txt beside town.mjs — written by the owner,
+   or by the "/key <cak_…>" chat command so he never has to be at the PC. It is
+   never echoed to the feed, never written into a repo, and — the point — it
+   never enters a villager's process either: sessionEnv strips it for everyone
+   and nothing puts it back. Ctrl reaches the shop through the broker below,
+   which holds the key on this side of the door. */
+const PORTAL_KEY_FILE = join(DIR, 'ctrl-portal-key.txt');
+const PORTAL_BASE = 'https://myfaithtech.com/api/admin';
+const PORTAL_AGENT = 'ctrl';
+let PORTAL_KEY = (process.env.CTRL_ALT_API_KEY || '').trim();
+let PORTAL_KEY_FROM = PORTAL_KEY ? 'the environment' : '';
+if (!PORTAL_KEY) {
+  const { value, file } = tokenFromFolder(l => l.includes('portal') && l.includes('key'));
+  if (value) { PORTAL_KEY = value; PORTAL_KEY_FROM = file; console.log(`  portal: Ctrl's technician key from ${file}`); }
+  else console.log('  portal: no technician key — Ctrl works the repo only (message any villager "/key <cak_…>")');
+}
+
 /* A SECOND, separate credential for the owner's real sites.
 
    cloudflare-token.txt is the villagers' playground token — a throwaway free
@@ -516,9 +548,251 @@ function liveGrant(agentId) {
   return g;
 }
 
-function dutyBrief(agent) {
+/* ---------------- the technician portal's one-way doors ----------------
+
+   Everything on the portal is readable with the key and most of it is safely
+   writable — a ticket, a quote, an inventory count, an AI draft reply all live
+   inside the shop and can be edited again tomorrow. These cannot. An email has
+   reached a customer's inbox; a card has been charged; a label has been bought
+   and paid for. docs/AGENT-API.md marks them ⚠️ and asks an agent to check with
+   a human first; here the check is enforced, because "ask first" written in a
+   brief is a sentence a model can reason its way past at 3am and a gate is not.
+
+   Each entry is [what the URL path looks like, what it does in plain words].
+   The wording matters: it is what the owner reads in his approval inbox.
+
+   A path ends at anything that is not a path character, so `/email/send` is
+   matched with a space, a quote or a `?` after it and `/email/sender` is not. */
+const SEG = '[^/\\s"\'?&`]+';
+const PORTAL_ONE_WAY = [
+  [new RegExp(`/email/send(?![\\w-])`, 'i'), 'send a brand-new email to a real customer'],
+  [new RegExp(`/email/thread/${SEG}/reply(?![\\w-])`, 'i'), 'reply in a live customer email thread'],
+  [new RegExp(`/inquiries/${SEG}/reply(?![\\w-])`, 'i'), 'send a reply to a storefront inquiry'],
+  [new RegExp(`/invoices/${SEG}/email(?![\\w-])`, 'i'), 'email an invoice, its PDF and a pay link'],
+  [new RegExp(`/invoices/${SEG}/email-copy(?![\\w-])`, 'i'), 'email a records copy of an invoice'],
+  [new RegExp(`/invoices/${SEG}/send-pay-link(?![\\w-])`, 'i'), 'email a customer a link to pay'],
+  [new RegExp(`/payment-links/${SEG}/email(?![\\w-])`, 'i'), 'email a payment link'],
+  [new RegExp(`/tickets/${SEG}/waiver-email(?![\\w-])`, 'i'), 'email a service waiver'],
+  [new RegExp(`/appointments/${SEG}/confirm-email(?![\\w-])`, 'i'), 'email an appointment confirmation'],
+  [new RegExp(`/pos/checkout(?![\\w-])`, 'i'), 'charge a card at the point of sale'],
+  [new RegExp(`/shipping/buy(?![\\w-])`, 'i'), 'buy a real postage label with real money'],
+  [new RegExp(`/invoices/${SEG}/refund(?![\\w-])`, 'i'), 'refund money'],
+];
+// `/tickets/:id/status` is ordinary work — unless notify:true, which emails the
+// customer. Same path, two different acts, so the body decides.
+const PORTAL_STATUS = new RegExp(`/tickets/${SEG}/status(?![\\w-])`, 'i');
+const PORTAL_NOTIFY = /["']?notify["']?\s*[:=]\s*true/i;
+
+/* One spelling per path, before anything is matched against it.
+
+   A router sees `/email%2Fsend`, `//email//send` and `/x/../email/send` as the
+   same endpoint; a regex sees three different strings, and matching the string
+   means the request that goes out is not the one that was judged. So every path
+   is reduced to one form first: percent-decoded (repeatedly, because %2525 is a
+   thing), slashes collapsed, dot segments resolved, trailing slash dropped.
+   A decode that throws on a malformed escape leaves the path as it stands —
+   better an unrecognised path than a crash in a gate. */
+function normalizePortalPath(raw) {
+  let p = String(raw || '').replace(/[?#].*$/, '');
+  for (let i = 0; i < 4; i++) {
+    let dec;
+    try { dec = decodeURIComponent(p); } catch { break; }
+    if (dec === p) break;
+    p = dec;
+  }
+  const out = [];
+  for (const seg of p.split('/')) {
+    if (!seg || seg === '.') continue;
+    if (seg === '..') { out.pop(); continue; }
+    out.push(seg);
+  }
+  return '/' + out.join('/');
+}
+
+// The path of every portal call in a command string, in order, normalized.
+function portalPaths(text) {
+  const out = [];
+  const re = /myfaithtech\.com\/api\/admin(\/[^\s"'`)\\]*)/gi;
+  for (let m; (m = re.exec(String(text || ''))) !== null;) out.push(normalizePortalPath(m[1]));
+  return out;
+}
+
+/* Does this body ask the portal to email the customer?
+
+   `notify` is read by the portal as a plain truthy value, so 1, "true", "yes"
+   and "on" all send the email that `true` sends — and a gate that only knew the
+   word `true` would wave the other four through. Given a PARSED body it is
+   checked properly, at any depth; given only a blob of text (a shell command,
+   a file that has not been read) it falls back to a text match, which is why
+   the broker parses and bashGate does not. */
+function notifyTruthy(v) {
+  if (v === true || v === 1) return true;
+  if (typeof v === 'string') return /^(?:true|1|yes|on)$/i.test(v.trim());
+  return false;
+}
+function notifyInBody(body, depth = 0) {
+  if (!body || typeof body !== 'object' || depth > 6) return false;
+  for (const [k, v] of Object.entries(body)) {
+    if (/^notify/i.test(k) && notifyTruthy(v)) return true;
+    if (v && typeof v === 'object' && notifyInBody(v, depth + 1)) return true;
+  }
+  return false;
+}
+
+/* What this does, or null if it is ordinary reversible work.
+
+   `subject` is either a bare path ("/invoices/42/email") or a blob of text that
+   may contain one (a whole shell command, a file being written). Both are
+   handled, and deliberately differently: a path is normalized to its one true
+   spelling first, while text is matched BOTH as-is and against every portal
+   path found inside it — as-is because a command that never spells the host
+   joined to the path still names the endpoint, and extracted because that is
+   the spelling the server will actually route.
+
+   `body` is raw text to search for a notify flag; `parsed` is the decoded body
+   when someone actually has one (the broker does, bashGate does not). */
+function oneWay(subject, body, parsed) {
+  const raw = String(subject || '');
+  const looksLikePath = /^\/\S*$/.test(raw);
+  const cands = looksLikePath ? [normalizePortalPath(raw)] : [raw, ...portalPaths(raw)];
+  for (const c of cands) {
+    const hit = PORTAL_ONE_WAY.find(([re]) => re.test(c));
+    if (hit) return hit[1];
+  }
+  if (cands.some(c => PORTAL_STATUS.test(c))) {
+    const sends = parsed !== undefined ? notifyInBody(parsed)
+      : /notify["']?\s*[:=]\s*["']?(?:true|1|yes|on)\b/i.test(String(body || ''));
+    if (sends) return 'change a ticket status AND email the customer about it';
+  }
+  return null;
+}
+
+/* ---------------- the broker ----------------
+
+   Ctrl does NOT hold the portal key. He holds a ticket to a door in this
+   process, and the key is on this side of it.
+
+   The first design put CTRL_ALT_API_KEY in his session environment and had
+   bashGate read his shell commands. Attacking that gate found twenty-one ways
+   through, and the useful thing was WHICH ways: not clever ones, ordinary ones.
+   `curl -d @body.json` — the notify flag is in a file the gate never opens.
+   Writing `send-reply.js` and running `node send-reply.js` — two allowed calls,
+   neither of which names an endpoint. `notify:1` instead of `notify:true`.
+   `//email//send` out of a string join. Those are things Ctrl does on a normal
+   Tuesday while being helpful, and every one of them put an email in a real
+   customer's inbox. The rest — a hostname split across shell variables, base64
+   piped to sh — only proved the general point: a gate that reads a shell
+   command is guessing what the shell will do, and the shell can compute
+   anything. You cannot regex your way out of that.
+
+   So the request is judged where it is no longer a guess. Ctrl calls this
+   broker on the town's own port with an ordinary URL and no credential;
+   the broker parses the method, the normalized path and the decoded body,
+   decides, and only then attaches the real key and forwards it. What was
+   judged is exactly what goes out, because the broker sends the normalized
+   path itself.
+
+   What this buys, beyond the gate holding:
+    · The `cak_` key never enters a villager's process, so it cannot be printed,
+      committed, written to a file, or posted to another host. The whole of
+      attack category 5 stops existing rather than being blocked.
+    · A leaked ticket is worth reads, not sends — it only opens this same gate.
+    · Revocation is real: `/key clear` and the next call fails, including one
+      from a session already running.
+
+   The ticket is per-boot and per-agent, so it also cannot outlive a restart. */
+const PORTAL_ROUTE = '/portal/';
+const portalTickets = new Map();          // ticket -> agent id
+function portalTicketFor(agentId) {
+  for (const [t, id] of portalTickets) if (id === agentId) return t;
+  const t = webcrypto.randomUUID().replace(/-/g, '') + webcrypto.randomUUID().replace(/-/g, '');
+  portalTickets.set(t, agentId);
+  return t;
+}
+
+/* One approved call, named by its exact path — the same shape as a deploy
+   grant, and for the same reason: "the owner said yes to emailing invoice 42"
+   must not become "an email went out about invoice 91". */
+const PORTAL_GRANT_MS = 30 * 60 * 1000;
+const portalGrants = new Map();           // agent id -> { path, until }
+
+function grantPortal(agentId, path) {
+  portalGrants.set(agentId, { path: String(path || '').toLowerCase().replace(/\/+$/, ''), until: Date.now() + PORTAL_GRANT_MS });
+}
+
+function livePortalGrant(agentId) {
+  const g = portalGrants.get(agentId);
+  if (!g) return null;
+  if (g.until < Date.now()) { portalGrants.delete(agentId); return null; }
+  return g;
+}
+
+/* Every secret this process holds. A villager never needs to TYPE one of these
+   values — git is handed the push token by an inline credential helper, and the
+   portal key never leaves this process at all. So a command
+   or a file that contains the value itself is a leak, whatever the intent: a
+   key pasted into a script, a token committed to a repo, a debug line that
+   prints it. Short values are skipped so a one-character secret can't make
+   every command look like a leak. */
+function leaksSecret(text) {
+  const t = String(text || '');
+  if (!t) return false;
+  return [GH_TOKEN, PORTAL_KEY, TOWN_KEY, CF_TOKEN, CF_DEPLOY_TOKEN]
+    .some(s => s && String(s).length >= 12 && t.includes(s));
+}
+
+/* Ctrl's second job, and the only one that touches real customers.
+
+   Written here rather than in DUTIES because the key can arrive mid-run (the
+   "/key" command) and a brief baked in at boot would still be telling him he
+   has no portal an hour after he got one. */
+function portalBrief(agent, short) {
+  if (agent.id !== PORTAL_AGENT || !PORTAL_KEY) return '';
+  // The turn prompt only picks an action, so it gets the rule and not the
+  // manual; the work session, where the calls actually happen, gets all of it.
+  if (short) return `
+THE TECHNICIAN PORTAL: you can work the live shop (tickets, inquiries, invoices,
+customer email) through your own door at $CTRL_ALT_PORTAL. Read it, triage it,
+draft replies — freely, in a work session. But nothing that reaches a customer or
+moves money goes out without the owner: emailing anyone, charging a card, buying
+a postage label, or a status change with notify true is refused until he approved
+that exact call. Use request_portal to ask; he answers one call at a time.`;
+  return `
+THE TECHNICIAN PORTAL — you can work the live shop.
+
+Your door is $CTRL_ALT_PORTAL and your ticket is $CTRL_ALT_PORTAL_TICKET:
+  curl -s "$CTRL_ALT_PORTAL/dashboard" -H "x-town-ticket: $CTRL_ALT_PORTAL_TICKET"
+Everything after the door is exactly the API in docs/AGENT-API.md in your
+ctrl-alt-pc-repair repo — read it before your first call. Entities (customers,
+tickets, inventory, invoices, inquiries, appointments, …) are plain REST:
+GET /:entity, POST /:entity, PUT /:entity/:id. There are also /dashboard,
+/reports, /email/threads, /inquiries/:id/analyze and /inquiries/:id/draft-reply.
+
+You do NOT hold the shop's API key and you never will — the door carries it for
+you. So don't go looking for it, don't call myfaithtech.com directly (the request
+would arrive with no key and be refused), and don't write the ticket into a file.
+
+This is the real shop, not a sandbox. Every row you touch is someone's actual
+repair. The calls go out as the owner's staff account and the timeline records
+them as "Dashboard agent (API key)", so everything you do is visible, and it is
+his name on it.
+
+READ FREELY, DRAFT FREELY, SEND NEVER — not on your own. The portal itself
+refuses you photo ID records, refunds, and creating API keys. Your door refuses
+the rest of what can't be taken back: emailing a customer, charging a card,
+buying a postage label, a ticket status change with notify true. It reads the
+real path and the real body, so there is no spelling of those that gets through
+— don't spend a session hunting for one. When one is genuinely the right next
+step, use request_portal with the exact path and wait for the owner's yes; he
+approves that one call and it works once, within 30 minutes.
+
+Triage, quote, draft the reply and leave it ready for him — that is the job.`;
+}
+
+function dutyBrief(agent, short) {
   const d = DUTIES[agent.id];
-  return d ? `\nWHAT THE OWNER ASSIGNED YOU — this is the job, and it comes before anything you invent:\n${d}\n` : '';
+  const extra = portalBrief(agent, short);
+  return d ? `\nWHAT THE OWNER ASSIGNED YOU — this is the job, and it comes before anything you invent:\n${d}\n${extra}` : extra;
 }
 
 const world = {
@@ -1104,8 +1378,13 @@ folder, with a short README line on how to run it.`,
 // or bill something is denied, as is reading the credentials on disk.
 const sessionEnv = (() => {
   const e = { ...process.env };
+  // CTRL_ALT_API_KEY is stripped here and never put back for anyone, Ctrl
+  // included: he reaches the shop through the broker, which holds the key on
+  // the engine's side of the door. Set in the PC's own environment it would
+  // otherwise be inherited by every villager's session, and a key to a live
+  // shop that emails customers has no business in Spork's kitchen.
   for (const k of ['TOWN_KEY', 'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_API_KEY', 'CF_API_TOKEN',
-    'MAIN_CF_DEPLOY_TOKEN']) delete e[k];
+    'MAIN_CF_DEPLOY_TOKEN', 'CTRL_ALT_API_KEY']) delete e[k];
   return e;
 })();
 
@@ -1139,6 +1418,28 @@ function bashGate(agent) {
           return deny(`${raw} is outside the workshops — everything you need is in your own folder, ../_shared/, or a colleague's`);
         }
       }
+      /* A secret written into a file is a secret published: these folders are
+         git repositories that push to GitHub, so the next commit takes it with
+         them. The portal key can no longer reach a workshop at all, but the
+         push token and the dashboard passphrase still pass through, and a
+         value pasted "just to test it" is published on the next commit. */
+      if (toolName === 'Write' || toolName === 'Edit' || toolName === 'NotebookEdit') {
+        const body = [input?.content, input?.new_string, input?.new_source].filter(Boolean).join('\n');
+        if (leaksSecret(body)) return deny('that writes one of the owner\'s secrets into a file these folders push to GitHub — reference it from the environment instead, never by its value');
+        /* A script is a command with a delay on it. `node send.js` says nothing
+           about emailing anyone, so the Bash gate below would let it run — the
+           only place the intent is visible is here, as it is being written. A
+           script that READS the portal is fine and encouraged; one that emails,
+           charges or ships is the same one-way door and goes through the same
+           approval, as the one call it is. */
+        /* A script is a command with a delay on it, and `node send.js` tells the
+           Bash gate nothing at all — writing it is the only moment the intent is
+           visible. The broker would refuse the call anyway; refusing it here
+           saves Ctrl writing something that can never work, and says why. */
+        if (/myfaithtech\.com|CTRL_ALT_PORTAL/i.test(body) && oneWay(body, body)) {
+          return deny(`that file would ${oneWay(body, body)} whenever it runs, and the broker will refuse it. Keep scripts to reads and drafts; a call that can't be taken back goes through request_portal, one at a time, so the owner sees it.`);
+        }
+      }
       return ok;
     }
     if (toolName !== 'Bash') return ok;
@@ -1153,7 +1454,42 @@ function bashGate(agent) {
       return deny('the Cloudflare API and stored credentials are off limits — deploy with "npx wrangler deploy" from inside your own project folder');
     }
     if (/GITHUB_TOKEN|GIT_CONFIG_VALUE|github-token\.txt/i.test(cmd)) return deny("the push credential is the owner's — git already uses it for you; you never need to read it");
-    if (/town-key\.txt|cloudflare-token\.txt|maincloudflare-deploy-token\.txt/i.test(cmd)) return deny("those files hold the owner's secrets");
+    if (/town-key\.txt|cloudflare-token\.txt|maincloudflare-deploy-token\.txt|ctrl-portal-key\.txt/i.test(cmd)) return deny("those files hold the owner's secrets");
+    /* The ticket is NOT banned by name — sending it is the whole point, and
+       `-H "x-town-ticket: $CTRL_ALT_PORTAL_TICKET"` has to work. What is banned
+       is looking at it, and at anything else in the environment: printing a
+       credential, or dumping the whole environment to a file and reading it
+       back. That second one is the older hole and the wider one: GITHUB_TOKEN
+       really does ride in every session's environment, and `env > o.txt` never
+       mentions a token by name, so nothing above catches it. */
+    if (/\b(?:echo|printf|printenv|cat|tee|set)\b[^;&|]*\b(?:CTRL_ALT_API_KEY|CTRL_ALT_PORTAL_TICKET)\b/i.test(cmd)
+      || /\b(?:CTRL_ALT_API_KEY|CTRL_ALT_PORTAL_TICKET)\b[^;&|\n]*>\s*\S/.test(cmd)) {
+      return deny('send your ticket as a header, don\'t print it or write it down');
+    }
+    if (/(?:^|[;&|]\s*)(?:printenv|env|set|export\s+-p|declare\s+-x)\s*(?:[;&|>]|$)/i.test(cmd)
+      || /\/proc\/self\/environ/i.test(cmd)) {
+      return deny('dumping the environment would hand you the owner\'s credentials — name the one variable you actually need');
+    }
+    if (leaksSecret(cmd)) return deny('that command contains one of the owner\'s secrets in full — you never need to type one; they are already in your environment where they are needed');
+
+    /* ---- the technician portal: read freely, one-way doors need a yes ----
+
+       The trigger is the HOST, not a full URL: `B=https://myfaithtech.com/api/admin;
+       curl $B/email/send` never spells the two together, and a gate that
+       insisted on seeing them joined would wave it through. For the same reason
+       the doors are matched against the whole command rather than against a
+       tidy parsed path. */
+    /* Nobody calls the shop directly, because nobody holds a key to it — a
+       request from a workshop would arrive unauthenticated and be refused by
+       the portal anyway. Saying so here turns a confusing 401 into a sentence
+       that names the right door. The real enforcement is the broker; this is
+       signposting, and it is allowed to be defeatable, because defeating it
+       wins an anonymous request. */
+    if (/myfaithtech\.com/i.test(cmd)) {
+      if (agent.id !== PORTAL_AGENT) return deny(`the shop's technician portal is ${agentById(PORTAL_AGENT)?.name || 'Ctrl'}'s desk — it holds real customers' repairs`);
+      if (!PORTAL_KEY) return deny('there is no portal key on this PC yet — the owner sets one with "/key <cak_…>"');
+      return deny(`you have no key to send, so that request would just be refused. Go through your own door instead: $CTRL_ALT_PORTAL${portalPaths(cmd)[0] || '/<path>'} with -H "x-town-ticket: $CTRL_ALT_PORTAL_TICKET" — it carries the key for you and asks the owner about anything that can't be taken back.`);
+    }
     if (!/\bwrangler\b/i.test(cmd)) return ok;
     if (/\bwrangler\s+(delete|rollback|secret|d1|r2|kv|queues|pages|tail|login|logout|versions|triggers)\b/i.test(cmd)) {
       return deny('that wrangler subcommand is not available to the town');
@@ -1304,6 +1640,14 @@ end with a 2-3 sentence plain-text summary, in character, of what you actually m
           // and the push credential, so their own git push lands on GitHub
           ...gitCredEnv(),
           ...(CF_TOKEN ? { CLOUDFLARE_API_TOKEN: CF_TOKEN } : {}),
+          // Ctrl's way into the live shop — a ticket to the broker, NOT the key.
+          // The key stays in this process; see "the broker" above. The worst a
+          // leaked ticket buys is what the broker already allows, and it dies
+          // with this boot.
+          ...(agent.id === PORTAL_AGENT && PORTAL_KEY ? {
+            CTRL_ALT_PORTAL: `http://127.0.0.1:${PORT}${PORTAL_ROUTE.slice(0, -1)}`,
+            CTRL_ALT_PORTAL_TICKET: portalTicketFor(agent.id),
+          } : {}),
         },
       },
     })) {
@@ -1514,7 +1858,7 @@ Open ballots: ${s.openProps.length ? s.openProps.join('; ') : 'none'}.
 Town morale: ${morale()}/100.${(() => { const low = agents.filter(x => x.id !== agent.id).map(x => ({ x, m: agentMorale(x) })).sort((p, q) => p.m.score - q.m.score)[0]; return low && low.m.score < 55 ? `\nMood board: ${low.x.name} is lowest at ${low.m.score}/100 (${low.m.why}) — a friend could fix that.` : ''; })()}
 ${world.weather ? `Weather outside: ${world.weather}.` : ''}
 ${world.briefs[agent.id] ? `From the owner's real dashboard: ${world.briefs[agent.id]}` : ''}
-${dutyBrief(agent)}${holdingsLine(agent, deepOk)}
+${dutyBrief(agent, true)}${holdingsLine(agent, deepOk)}
 This is YOUR work shift — your own few focused hours today (the others have their own, staggered, so the town spends the fewest credits). It's the one window you spend real effort, so make it count: genuinely move your assigned job or your goal forward with this action — plan the event, write the pages, coach the plan, fix the site, work the church channel — rather than idling or loafing. You're at your own place of business; the rest of the day is your free time.
 You are at ${MAP[agent.loc].label}. Exits lead to: ${s.exits}.
 People here: ${s.others.length ? s.others.join(', ') : 'nobody'}.
@@ -1572,6 +1916,13 @@ ${CF_DEPLOY_TOKEN ? `- request_deploy: {"thought":"...","action":"request_deploy
               request, not the deploy: the owner approves it, and only then can you
               run it — once. Ask only when the work is committed and you would stake
               your name on it going in front of real people.)` : ''}
+${agent.id === PORTAL_AGENT && PORTAL_KEY ? `- request_portal: {"thought":"...","action":"request_portal","path":"<the exact API path>","why":"<who it reaches and what it says>"}
+              (ask the owner to let you make ONE call on the shop's technician
+              portal that cannot be undone — an email to a real customer, a card
+              charge, a postage label. Give the exact path, e.g. "/invoices/42/email",
+              and say plainly who receives it. He approves that one path; it then
+              works once, within 30 minutes. Reads, drafts and ticket work need
+              no approval at all — just do them.)` : ''}
 - start_build:{"thought":"...","action":"start_build","kind":"house|shop|landmark","name":"<what you're building>"}
               (a house costs 20 coins in materials, a shop 35, a landmark 50 — you want a home of your own)
 - place:      {"thought":"...","action":"place","what":"business|house","x":<0-100>,"y":<0-100>,"why":"<why here>"}
@@ -1817,6 +2168,36 @@ function applyAction(agent, d) {
       });
       log(agent, `asks corporate for the go-ahead to push ${worker} live: “${why}”`);
       workEntry(agent, `asked corporate to deploy ${worker}`);
+      break;
+    }
+    /* The ask that stands in front of a real customer's inbox. Deliberately
+       narrow: only Ctrl, only with a key on this PC, only for a path that is
+       actually one of the one-way doors — if it isn't, he is told to just go
+       and do it, because an approval queue full of things nobody needed to
+       approve teaches the owner to click yes without reading. */
+    case 'request_portal': {
+      if (agent.id !== PORTAL_AGENT || !PORTAL_KEY) {
+        log(agent, `reaches for the shop's portal and finds it isn't theirs to open${thought}`);
+        break;
+      }
+      const path = String(d.path || d.endpoint || '').trim().replace(/^.*\/api\/admin/i, '').replace(/[?#].*$/, '').replace(/\/+$/, '');
+      if (!/^\/[A-Za-z0-9][\w\-./]{0,120}$/.test(path)) {
+        log(agent, `starts a portal request without naming the exact call, and thinks better of it${thought}`);
+        break;
+      }
+      const what = oneWay(path, JSON.stringify(d));
+      if (!what) {
+        log(agent, `was about to ask permission for ${path}, then remembers that one is ordinary work and just does it${thought}`);
+        break;
+      }
+      const why = String(d.question || d.why || '').trim().slice(0, 240) || path;
+      world.approvals.push({
+        id: approvalSeq++, agent: agent.name, agentId: agent.id,
+        question: `PORTAL ${path} — would ${what}. ${why}`,
+        status: 'pending', tick: world.tick, portal: { path },
+      });
+      log(agent, `asks corporate before touching the live shop: “${why}”`);
+      workEntry(agent, `asked corporate to approve ${path}`);
       break;
     }
     case 'ask_corporate': {
@@ -2476,12 +2857,12 @@ const CHIEF_AFTER = Number(process.env.TOWN_CHIEF_AFTER || 90); // ticks of corp
 async function chiefRulings() {
   const chief = agentById('arise');
   if (!chief) return;
-  // NEVER a deploy. The owner's rule is that pushing a real site live requires
-  // HIS approval; an in-town agent ruling on it would satisfy the code while
-  // breaking the promise, and the grant is minted purely from `status ===
-  // 'approved'` — so a chief's yes would deploy a live church site with the
-  // owner never having seen the request.
-  const ap = world.approvals.find(x => x.status === 'pending' && !x.hire && !x.event && !x.deploy
+  // NEVER a deploy, and never a portal call. The owner's rule is that pushing a
+  // real site live requires HIS approval; an in-town agent ruling on it would
+  // satisfy the code while breaking the promise, and the grant is minted purely
+  // from `status === 'approved'` — so a chief's yes would deploy a live church
+  // site, or email a customer, with the owner never having seen the request.
+  const ap = world.approvals.find(x => x.status === 'pending' && !x.hire && !x.event && !x.deploy && !x.portal
     && x.agentId !== chief.id
     && world.tick - x.tick >= CHIEF_AFTER
     && !/\$|spend|money|buy|pay|purchase|sell|deploy/i.test(x.question));
@@ -2961,6 +3342,11 @@ async function bridgeTick() {
         grantDeploy(ap.agentId, ap.deploy.worker);
         console.log(`  corporate approves ${ap.agentId} deploying ${ap.deploy.worker} (one deploy, ${DEPLOY_GRANT_MS / 60000} min)`);
       }
+      // and the same for one call on the live shop — one path, once
+      if (ap.status === 'approved' && ap.portal?.path) {
+        grantPortal(ap.agentId, ap.portal.path);
+        console.log(`  corporate approves ${ap.agentId} calling ${ap.portal.path} (one call, ${PORTAL_GRANT_MS / 60000} min)`);
+      }
       const who = agentById(ap.agentId);
       const verdict = ap.status === 'approved' ? 'APPROVED' : 'DENIED';
       log(who, `hears back from corporate: “${ap.question}” — ${verdict}${ap.note ? ` (“${ap.note}”)` : ''}`);
@@ -3115,20 +3501,46 @@ function setToken(arg) {
   return 'GitHub token saved on this PC — the villagers can push now. "/git" shows what is waiting; "/push" sends it.';
 }
 
+/* "/key <cak_…>" hands Ctrl the technician portal, from anywhere. The owner
+   creates the key in Settings → API Keys, where it is shown exactly once, and
+   this is how it reaches a PC he isn't sitting at. Like /token it is answered
+   before anything else in the inbox, so the key never reaches the feed, a town
+   meeting, or any villager's memory — and the reply never repeats it. */
+function setPortalKey(arg) {
+  const w = String(arg || '').trim();
+  if (!w) return PORTAL_KEY ? `Ctrl has a portal key (from ${PORTAL_KEY_FROM}). "/key clear" takes it away.`
+    : 'No portal key set, so Ctrl works the repo only. Send: /key <the cak_… key from Settings → API Keys>.';
+  if (/^clear$/i.test(w)) {
+    PORTAL_KEY = ''; PORTAL_KEY_FROM = '';
+    // grants and tickets go with it, so a session already running stops too —
+    // the broker checks the key on every call, so this takes effect at once
+    portalGrants.clear(); portalTickets.clear();
+    try { rmSync(PORTAL_KEY_FILE, { force: true }); } catch { /* already gone */ }
+    return 'Portal key removed here, and the next call fails even from a session already running. Revoke it in Settings → API Keys too, so it is dead everywhere and not just on this PC.';
+  }
+  if (!/^cak_[0-9a-f]{48}$/i.test(w)) return 'That does not look like a portal key (cak_ and 48 hex characters).';
+  try { writeFileSync(PORTAL_KEY_FILE, w + '\n', { mode: 0o600 }); }
+  catch (e) { return `Couldn’t save the key here: ${e.message}`; }
+  PORTAL_KEY = w; PORTAL_KEY_FROM = 'ctrl-portal-key.txt';
+  return 'Portal key saved on this PC — it stays in the engine, and Ctrl reaches the shop through it rather than holding it. From his next work session he can read tickets, inquiries, invoices and email threads and draft replies. Anything that emails a customer, charges a card or buys a label still comes to you for a yes, one call at a time.';
+}
+
 async function answerInbox() {
   if (!DASH_URL || !TOWN_KEY || inboxBusy) return;
   inboxBusy = true;
   try {
     const { pending = [] } = await dashFetch('/api/town/inbox');
     for (const msg of pending) {
-      // "/token", "/git", "/push" from the owner, to any villager — handled
-      // FIRST, before the town-meeting branch, so a token sent to "all" is
-      // never read aloud at the plaza, logged to the feed, or remembered.
-      const ownerCmd = /^\/(token|git|push)\b\s*([\s\S]*)$/i.exec(String(msg.message || '').trim());
+      // "/token", "/key", "/git", "/push" from the owner, to any villager —
+      // handled FIRST, before the town-meeting branch, so a credential sent to
+      // "all" is never read aloud at the plaza, logged to the feed, or remembered.
+      const ownerCmd = /^\/(token|key|git|push)\b\s*([\s\S]*)$/i.exec(String(msg.message || '').trim());
       if (ownerCmd) {
         const [, name, arg] = ownerCmd;
-        const reply = name.toLowerCase() === 'token' ? setToken(arg)
-          : name.toLowerCase() === 'git' ? await gitReport(arg)
+        const which = name.toLowerCase();
+        const reply = which === 'token' ? setToken(arg)
+          : which === 'key' ? setPortalKey(arg)
+          : which === 'git' ? await gitReport(arg)
           : await pushAll(arg);
         await dashFetch('/api/town/reply', { method: 'POST', body: JSON.stringify({ id: msg.id, reply }) });
         continue;
@@ -3257,6 +3669,57 @@ if (UPDATE_MIN > 0 && !process.env.TOWN_NO_UPDATE) {
 const server = http.createServer(async (req, res) => {
   const send = (code, type, body) => { res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store' }); res.end(body); };
   try {
+    /* The broker. Ctrl's requests to the live shop come through here so the
+       decision is made on a real parsed request rather than on a guess at what
+       a shell command was going to do — and so the key stays in this process.
+       See "the broker" above for why this exists rather than a bigger regex. */
+    if (req.url?.startsWith(PORTAL_ROUTE)) {
+      const say = (code, msg) => send(code, 'application/json', JSON.stringify({ error: msg }));
+      if (!PORTAL_KEY) return say(503, 'No portal key is set on this PC. The owner sets one by messaging any villager "/key <cak_…>".');
+      const who = portalTickets.get(String(req.headers['x-town-ticket'] || ''));
+      if (!who) return say(401, 'Send your ticket as the x-town-ticket header — it is $CTRL_ALT_PORTAL_TICKET in your environment.');
+      if (who !== PORTAL_AGENT) return say(403, 'The shop is not your desk.');
+
+      const path = normalizePortalPath(req.url.slice(PORTAL_ROUTE.length - 1));
+      const query = (req.url.match(/\?[^#]*/) || [''])[0];
+      const raw = await readBody(req);
+      // An unparseable body is treated as no body for the decision, never as a
+      // safe one: a status change whose JSON we cannot read is still judged by
+      // its text, so a malformed payload can't smuggle notify past the parser.
+      let parsed;
+      try { parsed = raw ? JSON.parse(raw) : undefined; } catch { parsed = undefined; }
+      if (parsed === undefined && raw && /^[\w.[\]%+-]+=/.test(raw)) {
+        parsed = Object.fromEntries(new URLSearchParams(raw));
+      }
+      const what = oneWay(path, raw, parsed);
+      if (what) {
+        const grant = livePortalGrant(who);
+        if (!grant || grant.path !== path.toLowerCase()) {
+          const ctrl = agentById(who);
+          if (ctrl) ctrl.memory.push(`t${world.tick}: the broker stopped me calling ${path} — that would ${what}, and I have no approval for it`);
+          return say(403, `That would ${what}, and it cannot be taken back — so it needs the owner. Ask with {"action":"request_portal","path":"${path}","why":"…"} and run it again once he says yes.${grant ? ` (He approved ${grant.path}, not this.)` : ''}`);
+        }
+        portalGrants.delete(who);
+        console.log(`  ${agentById(who)?.name || who} spends their approved portal call: ${path}`);
+        log(agentById(who), `makes the call corporate approved: ${path}`);
+      }
+      // Forward the NORMALIZED path, so what was judged is what goes out.
+      const headers = { authorization: `Bearer ${PORTAL_KEY}` };
+      if (req.headers['content-type']) headers['content-type'] = req.headers['content-type'];
+      let up;
+      try {
+        up = await fetch(`${PORTAL_BASE}${path}${query}`, {
+          method: req.method,
+          headers,
+          body: ['GET', 'HEAD'].includes(req.method) ? undefined : (raw || undefined),
+        });
+      } catch (e) {
+        return say(502, `Couldn't reach the shop: ${e?.message || e}`);
+      }
+      const text = await up.text();
+      res.writeHead(up.status, { 'content-type': up.headers.get('content-type') || 'application/json', 'cache-control': 'no-store' });
+      return res.end(text);
+    }
     if (req.method === 'GET' && (req.url === '/' || req.url === '/index.html')) {
       return send(200, 'text/html; charset=utf-8', await readFile(join(DIR, 'public', 'index.html')));
     }
