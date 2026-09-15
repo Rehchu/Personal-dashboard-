@@ -28,6 +28,13 @@ const at = marker => {
 const portalBlock = src.slice(src.indexOf('const SEG = '), src.indexOf("/* Every secret this process holds"));
 // +1 so the closing brace of the `if (req.url…startsWith(PORTAL_ROUTE))` comes too
 const brokerBlock = cut(at("The broker. Ctrl's requests"), at('return res.end(text);') + 1);
+// `at` returns the FIRST match, so a handler added ABOVE Ctrl's that also ends
+// in `return res.end(text);` makes this slice end before it starts. That once
+// yielded an empty broker and a server that 404'd every attack — which reads as
+// the gate holding, the one failure this file must never report as a pass.
+if (!brokerBlock.includes('PORTAL_ROUTE')) {
+  throw new Error('sliced no broker out of town.mjs — is another handler above Ctrl\'s, ending in the same line?');
+}
 
 // ---- a stand-in shop, so a "send" that escapes is visible, not theoretical ----
 const arrived = [];
