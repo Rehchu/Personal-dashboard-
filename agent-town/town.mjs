@@ -3092,7 +3092,7 @@ async function chatWith(id, message) {
     : '';
   const persona = `You are ${agent.name}, the town ${agent.role}. ${agent.personality}.
 Your goal: ${agent.goal}. You are at ${MAP[agent.loc].label}.
-Recent memory:\n${agent.memory.slice(-8).join('\n') || '(new in town)'}${work}${canon}`;
+Recent memory:\n${agent.memory.slice(-8).join('\n') || '(new in town)'}${work}${canon}${portalBrief(agent, false)}${arisehubBrief(agent, false)}`;
   const dir = join(WORKSHOP, agent.id);
   const haveWorkshop = existsSync(dir);
 
@@ -3102,9 +3102,13 @@ Recent memory:\n${agent.memory.slice(-8).join('\n') || '(new in town)'}${work}${
     const prompt = `${persona}
 
 YOUR WORKSHOP IS OPEN — your real repositories are right here in this folder.
-Answer the owner from what is ACTUALLY on disk, never from memory or guesswork:
+Answer the owner from what is ACTUALLY there, never from memory or guesswork:
 if they ask about a file, a chapter, a plan, a bug — OPEN IT (Read/Glob/Grep)
-and answer from what is really there. If they ask you to CHANGE something —
+and answer from what is really there. If your brief above gives you a door to a
+LIVE system, that door is a source of truth too, and for anything the repo
+cannot know — what is in stock, what a customer said, which tickets are open,
+today's numbers — it is the ONLY one. Curl it and answer from what it returns.
+Saying you will go and look is not an answer: look now, in this reply. If they ask you to CHANGE something —
 write a chapter, fix a file, add a section — DO IT NOW: edit the real file, and
 if the folder is a git repo, commit on your branch "town/${agent.id}" and push
 it with "git push -u origin town/${agent.id}". NEVER describe, quote, or claim a
@@ -3134,6 +3138,18 @@ you committed it). Be honest and specific. Never invent.`;
             GIT_COMMITTER_EMAIL: `${agent.id}@dyertown.local`,
             ...gitCredEnv(),
             ...(CF_TOKEN ? { CLOUDFLARE_API_TOKEN: CF_TOKEN } : {}),
+            // The same doors runWorkSession hands out. Chat had neither, so
+            // asking Ctrl about the live shop got an offer to read the repo —
+            // the only source he actually had — and asking Arise about the
+            // Chapel would have gone the same way.
+            ...(agent.id === PORTAL_AGENT && PORTAL_KEY ? {
+              CTRL_ALT_PORTAL: `http://127.0.0.1:${PORT}${PORTAL_ROUTE.slice(0, -1)}`,
+              CTRL_ALT_PORTAL_TICKET: portalTicketFor(agent.id),
+            } : {}),
+            ...(agent.id === ARISEHUB_AGENT && ARISEHUB_KEY ? {
+              ARISE_HUB: `http://127.0.0.1:${PORT}${ARISEHUB_ROUTE.slice(0, -1)}`,
+              ARISE_HUB_TICKET: portalTicketFor(agent.id),
+            } : {}),
           },
         },
       })) {
