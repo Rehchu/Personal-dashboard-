@@ -118,10 +118,35 @@ const DATA_ROOT = process.env.TOWN_DATA_DIR || DIR;
 // the filename never has to be exact. Never the dashboard key (town-key.txt).
 function tokenFromFolder(match) {
   try {
-    const f = readdirSync(DIR).find(n => { const l = n.toLowerCase(); return l.endsWith('.txt') && l !== 'town-key.txt' && match(l); });
-    if (f) return { value: readFileSync(join(DIR, f), 'utf8').trim(), file: f };
+    const f = readdirSync(DIR).find(n => {
+      const l = n.toLowerCase();
+      return (l.endsWith('.txt') || l.endsWith('.json')) && !l.startsWith('town-key.') && match(l);
+    });
+    if (!f) return { value: '', file: '' };
+    const raw = readFileSync(join(DIR, f), 'utf8').trim();
+    return { value: f.toLowerCase().endsWith('.json') ? keyFromJson(raw) : raw, file: f };
   } catch { /* ignore */ }
   return { value: '', file: '' };
+}
+
+/* A key saved straight out of a portal's "shown once" dialog is often the whole
+   JSON object, not the bare string — ctrl-alt-agent-api-key.json arrived that
+   way. Reading it as text would hand the broker `{ "key": "cak_…" }` as the
+   credential and every call would 401 with nothing explaining why, so unwrap it
+   here. The field name is whatever that portal chose, hence the list; the last
+   resort is deliberately narrow — a value that announces itself with a known
+   prefix, and only when exactly one field does — because guessing which string
+   in an object is the secret is how the wrong field gets sent. */
+function keyFromJson(raw) {
+  let o;
+  try { o = JSON.parse(raw); } catch { return ''; }
+  if (typeof o === 'string') return o.trim();
+  if (!o || typeof o !== 'object') return '';
+  for (const k of ['key', 'apiKey', 'api_key', 'token', 'accessToken', 'access_token', 'secret', 'value']) {
+    if (typeof o[k] === 'string' && o[k].trim()) return o[k].trim();
+  }
+  const known = Object.values(o).filter(v => typeof v === 'string' && /^(?:cak_|ahk_)/.test(v.trim()));
+  return known.length === 1 ? known[0].trim() : '';
 }
 if (!process.env.CLAUDE_CODE_OAUTH_TOKEN) {
   // the Claude OAuth token: tolerate case, separators, an optional claude(-code)
@@ -265,9 +290,84 @@ const PORTAL_AGENT = 'ctrl';
 let PORTAL_KEY = (process.env.CTRL_ALT_API_KEY || '').trim();
 let PORTAL_KEY_FROM = PORTAL_KEY ? 'the environment' : '';
 if (!PORTAL_KEY) {
-  const { value, file } = tokenFromFolder(l => l.includes('portal') && l.includes('key'));
-  if (value) { PORTAL_KEY = value; PORTAL_KEY_FROM = file; console.log(`  portal: Ctrl's technician key from ${file}`); }
+  // "portal"+"key" was the original shape (ctrl-portal-key.txt); "ctrl"+"key"
+  // catches what the shop's own dialog saves (ctrl-alt-agent-api-key.json).
+  // Never a file that names arisehub — that one is Arise's, and sending an ahk_
+  // key to the shop as a cak_ one would fail in a way nobody would think to look for.
+  const { value, file } = tokenFromFolder(l => !l.includes('arisehub') && (
+    (l.includes('portal') && l.includes('key')) || (l.includes('ctrl') && l.includes('key'))));
+  if (value && !/^cak_[0-9a-f]{48}$/i.test(value)) {
+    console.error(`  portal: ${file} does not hold a cak_ key (found ${value.length} characters) — Ctrl works the repo only. Check the file, or send "/key <cak_…>".`);
+  } else if (value) { PORTAL_KEY = value; PORTAL_KEY_FROM = file; console.log(`  portal: Ctrl's technician key from ${file}`); }
   else console.log('  portal: no technician key — Ctrl works the repo only (message any villager "/key <cak_…>")');
+}
+
+/* ---------------- Arise's key to the Chapel ----------------
+   The same shape as Ctrl's above, with one extra step in the middle.
+
+   Ctrl's cak_ key IS the credential: it goes out as a Bearer unchanged. An
+   AriseHub ahk_ key is not — it is traded at POST /api/agent/token for a
+   one-hour Supabase session belonging to the key's owner, and THAT is what the
+   two apps accept. So the broker holds the ahk_ key, does the exchange itself,
+   and caches the short-lived session until it is nearly expired. A villager
+   never sees either one.
+
+   One key, two apps. AriseHub verifies the session directly; the Arise IT
+   portal verifies the same token against the project JWKS and maps it to a
+   local user by email. So /whatever reaches the Chapel and /it/whatever reaches
+   the portal, both on one credential.
+
+   The portal already refuses an agent the four things that matter — revealing a
+   stored WiFi password, issuing a wifi-scope guest pass, changing an account,
+   and managing API keys — in its own requireAuth, by recognising that a Supabase
+   bearer on a protected route cannot be a browser. That is server-side and does
+   not depend on this file being right. What this side adds is narrower and
+   blunter: the broker is READ-ONLY. GET and HEAD go through; anything else is
+   refused here, whichever app it was aimed at. Reads are the whole of what Arise
+   needs to know how the Chapel is doing, and a read cannot be taken back
+   wrongly. Writes can be opened later, one shape at a time, the way Ctrl's
+   request_portal does it — deliberately not tonight. */
+const ARISEHUB_KEY_FILE = join(DIR, 'arisehub-agent-key.txt');
+const ARISEHUB_AGENT = 'arise';
+const ARISEHUB_BASE = 'https://arisehub.myfaithtech.com';
+let ARISEHUB_KEY = (process.env.ARISEHUB_API_KEY || '').trim();
+let ARISEHUB_KEY_FROM = ARISEHUB_KEY ? 'the environment' : '';
+if (!ARISEHUB_KEY) {
+  // 'arisehub' + 'key' — deliberately not the 'portal'+'key' shape Ctrl's
+  // matcher uses, so the two can never pick up each other's file and send an
+  // ahk_ key to the shop as a cak_ one.
+  const { value, file } = tokenFromFolder(l => l.includes('arisehub') && l.includes('key'));
+  if (value && !/^ahk_[A-Za-z0-9_-]{43}$/.test(value)) {
+    console.error(`  chapel: ${file} does not hold an ahk_ key (found ${value.length} characters) — Arise works the repo only. Check the file, or send "/key <ahk_…>".`);
+  } else if (value) { ARISEHUB_KEY = value; ARISEHUB_KEY_FROM = file; console.log(`  chapel: Arise's AriseHub key from ${file}`); }
+  else console.log('  chapel: no AriseHub key — Arise works the repo only (message any villager "/key <ahk_…>")');
+}
+
+/* The traded session, kept only in this process and only while it is valid. */
+let ARISEHUB_SESSION = null;   // { token, until, arisehub, portal }
+async function arisehubSession() {
+  if (!ARISEHUB_KEY) return null;
+  if (ARISEHUB_SESSION && ARISEHUB_SESSION.until > Date.now()) return ARISEHUB_SESSION;
+  const res = await fetch(`${ARISEHUB_BASE}/api/agent/token`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${ARISEHUB_KEY}` },
+  });
+  if (!res.ok) {
+    ARISEHUB_SESSION = null;
+    throw new Error(res.status === 401
+      ? 'AriseHub refused the key (401) — it may have been revoked or expired. The owner sets a new one with "/key <ahk_…>".'
+      : `AriseHub would not start a session (${res.status})`);
+  }
+  const body = await res.json();
+  if (!body?.access_token) throw new Error('AriseHub returned no access_token');
+  ARISEHUB_SESSION = {
+    token: body.access_token,
+    // a minute of margin, so a call never goes out on a token that expires mid-flight
+    until: Date.now() + Math.max(60, (Number(body.expires_in) || 3600) - 60) * 1000,
+    arisehub: body?.endpoints?.arisehub || ARISEHUB_BASE,
+    portal: body?.endpoints?.it_portal || 'https://itportal.myfaithtech.com',
+  };
+  return ARISEHUB_SESSION;
 }
 
 /* A SECOND, separate credential for the owner's real sites.
@@ -702,6 +802,7 @@ function oneWay(subject, body, parsed) {
 
    The ticket is per-boot and per-agent, so it also cannot outlive a restart. */
 const PORTAL_ROUTE = '/portal/';
+const ARISEHUB_ROUTE = '/chapel/';
 const portalTickets = new Map();          // ticket -> agent id
 function portalTicketFor(agentId) {
   for (const [t, id] of portalTickets) if (id === agentId) return t;
@@ -737,7 +838,8 @@ function livePortalGrant(agentId) {
 function leaksSecret(text) {
   const t = String(text || '');
   if (!t) return false;
-  return [GH_TOKEN, PORTAL_KEY, TOWN_KEY, CF_TOKEN, CF_DEPLOY_TOKEN]
+  return [GH_TOKEN, PORTAL_KEY, TOWN_KEY, CF_TOKEN, CF_DEPLOY_TOKEN,
+    ARISEHUB_KEY, ARISEHUB_SESSION?.token]
     .some(s => s && String(s).length >= 12 && t.includes(s));
 }
 
@@ -746,6 +848,34 @@ function leaksSecret(text) {
    Written here rather than in DUTIES because the key can arrive mid-run (the
    "/key" command) and a brief baked in at boot would still be telling him he
    has no portal an hour after he got one. */
+/* Arise's door, written here for the same reason Ctrl's is: the key can arrive
+   mid-run through "/key", and a brief baked in at boot would still be telling
+   her she has no Chapel an hour after she got one. */
+function arisehubBrief(agent, short) {
+  if (agent.id !== ARISEHUB_AGENT || !ARISEHUB_KEY) return '';
+  if (short) return `
+THE CHAPEL, LIVE: you can read the running AriseHub and the Arise IT portal
+through your own door at $ARISE_HUB — real people, real tickets, today's
+numbers. Reading only: the door refuses anything that would change either one.`;
+  return `
+THE CHAPEL, LIVE — you can read the running church platform, not just its code.
+
+Your door is $ARISE_HUB and your ticket is $ARISE_HUB_TICKET:
+  curl -s "$ARISE_HUB/api/people" -H "x-town-ticket: $ARISE_HUB_TICKET"
+  curl -s "$ARISE_HUB/it/api/tickets" -H "x-town-ticket: $ARISE_HUB_TICKET"
+
+A path on its own reaches AriseHub. Prefix it with /it/ and it reaches the Arise
+IT portal instead — one credential, both apps, because the portal accepts
+AriseHub's own sessions.
+
+The door carries the key for you; you never hold it and never need to type it.
+It is READ-ONLY: GET and HEAD go through and everything else is refused, so use
+it to see how things actually are — who is scheduled, what is open, what broke —
+and bring what you find back to the repo, which is where you change things. If
+something genuinely needs writing, say so in your report and the owner will
+decide; do not go looking for another way round.`;
+}
+
 function portalBrief(agent, short) {
   if (agent.id !== PORTAL_AGENT || !PORTAL_KEY) return '';
   // The turn prompt only picks an action, so it gets the rule and not the
@@ -791,7 +921,7 @@ Triage, quote, draft the reply and leave it ready for him — that is the job.`;
 
 function dutyBrief(agent, short) {
   const d = DUTIES[agent.id];
-  const extra = portalBrief(agent, short);
+  const extra = portalBrief(agent, short) + arisehubBrief(agent, short);
   return d ? `\nWHAT THE OWNER ASSIGNED YOU — this is the job, and it comes before anything you invent:\n${d}\n${extra}` : extra;
 }
 
@@ -1384,7 +1514,7 @@ const sessionEnv = (() => {
   // otherwise be inherited by every villager's session, and a key to a live
   // shop that emails customers has no business in Spork's kitchen.
   for (const k of ['TOWN_KEY', 'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_API_KEY', 'CF_API_TOKEN',
-    'MAIN_CF_DEPLOY_TOKEN', 'CTRL_ALT_API_KEY']) delete e[k];
+    'MAIN_CF_DEPLOY_TOKEN', 'CTRL_ALT_API_KEY', 'ARISEHUB_API_KEY']) delete e[k];
   return e;
 })();
 
@@ -1485,6 +1615,11 @@ function bashGate(agent) {
        that names the right door. The real enforcement is the broker; this is
        signposting, and it is allowed to be defeatable, because defeating it
        wins an anonymous request. */
+    if (/\b(?:arisehub|itportal)\.myfaithtech\.com/i.test(cmd)) {
+      if (agent.id !== ARISEHUB_AGENT) return deny(`the Chapel's own API is ${agentById(ARISEHUB_AGENT)?.name || 'Arise'}'s desk — it holds a real congregation's records`);
+      if (!ARISEHUB_KEY) return deny('there is no AriseHub key on this PC yet — the owner sets one with "/key <ahk_…>"');
+      return deny(`you have no key to send, so that request would just be refused. Go through your own door instead: $ARISE_HUB/<path> with -H "x-town-ticket: $ARISE_HUB_TICKET" — it trades the key for a session and carries it for you. Prefix the path with /it/ for the IT portal. Reads only for now.`);
+    }
     if (/myfaithtech\.com/i.test(cmd)) {
       if (agent.id !== PORTAL_AGENT) return deny(`the shop's technician portal is ${agentById(PORTAL_AGENT)?.name || 'Ctrl'}'s desk — it holds real customers' repairs`);
       if (!PORTAL_KEY) return deny('there is no portal key on this PC yet — the owner sets one with "/key <cak_…>"');
@@ -1647,6 +1782,12 @@ end with a 2-3 sentence plain-text summary, in character, of what you actually m
           ...(agent.id === PORTAL_AGENT && PORTAL_KEY ? {
             CTRL_ALT_PORTAL: `http://127.0.0.1:${PORT}${PORTAL_ROUTE.slice(0, -1)}`,
             CTRL_ALT_PORTAL_TICKET: portalTicketFor(agent.id),
+          } : {}),
+          // Arise's way into the Chapel and the IT portal — a ticket, not the
+          // key, and not the traded session either.
+          ...(agent.id === ARISEHUB_AGENT && ARISEHUB_KEY ? {
+            ARISE_HUB: `http://127.0.0.1:${PORT}${ARISEHUB_ROUTE.slice(0, -1)}`,
+            ARISE_HUB_TICKET: portalTicketFor(agent.id),
           } : {}),
         },
       },
@@ -3512,13 +3653,22 @@ function setPortalKey(arg) {
     : 'No portal key set, so Ctrl works the repo only. Send: /key <the cak_… key from Settings → API Keys>.';
   if (/^clear$/i.test(w)) {
     PORTAL_KEY = ''; PORTAL_KEY_FROM = '';
+    ARISEHUB_KEY = ''; ARISEHUB_KEY_FROM = ''; ARISEHUB_SESSION = null;
+    try { rmSync(ARISEHUB_KEY_FILE, { force: true }); } catch { /* already gone */ }
     // grants and tickets go with it, so a session already running stops too —
     // the broker checks the key on every call, so this takes effect at once
     portalGrants.clear(); portalTickets.clear();
     try { rmSync(PORTAL_KEY_FILE, { force: true }); } catch { /* already gone */ }
     return 'Portal key removed here, and the next call fails even from a session already running. Revoke it in Settings → API Keys too, so it is dead everywhere and not just on this PC.';
   }
-  if (!/^cak_[0-9a-f]{48}$/i.test(w)) return 'That does not look like a portal key (cak_ and 48 hex characters).';
+  if (/^ahk_/i.test(w)) {
+    if (!/^ahk_[A-Za-z0-9_-]{43}$/.test(w)) return 'That does not look like an AriseHub key (ahk_ and 43 more characters).';
+    try { writeFileSync(ARISEHUB_KEY_FILE, w + '\n', { mode: 0o600 }); }
+    catch (e) { return `Couldn’t save the key here: ${e.message}`; }
+    ARISEHUB_KEY = w; ARISEHUB_KEY_FROM = 'arisehub-agent-key.txt'; ARISEHUB_SESSION = null;
+    return 'AriseHub key saved on this PC — it stays in the engine, and Arise reads the Chapel and the IT portal through it rather than holding it. The door is read-only for now: she can see how the church and the IT side are doing, and nothing she does can change them.';
+  }
+  if (!/^cak_[0-9a-f]{48}$/i.test(w)) return 'That does not look like a portal key (cak_ and 48 hex characters) or an AriseHub key (ahk_ and 43 more).';
   try { writeFileSync(PORTAL_KEY_FILE, w + '\n', { mode: 0o600 }); }
   catch (e) { return `Couldn’t save the key here: ${e.message}`; }
   PORTAL_KEY = w; PORTAL_KEY_FROM = 'ctrl-portal-key.txt';
@@ -3673,6 +3823,43 @@ const server = http.createServer(async (req, res) => {
        decision is made on a real parsed request rather than on a guess at what
        a shell command was going to do — and so the key stays in this process.
        See "the broker" above for why this exists rather than a bigger regex. */
+    if (req.url?.startsWith(ARISEHUB_ROUTE)) {
+      const say = (code, msg) => send(code, 'application/json', JSON.stringify({ error: msg }));
+      if (!ARISEHUB_KEY) return say(503, 'No AriseHub key is set on this PC. The owner sets one by messaging any villager "/key <ahk_…>".');
+      const who = portalTickets.get(String(req.headers['x-town-ticket'] || ''));
+      if (!who) return say(401, 'Send your ticket as the x-town-ticket header — it is $ARISE_HUB_TICKET in your environment.');
+      if (who !== ARISEHUB_AGENT) return say(403, 'The Chapel is not your desk.');
+      if (!['GET', 'HEAD'].includes(req.method)) {
+        return say(405, 'This door is read-only. Reading the Chapel and the IT portal is yours; anything that changes them is not wired up yet, so ask the owner rather than working around it.');
+      }
+
+      let path = normalizePortalPath(req.url.slice(ARISEHUB_ROUTE.length - 1));
+      const query = (req.url.match(/\?[^#]*/) || [''])[0];
+      // /it/… goes to the IT portal, everything else to AriseHub. Decided here,
+      // on the normalized path, so what is judged is what goes out.
+      const toPortal = /^\/it(?:\/|$)/i.test(path);
+      if (toPortal) path = path.replace(/^\/it/i, '') || '/';
+
+      let session;
+      try { session = await arisehubSession(); }
+      catch (e) { return say(502, e?.message || String(e)); }
+      if (!session) return say(503, 'No AriseHub key on this PC.');
+
+      let up;
+      try {
+        up = await fetch(`${toPortal ? session.portal : session.arisehub}${path}${query}`, {
+          method: req.method,
+          headers: { authorization: `Bearer ${session.token}` },
+        });
+      } catch (e) {
+        return say(502, `Couldn't reach ${toPortal ? 'the IT portal' : 'the Chapel'}: ${e?.message || e}`);
+      }
+      // A 401 means the traded session died early; drop it so the next call trades again.
+      if (up.status === 401) ARISEHUB_SESSION = null;
+      const text = await up.text();
+      res.writeHead(up.status, { 'content-type': up.headers.get('content-type') || 'application/json', 'cache-control': 'no-store' });
+      return res.end(text);
+    }
     if (req.url?.startsWith(PORTAL_ROUTE)) {
       const say = (code, msg) => send(code, 'application/json', JSON.stringify({ error: msg }));
       if (!PORTAL_KEY) return say(503, 'No portal key is set on this PC. The owner sets one by messaging any villager "/key <cak_…>".');
